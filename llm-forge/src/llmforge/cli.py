@@ -1,0 +1,1191 @@
+"""Command line interface for LLM-Forge."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import shlex
+import sys
+from pathlib import Path
+from typing import Any
+
+from llmforge.context import Forge
+from llmforge.domain import BudgetScope, GateType
+from llmforge.gates import GATE_CATALOG, GateError
+from llmforge.llm import ScriptedAdapter
+from llmforge.planner import LLMPlanner, TemplatePlanner
+
+DEMO_APPROVER = "program_lead"
+DEMO_ML_LEAD = "ml_lead"
+DEMO_COMPLIANCE = "compliance"
+DEMO_DOMAIN_EXPERT = "domain_expert"
+
+
+def _print(payload: Any) -> None:
+    if isinstance(payload, (dict, list)):
+        print(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    else:
+        print(payload)
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        forge.budget.set_limit(BudgetScope.GLOBAL, "global", args.budget)
+        forge.budget.set_limit(BudgetScope.PROJECT, "default", args.budget)
+        forge.audit.record(
+            actor=args.actor,
+            actor_kind="human",
+            action="platform.init",
+            subject="llm-forge",
+            details={"root": str(forge.settings.root), "budget_usd": args.budget},
+        )
+        print(f"initialized LLM-Forge at {forge.settings.home}")
+        print(f"database: {forge.settings.db_path}")
+    return 0
+
+
+def cmd_plan(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        planner = (
+            TemplatePlanner()
+            if args.planner == "template"
+            else LLMPlanner(llm=forge.runtime.llm, fallback=TemplatePlanner())
+        )
+        drafts = planner.plan(args.goal, {"milestone": args.milestone})
+        tasks = forge.orchestrator.submit_plan(drafts, approved_by=args.approve_by)
+        _print(
+            {
+                "planned": len(tasks),
+                "tasks": [
+                    {
+                        "id": task.id,
+                        "title": task.title,
+                        "owner": task.owner_role,
+                        "dependencies": task.dependencies,
+                        "state": str(task.state),
+                        "cost_estimate_usd": task.cost_estimate_usd,
+                        "gate": task.gate_id,
+                    }
+                    for task in tasks
+                ],
+            }
+        )
+    return 0
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        if args.approve_by:
+            forge.orchestrator.approve_plan(args.approve_by)
+        summary = forge.orchestrator.run(max_iterations=args.max_iterations)
+        summary.pop("outcomes", None)
+        _print(summary)
+    return 0
+
+
+def cmd_board(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        tasks = forge.store.list_tasks()
+        if args.state:
+            tasks = [task for task in tasks if str(task.state) == args.state]
+        if args.json:
+            _print([task.to_dict() for task in tasks])
+            return 0
+        for task in tasks:
+            deps = ",".join(task.dependencies) or "-"
+            print(
+                f"{task.id:<24} {task.state!s:<12} {task.owner_role:<18} "
+                f"deps={deps:<20} ${task.actual_cost_usd:.2f}  {task.title}"
+            )
+        print(f"\n{len(tasks)} tasks")
+    return 0
+
+
+def cmd_gates_list(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        gates = forge.store.list_gates()
+        if args.status:
+            gates = [gate for gate in gates if str(gate.status) == args.status]
+        for gate in gates:
+            print(
+                f"{gate.id:<20} {gate.status!s:<10} {gate.gate_type!s:<28} "
+                f"{gate.subject:<20} approvers={','.join(gate.required_approvers)}"
+            )
+        print(f"\n{len(gates)} gates")
+    return 0
+
+
+def cmd_gates_request(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.domain import GateType
+
+        gate_type = GateType(args.gate_type)
+        entry = GATE_CATALOG[gate_type]
+        evidence = dict.fromkeys(entry.evidence, args.note or f"evidence for {args.gate_type}")
+        gate = forge.gates.request(
+            gate_type,
+            title=args.title,
+            subject=args.subject,
+            requested_by=args.by,
+            requested_by_kind="human",
+            evidence=evidence,
+        )
+        forge.audit.record(
+            actor=args.by,
+            actor_kind="human",
+            action="gate.requested",
+            subject=gate.id,
+            details={"gate_type": str(gate_type)},
+        )
+        print(f"gate {gate.id} opened; approvers: {', '.join(gate.required_approvers)}")
+    return 0
+
+
+def cmd_gates_approve(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        try:
+            gate = forge.gates.decide(
+                args.gate_id,
+                args.by,
+                approved=True,
+                approver_kind="human",
+                note=args.note,
+            )
+        except GateError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        forge.audit.record(
+            actor=args.by,
+            actor_kind="human",
+            action="gate.approved",
+            subject=gate.id,
+            details={"gate_type": str(gate.gate_type), "note": args.note},
+        )
+        print(f"gate {gate.id} is now {gate.status}")
+    return 0
+
+
+def cmd_gates_reject(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        try:
+            gate = forge.gates.decide(
+                args.gate_id,
+                args.by,
+                approved=False,
+                approver_kind="human",
+                note=args.note,
+            )
+        except GateError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        forge.audit.record(
+            actor=args.by,
+            actor_kind="human",
+            action="gate.rejected",
+            subject=gate.id,
+            details={"gate_type": str(gate.gate_type), "note": args.note},
+        )
+        print(f"gate {gate.id} is now {gate.status}")
+    return 0
+
+
+def cmd_audit_list(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        events = forge.audit.recent(limit=args.limit, action=args.action, actor=args.actor)
+        if args.json:
+            _print([event.__dict__ for event in events])
+            return 0
+        for event in events:
+            print(
+                f"{event.seq:>5} {event.created_at} {event.actor:<18} {event.action:<28} "
+                f"{event.subject:<20} {event.outcome}"
+            )
+        print(f"\n{len(events)} events")
+    return 0
+
+
+def cmd_audit_verify(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        result = forge.audit.verify()
+        _print(result.to_dict())
+        return 0 if result.ok else 1
+
+
+def cmd_budget_status(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        statuses = forge.budget.all_status()
+        _print([status.to_dict() for status in statuses])
+    return 0
+
+
+def cmd_budget_set(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        scope = BudgetScope(args.scope)
+        forge.budget.set_limit(scope, args.key, args.limit)
+        forge.audit.record(
+            actor=args.actor,
+            actor_kind="human",
+            action="budget.limit_set",
+            subject=f"{scope}:{args.key}",
+            details={"limit_usd": args.limit},
+        )
+        print(f"{scope}:{args.key} limit set to ${args.limit:.2f}")
+    return 0
+
+
+def cmd_kill(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        if args.release:
+            forge.budget.release_kill_switch()
+            action = "budget.kill_switch_released"
+        else:
+            forge.budget.engage_kill_switch()
+            action = "budget.kill_switch_engaged"
+        forge.audit.record(
+            actor=args.actor,
+            actor_kind="human",
+            action=action,
+            subject="global",
+        )
+        print("kill switch released" if args.release else "kill switch engaged")
+    return 0
+
+
+def cmd_policy_list(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        _print(forge.policy.status_summary())
+    return 0
+
+
+def cmd_policy_decide(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        _decision, gate_id = forge.policy.propose(
+            args.id, args.value, requested_by=args.by, rationale=args.rationale
+        )
+        forge.audit.record(
+            actor=args.by,
+            actor_kind="human",
+            action="policy.proposed",
+            subject=args.id,
+            details={"value": args.value, "gate_id": gate_id},
+        )
+        print(f"policy {args.id} proposed as '{args.value}'; gate {gate_id} opened")
+        print("approve it with: llmforge gates approve --gate-id <id> --by <approver>")
+    return 0
+
+
+def cmd_policy_confirm(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        decision = forge.policy.confirm(args.id, decided_by=args.by, gate_id=args.gate_id)
+        forge.audit.record(
+            actor=args.by,
+            actor_kind="human",
+            action="policy.decided",
+            subject=args.id,
+            details={"value": decision.current_value},
+        )
+        print(f"policy {args.id} decided: {decision.current_value}")
+    return 0
+
+
+def cmd_report(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        report = forge.orchestrator.status_report()
+        _print(
+            {
+                "generated_at": report.generated_at,
+                "tasks_by_state": report.tasks_by_state,
+                "blocked_tasks": report.blocked_tasks,
+                "spend_by_agent": report.spend_by_agent,
+                "spend_total_usd": report.spend_total_usd,
+                "budget_usd": report.budget_usd,
+                "open_gates": report.open_gates,
+                "risks": report.risks,
+            }
+        )
+    return 0
+
+
+def cmd_demo(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind="scripted") as forge:
+        forge.runtime.llm = ScriptedAdapter(nominal_cost_usd=args.cost_per_run)
+        forge.budget.set_limit(BudgetScope.GLOBAL, "global", args.budget)
+        forge.budget.set_limit(BudgetScope.PROJECT, "default", args.budget)
+        forge.audit.record(
+            actor=DEMO_APPROVER,
+            actor_kind="human",
+            action="platform.init",
+            subject="llm-forge",
+            details={"mode": "demo", "budget_usd": args.budget},
+        )
+        drafts = TemplatePlanner().plan(
+            "Deliver the first from-scratch embedding model in 8 weeks", {}
+        )
+        tasks = forge.orchestrator.submit_plan(drafts)
+        forge.orchestrator.approve_plan(DEMO_APPROVER)
+        print(f"plan submitted: {len(tasks)} tasks, approved by {DEMO_APPROVER}\n")
+
+        approvals = {str(entry.gate_type): entry.approvers for entry in GATE_CATALOG.values()}
+        summary: dict[str, Any] = {}
+        for _ in range(10):
+            summary = forge.orchestrator.run(max_iterations=50)
+            pending = forge.gates.pending()
+            if not pending:
+                break
+            for gate in pending:
+                pair = approvals.get(str(gate.gate_type), (DEMO_APPROVER, DEMO_COMPLIANCE))
+                for approver in pair:
+                    try:
+                        forge.gates.decide(
+                            gate.id,
+                            approver,
+                            approved=True,
+                            approver_kind="human",
+                            note="demo simulation",
+                        )
+                    except GateError:
+                        continue
+                forge.audit.record(
+                    actor=pair[0],
+                    actor_kind="human",
+                    action="gate.approved",
+                    subject=gate.id,
+                    details={"gate_type": str(gate.gate_type), "mode": "demo"},
+                )
+        summary = forge.orchestrator.run(max_iterations=50)
+        summary.pop("outcomes", None)
+        print("run summary:")
+        _print(summary)
+        print("\ntask board:")
+        for task in forge.store.list_tasks():
+            print(f"  {task.id:<24} {task.state!s:<12} {task.owner_role:<18} {task.title}")
+        report = forge.orchestrator.status_report()
+        print("\nstatus report:")
+        _print(
+            {
+                "tasks_by_state": report.tasks_by_state,
+                "spend_total_usd": report.spend_total_usd,
+                "budget_usd": report.budget_usd,
+                "open_gates": len(report.open_gates),
+                "risks": report.risks,
+            }
+        )
+        verification = forge.audit.verify()
+        print(f"\naudit chain verified: {verification.ok} ({verification.checked} events)")
+        if not verification.ok:
+            print(f"broken at seq {verification.broken_at_seq}: {verification.reason}")
+            return 1
+        return 0
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    from llmforge.api import create_app
+
+    app = create_app(root=args.root, llm_kind=args.llm)
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    return 0
+
+
+def cmd_alerts_list(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.alerts import AlertEngine
+
+        engine = AlertEngine(forge.store, forge.audit, forge.budget)
+        if args.check:
+            engine.check_all()
+        alerts = engine.list_alerts(unacknowledged_only=not args.all)
+        for alert in alerts:
+            print(
+                f"{alert.created_at} {alert.severity:<8} {alert.kind:<26} "
+                f"{alert.subject:<24} {alert.message}"
+            )
+        print(f"\n{len(alerts)} alerts")
+    return 0
+
+
+def cmd_alerts_ack(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.alerts import AlertEngine
+
+        engine = AlertEngine(forge.store, forge.audit, forge.budget)
+        alert = engine.acknowledge(args.id, args.by)
+        print(f"alert {alert.id} acknowledged")
+    return 0
+
+
+def cmd_data_release(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.data.pipeline import DataPipeline
+
+        pipeline = DataPipeline(forge.store, forge.audit, forge.settings.root)
+        gate_approved = args.gate_id is not None and forge.gates.is_approved(args.gate_id)
+        try:
+            dataset = pipeline.release(
+                args.dataset_id, args.by, gate_approved, sample_size=args.sample_size
+            )
+        except PermissionError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        _print(
+            {
+                "dataset_id": dataset.id,
+                "released": True,
+                "pii_audit": dataset.stats.get("pii_audit"),
+            }
+        )
+    return 0
+
+
+def cmd_data_pii_audit(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.data.pipeline import DataPipeline
+
+        pipeline = DataPipeline(forge.store, forge.audit, forge.settings.root)
+        result = pipeline.run_pii_audit(args.dataset_id, sample_size=args.sample_size)
+        _print(result)
+        return 0 if result["passed"] else 1
+
+
+def cmd_data_withdraw(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.data.governance import RetentionManager
+
+        manager = RetentionManager(forge.store, forge.audit)
+        result = manager.withdraw_source(args.source_id, args.reason, args.by)
+        if args.purge:
+            removed = manager.purge_source_records(args.source_id, args.by, args.reason)
+            result["records_purged"] = removed
+        _print(result)
+    return 0
+
+
+def cmd_classifier_train(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.data.tokenizer import Tokenizer
+        from llmforge.training.classifier import ClassifierConfig
+        from llmforge.workflows import train_classifier_model
+
+        tokenizer = Tokenizer.load(Path(args.tokenizer))
+        config = ClassifierConfig(
+            name=args.name, epochs=args.epochs, cost_cap_usd=args.cost_cap, seed=args.seed
+        )
+        outcome = train_classifier_model(
+            forge, args.dataset_id, Path(args.encoder), tokenizer, config, actor=args.actor
+        )
+        _print(outcome.to_dict())
+        return 0 if outcome.status == "completed" else 1
+
+
+def cmd_classifier_eval(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.data.tokenizer import Tokenizer
+        from llmforge.workflows import evaluate_classifier_model
+
+        tokenizer = Tokenizer.load(Path(args.tokenizer))
+        result = evaluate_classifier_model(
+            forge, Path(args.model_path), tokenizer, args.dataset_id, split=args.split
+        )
+        _print(result)
+        return 0 if result["passed"] else 1
+
+
+def cmd_job_submit(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.compute.scheduler import JobScheduler, JobSpec
+        from llmforge.sandbox import Sandbox
+
+        scheduler = JobScheduler(forge.audit, forge.budget, Sandbox(forge.settings.sandbox_dir))
+        job = scheduler.submit(
+            JobSpec(
+                name=args.name,
+                command=shlex.split(args.command),
+                agent=args.agent,
+                tokens=args.tokens,
+                parameters=args.parameters,
+                priority=args.priority,
+                cost_cap_usd=args.cost_cap,
+            ),
+            actor=args.agent,
+        )
+        _print(job.to_dict())
+        return 0 if str(job.state) != "rejected" else 1
+
+
+def cmd_job_run(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.compute.scheduler import JobScheduler, JobSpec
+        from llmforge.sandbox import Sandbox
+
+        scheduler = JobScheduler(forge.audit, forge.budget, Sandbox(forge.settings.sandbox_dir))
+        job = scheduler.submit(
+            JobSpec(
+                name=args.name,
+                command=shlex.split(args.command),
+                agent=args.agent,
+                tokens=args.tokens,
+                parameters=args.parameters,
+                cost_cap_usd=args.cost_cap,
+            ),
+            actor=args.agent,
+        )
+        if str(job.state) == "rejected":
+            _print(job.to_dict())
+            return 1
+        job = scheduler.run(job, actor=args.agent)
+        _print(job.to_dict())
+        return 0 if job.exit_code == 0 else 1
+
+
+def cmd_inventory(args: argparse.Namespace) -> int:
+    from llmforge.data.inventory import inventory, render_inventory
+
+    report = inventory(Path(args.root)).to_dict()
+    if args.out:
+        Path(args.out).write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    if args.json:
+        _print(report)
+    else:
+        print(render_inventory(report))
+    return 0
+
+
+def cmd_data_build_tree(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.data.tree import TreeFile, TreeIndex, build_tree_index, index_hashes
+        from llmforge.workflows import build_tree_corpus
+
+        roots = [Path(path) for path in args.tree]
+        files: list[TreeFile] = []
+        stats: list[dict[str, Any]] = []
+        for root in roots:
+            index = build_tree_index(root, source_id=root.name)
+            files.extend(index.files)
+            stats.append(index.stats())
+        merged = TreeIndex(
+            root=roots[0],
+            source_id=args.source_id or "+".join(root.name for root in roots),
+            files=files,
+            skipped=sum(item["skipped"] for item in stats),
+            truncated=sum(item["truncated"] for item in stats),
+        )
+        result = build_tree_corpus(
+            forge,
+            merged,
+            name=args.name,
+            version=args.version,
+            acl=args.acl.split(",") if args.acl else ["engineering", "support"],
+        )
+        if args.hashes_out:
+            Path(args.hashes_out).write_text(
+                json.dumps(index_hashes(merged), indent=2, sort_keys=True), encoding="utf-8"
+            )
+        _print(
+            {
+                "dataset_id": result.dataset_id,
+                "records": result.records,
+                "content_hash": result.content_hash,
+                "trees": stats,
+            }
+        )
+    return 0
+
+
+def cmd_ask(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.agentic import AgenticSearcher
+        from llmforge.serving.service import Principal
+
+        principal = Principal(
+            user_id=args.user,
+            groups=frozenset(args.groups.split(",")) if args.groups else frozenset({"engineering"}),
+        )
+        searcher = AgenticSearcher(
+            forge.store,
+            forge.audit,
+            forge.budget,
+            embedder=None,
+            llm=forge.runtime.llm if args.planner == "model" else None,
+        )
+        result = searcher.search(
+            args.question,
+            args.dataset_id,
+            principal,
+            max_steps=args.max_steps,
+            top_k=args.top_k,
+            cost_cap_usd=args.cost_cap,
+            actor=args.actor,
+        )
+        if args.json:
+            _print(result.to_dict())
+        else:
+            print(result.answer)
+            print(f"\nsteps used: {result.steps_used}")
+            for step in result.steps:
+                print(f"  {step.index}. [{step.strategy}] {step.query} -> {step.decision}")
+        return 0 if result.sufficient_evidence else 1
+
+
+def cmd_people_list(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.people import PeopleRegistry
+
+        registry = PeopleRegistry(forge.store)
+        people = registry.list_people()
+        if args.json:
+            _print(people)
+            return 0
+        for person in people:
+            marker = " (placeholder)" if person["placeholder"] else ""
+            print(
+                f"{person['name']:<26} {person['title']:<32} {', '.join(person['roles'])}{marker}"
+            )
+        print(f"\n{len(people)} people")
+    return 0
+
+
+def cmd_people_approvers(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.people import PeopleRegistry
+
+        registry = PeopleRegistry(forge.store)
+        _print(registry.approvers_for(args.gate_type))
+    return 0
+
+
+def cmd_serve_model(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    from llmforge.serving.app import create_serving_app
+
+    app = create_serving_app(root=args.root, rate_limit_per_minute=args.rate_limit)
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    return 0
+
+
+def cmd_sample(args: argparse.Namespace) -> int:
+    from llmforge.data.samples import generate_corpus, generate_eval_pairs
+
+    base = args.out
+    corpus = generate_corpus(base / "corpus.jsonl", records=args.records)
+    pairs = generate_eval_pairs(base / "eval_pairs.json")
+    _print({"corpus": corpus, "eval_pairs": pairs})
+    return 0
+
+
+def cmd_data_build(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.workflows import build_corpus
+
+        result = build_corpus(
+            forge,
+            [Path(path) for path in args.source],
+            name=args.name,
+            version=args.version,
+            approved=not args.unapproved,
+        )
+        _print(
+            {
+                "dataset_id": result.dataset_id,
+                "content_hash": result.content_hash,
+                "records": result.records,
+                "tokens": result.tokens,
+                "stats": result.stats,
+            }
+        )
+    return 0
+
+
+def cmd_data_split(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.workflows import split_corpus
+
+        result = split_corpus(forge, args.dataset_id, seed=args.seed)
+        _print(result.stats)
+    return 0
+
+
+def cmd_data_lineage(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        dataset = forge.store.get_dataset(args.dataset_id)
+        if dataset is None:
+            print(f"unknown dataset: {args.dataset_id}", file=sys.stderr)
+            return 1
+        _print(dataset.lineage)
+    return 0
+
+
+def cmd_tokenizer_train(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.workflows import train_tokenizer_for
+
+        jargon = args.jargon.split(",") if args.jargon else None
+        _, coverage = train_tokenizer_for(
+            forge, args.dataset_id, vocab_size=args.vocab_size, jargon=jargon
+        )
+        _print(coverage)
+    return 0
+
+
+def cmd_train_run(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.data.tokenizer import Tokenizer
+        from llmforge.training.trainer import TrainConfig
+        from llmforge.workflows import train_embedding_model
+
+        tokenizer_path = Path(args.tokenizer)
+        tokenizer = Tokenizer.load(tokenizer_path)
+        config = TrainConfig(
+            name=args.name,
+            objective=args.objective,
+            steps=args.steps,
+            batch_size=args.batch_size,
+            seq_len=args.seq_len,
+            cost_cap_usd=args.cost_cap,
+            seed=args.seed,
+        )
+        outcome = train_embedding_model(forge, args.dataset_id, tokenizer, config, actor=args.actor)
+        _print(outcome.to_dict())
+        return 0 if outcome.status == "completed" else 1
+
+
+def cmd_eval_create(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.evals.harness import EvalHarness
+
+        items = json.loads(Path(args.file).read_text(encoding="utf-8"))
+        harness = EvalHarness(forge.store, forge.audit)
+        eval_set = harness.create_eval_set(args.name, items, version=args.version)
+        _print({"eval_set_id": eval_set.id, "items": len(items), "frozen": eval_set.frozen})
+    return 0
+
+
+def cmd_eval_freeze(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.evals.harness import EvalHarness
+
+        harness = EvalHarness(forge.store, forge.audit)
+        gate_approved = args.gate_id is not None and forge.gates.is_approved(args.gate_id)
+        try:
+            eval_set = harness.freeze_eval_set(args.id, args.by, gate_approved)
+        except PermissionError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        _print(
+            {
+                "eval_set_id": eval_set.id,
+                "frozen": eval_set.frozen,
+                "approved_by": eval_set.approved_by,
+            }
+        )
+    return 0
+
+
+def cmd_eval_derive(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.evals.harness import EvalHarness
+        from llmforge.workflows import derive_eval_items
+
+        items = derive_eval_items(forge, args.dataset_id, count=args.count, mode=args.mode)
+        harness = EvalHarness(forge.store, forge.audit)
+        eval_set = harness.create_eval_set(args.name, items, version=args.version)
+        _print({"eval_set_id": eval_set.id, "items": len(items), "frozen": eval_set.frozen})
+    return 0
+
+
+def cmd_eval_run(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.data.tokenizer import Tokenizer
+        from llmforge.workflows import evaluate_embedding_model
+
+        tokenizer = Tokenizer.load(Path(args.tokenizer))
+        result = evaluate_embedding_model(
+            forge,
+            Path(args.model_path),
+            args.eval_set,
+            tokenizer,
+            args.dataset_id,
+            margin=args.margin,
+            model_id=args.model_id,
+        )
+        _print(result)
+        return 0 if result["passed"] else 1
+
+
+def cmd_model_register(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.training.trainer import TrainingOutcome
+        from llmforge.workflows import register_model
+
+        reproducibility: dict[str, Any] = {}
+        run_id = args.run_id
+        if run_id == "manual":
+            candidate = Path(args.model_path).stem
+            if candidate.startswith("run_"):
+                run_id = candidate
+        run_dir = forge.settings.artifacts_dir / "runs" / run_id
+        reproducibility_file = run_dir / "reproducibility.json"
+        if reproducibility_file.exists():
+            reproducibility = json.loads(reproducibility_file.read_text(encoding="utf-8"))
+        elif args.config:
+            reproducibility = {"config": json.loads(args.config)}
+        outcome = TrainingOutcome(
+            run_id=run_id,
+            status="completed",
+            steps=args.steps,
+            tokens_seen=0,
+            final_loss=0.0,
+            cost_usd=0.0,
+            checkpoint_path="",
+            metrics_path="",
+            model_path=args.model_path,
+            reproducibility=reproducibility,
+        )
+        model = register_model(forge, args.name, Path(args.model_path), outcome, args.dataset_id)
+        _print({"model_id": model.id, "name": model.name, "version": model.version})
+    return 0
+
+
+def cmd_model_promote(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.workflows import promote_model
+
+        gate_approved = args.gate_id is not None and forge.gates.is_approved(args.gate_id)
+        try:
+            model = promote_model(forge, args.id, gate_approved, approver=args.by)
+        except (PermissionError, KeyError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        _print({"model_id": model.id, "status": model.status})
+    return 0
+
+
+def cmd_model_card(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from llmforge.workflows import model_card_markdown
+
+        model = forge.store.get_model(args.id)
+        if model is None:
+            print(f"unknown model: {args.id}", file=sys.stderr)
+            return 1
+        print(model_card_markdown(model))
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="llmforge", description="LLM-Forge control plane")
+    parser.add_argument("--root", type=Path, default=None, help="project root")
+    parser.add_argument("--llm", default="auto", choices=["auto", "scripted", "anthropic"])
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    init = sub.add_parser("init", help="initialize the platform state")
+    init.add_argument("--budget", type=float, default=500.0)
+    init.add_argument("--actor", default="program_lead")
+    init.set_defaults(func=cmd_init)
+
+    plan = sub.add_parser("plan", help="decompose a goal into a task graph")
+    plan.add_argument("--goal", required=True)
+    plan.add_argument("--milestone", default=None)
+    plan.add_argument("--planner", default="template", choices=["template", "llm"])
+    plan.add_argument("--approve-by", default=None)
+    plan.set_defaults(func=cmd_plan)
+
+    run = sub.add_parser("run", help="run the orchestrator loop")
+    run.add_argument("--max-iterations", type=int, default=100)
+    run.add_argument("--approve-by", default=None)
+    run.set_defaults(func=cmd_run)
+
+    board = sub.add_parser("board", help="show the task board")
+    board.add_argument("--state", default=None)
+    board.add_argument("--json", action="store_true")
+    board.set_defaults(func=cmd_board)
+
+    gates = sub.add_parser("gates", help="approval gates")
+    gates_sub = gates.add_subparsers(dest="gates_command", required=True)
+    gates_list = gates_sub.add_parser("list")
+    gates_list.add_argument("--status", default=None)
+    gates_list.set_defaults(func=cmd_gates_list)
+    gates_approve = gates_sub.add_parser("approve")
+    gates_approve.add_argument("--gate-id", required=True)
+    gates_approve.add_argument("--by", required=True)
+    gates_approve.add_argument("--note", default="")
+    gates_approve.set_defaults(func=cmd_gates_approve)
+    gates_reject = gates_sub.add_parser("reject")
+    gates_reject.add_argument("--gate-id", required=True)
+    gates_reject.add_argument("--by", required=True)
+    gates_reject.add_argument("--note", default="")
+    gates_reject.set_defaults(func=cmd_gates_reject)
+    gates_request = gates_sub.add_parser("request")
+    gates_request.add_argument(
+        "--gate-type", required=True, choices=[str(item) for item in GateType]
+    )
+    gates_request.add_argument("--title", required=True)
+    gates_request.add_argument("--subject", required=True)
+    gates_request.add_argument("--by", default="program_lead")
+    gates_request.add_argument("--note", default="")
+    gates_request.set_defaults(func=cmd_gates_request)
+
+    audit = sub.add_parser("audit", help="audit log")
+    audit_sub = audit.add_subparsers(dest="audit_command", required=True)
+    audit_list = audit_sub.add_parser("list")
+    audit_list.add_argument("--limit", type=int, default=50)
+    audit_list.add_argument("--action", default=None)
+    audit_list.add_argument("--actor", default=None)
+    audit_list.add_argument("--json", action="store_true")
+    audit_list.set_defaults(func=cmd_audit_list)
+    audit_verify = audit_sub.add_parser("verify")
+    audit_verify.set_defaults(func=cmd_audit_verify)
+
+    budget = sub.add_parser("budget", help="budgets and kill switches")
+    budget_sub = budget.add_subparsers(dest="budget_command", required=True)
+    budget_status = budget_sub.add_parser("status")
+    budget_status.set_defaults(func=cmd_budget_status)
+    budget_set = budget_sub.add_parser("set")
+    budget_set.add_argument("--scope", required=True, choices=[str(item) for item in BudgetScope])
+    budget_set.add_argument("--key", required=True)
+    budget_set.add_argument("--limit", type=float, required=True)
+    budget_set.add_argument("--actor", default="program_lead")
+    budget_set.set_defaults(func=cmd_budget_set)
+    kill = budget_sub.add_parser("kill")
+    kill.add_argument("--actor", default="program_lead")
+    kill.add_argument("--release", action="store_true")
+    kill.set_defaults(func=cmd_kill)
+
+    policy = sub.add_parser("policy", help="policy decisions P1-P5")
+    policy_sub = policy.add_subparsers(dest="policy_command", required=True)
+    policy_list = policy_sub.add_parser("list")
+    policy_list.set_defaults(func=cmd_policy_list)
+    policy_decide = policy_sub.add_parser("decide")
+    policy_decide.add_argument("--id", required=True)
+    policy_decide.add_argument("--value", required=True)
+    policy_decide.add_argument("--by", required=True)
+    policy_decide.add_argument("--rationale", default="")
+    policy_decide.set_defaults(func=cmd_policy_decide)
+    policy_confirm = policy_sub.add_parser("confirm")
+    policy_confirm.add_argument("--id", required=True)
+    policy_confirm.add_argument("--by", required=True)
+    policy_confirm.add_argument("--gate-id", default=None)
+    policy_confirm.set_defaults(func=cmd_policy_confirm)
+
+    report = sub.add_parser("report", help="status and risk report")
+    report.set_defaults(func=cmd_report)
+
+    demo = sub.add_parser("demo", help="run the Phase 0 no-op loop end to end")
+    demo.add_argument("--budget", type=float, default=500.0)
+    demo.add_argument("--cost-per-run", type=float, default=0.25)
+    demo.set_defaults(func=cmd_demo)
+
+    serve = sub.add_parser("serve", help="run the control plane API")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8080)
+    serve.set_defaults(func=cmd_serve)
+
+    serve_model = sub.add_parser("serve-model", help="run the inference and retrieval API")
+    serve_model.add_argument("--host", default="127.0.0.1")
+    serve_model.add_argument("--port", type=int, default=8081)
+    serve_model.add_argument("--rate-limit", type=int, default=60)
+    serve_model.set_defaults(func=cmd_serve_model)
+
+    classifier = sub.add_parser("classifier", help="task classifier training and evaluation")
+    classifier_sub = classifier.add_subparsers(dest="classifier_command", required=True)
+    classifier_train = classifier_sub.add_parser("train")
+    classifier_train.add_argument("--dataset-id", required=True)
+    classifier_train.add_argument("--encoder", required=True)
+    classifier_train.add_argument("--tokenizer", required=True)
+    classifier_train.add_argument("--name", default="router-v1")
+    classifier_train.add_argument("--epochs", type=int, default=40)
+    classifier_train.add_argument("--cost-cap", type=float, default=2.0)
+    classifier_train.add_argument("--seed", type=int, default=23)
+    classifier_train.add_argument("--actor", default="ml_engineer")
+    classifier_train.set_defaults(func=cmd_classifier_train)
+    classifier_eval = classifier_sub.add_parser("eval")
+    classifier_eval.add_argument("--model-path", required=True)
+    classifier_eval.add_argument("--tokenizer", required=True)
+    classifier_eval.add_argument("--dataset-id", required=True)
+    classifier_eval.add_argument("--split", default="test")
+    classifier_eval.set_defaults(func=cmd_classifier_eval)
+
+    job = sub.add_parser("job", help="compute plane job submission")
+    job_sub = job.add_subparsers(dest="job_command", required=True)
+    for name, handler in (("submit", cmd_job_submit), ("run", cmd_job_run)):
+        job_parser = job_sub.add_parser(name)
+        job_parser.add_argument("--name", required=True)
+        job_parser.add_argument("--command", required=True)
+        job_parser.add_argument("--agent", default="infra_engineer")
+        job_parser.add_argument("--tokens", type=int, default=1_000_000)
+        job_parser.add_argument("--parameters", type=int, default=10_000_000)
+        job_parser.add_argument("--priority", type=int, default=5)
+        job_parser.add_argument("--cost-cap", type=float, default=5.0)
+        job_parser.set_defaults(func=handler)
+
+    inventory_cmd = sub.add_parser("inventory", help="catalogue candidate data sources")
+    inventory_cmd.add_argument("--root", default=".")
+    inventory_cmd.add_argument("--out", default=None)
+    inventory_cmd.add_argument("--json", action="store_true")
+    inventory_cmd.set_defaults(func=cmd_inventory)
+
+    ask = sub.add_parser("ask", help="long-horizon agentic search over a corpus")
+    ask.add_argument("question")
+    ask.add_argument("--dataset-id", required=True)
+    ask.add_argument("--max-steps", type=int, default=6)
+    ask.add_argument("--top-k", type=int, default=8)
+    ask.add_argument("--cost-cap", type=float, default=1.0)
+    ask.add_argument("--user", default="developer")
+    ask.add_argument("--groups", default="engineering")
+    ask.add_argument("--actor", default="ai_engineer")
+    ask.add_argument("--planner", default="heuristic", choices=["heuristic", "model"])
+    ask.add_argument("--json", action="store_true")
+    ask.set_defaults(func=cmd_ask)
+
+    people = sub.add_parser("people", help="human roster and approvers")
+    people_sub = people.add_subparsers(dest="people_command", required=True)
+    people_list = people_sub.add_parser("list")
+    people_list.add_argument("--json", action="store_true")
+    people_list.set_defaults(func=cmd_people_list)
+    people_approvers = people_sub.add_parser("approvers")
+    people_approvers.add_argument("--gate-type", required=True)
+    people_approvers.set_defaults(func=cmd_people_approvers)
+
+    alerts = sub.add_parser("alerts", help="spend, task and data-access alerts")
+    alerts_sub = alerts.add_subparsers(dest="alerts_command", required=True)
+    alerts_list = alerts_sub.add_parser("list")
+    alerts_list.add_argument("--all", action="store_true")
+    alerts_list.add_argument("--check", action="store_true")
+    alerts_list.set_defaults(func=cmd_alerts_list)
+    alerts_ack = alerts_sub.add_parser("ack")
+    alerts_ack.add_argument("--id", required=True)
+    alerts_ack.add_argument("--by", default="program_lead")
+    alerts_ack.set_defaults(func=cmd_alerts_ack)
+
+    sample = sub.add_parser("sample", help="generate a synthetic corpus for local runs")
+    sample.add_argument("--out", type=Path, default=Path("var/samples"))
+    sample.add_argument("--records", type=int, default=120)
+    sample.set_defaults(func=cmd_sample)
+
+    data = sub.add_parser("data", help="data plane operations")
+    data_sub = data.add_subparsers(dest="data_command", required=True)
+    data_build = data_sub.add_parser("build")
+    data_build.add_argument("--source", action="append", required=True)
+    data_build.add_argument("--name", default="corpus")
+    data_build.add_argument("--version", type=int, default=1)
+    data_build.add_argument("--unapproved", action="store_true")
+    data_build.set_defaults(func=cmd_data_build)
+    data_split = data_sub.add_parser("split")
+    data_split.add_argument("--dataset-id", required=True)
+    data_split.add_argument("--seed", default="forge-v1")
+    data_split.set_defaults(func=cmd_data_split)
+    data_lineage = data_sub.add_parser("lineage")
+    data_lineage.add_argument("--dataset-id", required=True)
+    data_lineage.set_defaults(func=cmd_data_lineage)
+    data_release = data_sub.add_parser("release")
+    data_release.add_argument("--dataset-id", required=True)
+    data_release.add_argument("--by", default="ml_lead")
+    data_release.add_argument("--gate-id", default=None)
+    data_release.add_argument("--sample-size", type=int, default=50)
+    data_release.set_defaults(func=cmd_data_release)
+    data_audit = data_sub.add_parser("pii-audit")
+    data_audit.add_argument("--dataset-id", required=True)
+    data_audit.add_argument("--sample-size", type=int, default=50)
+    data_audit.set_defaults(func=cmd_data_pii_audit)
+    data_tree = data_sub.add_parser("build-tree")
+    data_tree.add_argument("--tree", action="append", required=True)
+    data_tree.add_argument("--source-id", default=None)
+    data_tree.add_argument("--name", default="code-corpus")
+    data_tree.add_argument("--version", type=int, default=1)
+    data_tree.add_argument("--acl", default="engineering,support")
+    data_tree.add_argument("--hashes-out", default=None)
+    data_tree.set_defaults(func=cmd_data_build_tree)
+    data_withdraw = data_sub.add_parser("withdraw")
+    data_withdraw.add_argument("--source-id", required=True)
+    data_withdraw.add_argument("--reason", required=True)
+    data_withdraw.add_argument("--by", default="data_owner")
+    data_withdraw.add_argument("--purge", action="store_true")
+    data_withdraw.set_defaults(func=cmd_data_withdraw)
+
+    tokenizer = sub.add_parser("tokenizer", help="tokenizer training")
+    tokenizer_sub = tokenizer.add_subparsers(dest="tokenizer_command", required=True)
+    tokenizer_train = tokenizer_sub.add_parser("train")
+    tokenizer_train.add_argument("--dataset-id", required=True)
+    tokenizer_train.add_argument("--vocab-size", type=int, default=4000)
+    tokenizer_train.add_argument("--jargon", default=None)
+    tokenizer_train.set_defaults(func=cmd_tokenizer_train)
+
+    train = sub.add_parser("train", help="train a from-scratch model")
+    train_sub = train.add_subparsers(dest="train_command", required=True)
+    train_run = train_sub.add_parser("run")
+    train_run.add_argument("--dataset-id", required=True)
+    train_run.add_argument("--tokenizer", required=True)
+    train_run.add_argument("--name", default="embedding-v1")
+    train_run.add_argument(
+        "--objective", default="contrastive", choices=["contrastive", "mlm", "causal"]
+    )
+    train_run.add_argument("--steps", type=int, default=60)
+    train_run.add_argument("--batch-size", type=int, default=8)
+    train_run.add_argument("--seq-len", type=int, default=128)
+    train_run.add_argument("--cost-cap", type=float, default=5.0)
+    train_run.add_argument("--seed", type=int, default=17)
+    train_run.add_argument("--actor", default="ml_engineer")
+    train_run.set_defaults(func=cmd_train_run)
+
+    evaluate = sub.add_parser("eval", help="evaluation harness")
+    evaluate_sub = evaluate.add_subparsers(dest="eval_command", required=True)
+    eval_create = evaluate_sub.add_parser("create")
+    eval_create.add_argument("--name", required=True)
+    eval_create.add_argument("--file", required=True)
+    eval_create.add_argument("--version", type=int, default=1)
+    eval_create.set_defaults(func=cmd_eval_create)
+    eval_freeze = evaluate_sub.add_parser("freeze")
+    eval_freeze.add_argument("--id", required=True)
+    eval_freeze.add_argument("--by", required=True)
+    eval_freeze.add_argument("--gate-id", default=None)
+    eval_freeze.set_defaults(func=cmd_eval_freeze)
+    eval_derive = evaluate_sub.add_parser("derive")
+    eval_derive.add_argument("--dataset-id", required=True)
+    eval_derive.add_argument("--name", default="retrieval-v1")
+    eval_derive.add_argument("--count", type=int, default=24)
+    eval_derive.add_argument("--mode", default="paraphrase", choices=["paraphrase", "title"])
+    eval_derive.add_argument("--version", type=int, default=1)
+    eval_derive.set_defaults(func=cmd_eval_derive)
+    eval_run = evaluate_sub.add_parser("run")
+    eval_run.add_argument("--model-path", required=True)
+    eval_run.add_argument("--eval-set", required=True)
+    eval_run.add_argument("--tokenizer", required=True)
+    eval_run.add_argument("--dataset-id", required=True)
+    eval_run.add_argument("--margin", type=float, default=0.0)
+    eval_run.add_argument("--model-id", default=None)
+    eval_run.set_defaults(func=cmd_eval_run)
+
+    model = sub.add_parser("model", help="model registry")
+    model_sub = model.add_subparsers(dest="model_command", required=True)
+    model_register = model_sub.add_parser("register")
+    model_register.add_argument("--name", required=True)
+    model_register.add_argument("--model-path", required=True)
+    model_register.add_argument("--dataset-id", required=True)
+    model_register.add_argument("--run-id", default="manual")
+    model_register.add_argument("--steps", type=int, default=0)
+    model_register.add_argument("--config", default=None)
+    model_register.set_defaults(func=cmd_model_register)
+    model_promote = model_sub.add_parser("promote")
+    model_promote.add_argument("--id", required=True)
+    model_promote.add_argument("--by", default="ml_lead")
+    model_promote.add_argument("--gate-id", default=None)
+    model_promote.set_defaults(func=cmd_model_promote)
+    model_card = model_sub.add_parser("card")
+    model_card.add_argument("--id", required=True)
+    model_card.set_defaults(func=cmd_model_card)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if not hasattr(args, "func"):
+        parser.print_help()
+        return 1
+    return int(args.func(args))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

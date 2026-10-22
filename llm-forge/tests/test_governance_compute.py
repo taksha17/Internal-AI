@@ -1,0 +1,330 @@
+"""Alerts, sub-agents, governance, compute plane and classifier paths."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from llmforge.alerts import AlertEngine
+from llmforge.compute.scheduler import JobScheduler, JobSpec, JobState
+from llmforge.data.governance import RetentionManager, pii_spot_check
+from llmforge.data.labels import BILLING_LABEL_SET, build_labeled_dataset
+from llmforge.domain import BudgetScope, TaskKind
+from llmforge.roles import all_roles, get_role
+from llmforge.sandbox import Sandbox
+from llmforge.subagents import subagents_for, total_subagents
+from llmforge.workflows import build_corpus
+
+
+def test_every_role_declares_subagents() -> None:
+    for role in all_roles():
+        assert subagents_for(role.name), f"{role.name} has no sub-agents"
+    assert total_subagents() >= 40
+
+
+def test_subagents_run_and_write_artifacts(forge) -> None:
+    from llmforge.domain import Task
+
+    task = Task(
+        id="tsk_1",
+        title="Build the corpus",
+        description="",
+        kind=TaskKind.DATA,
+        owner_role="data_engineer",
+        acceptance_criteria=["corpus is clean", "lineage is complete"],
+    )
+    forge.store.add_task(task)
+    result = forge.runtime.execute(get_role("data_engineer"), task)
+    sub_agents = result.metadata["sub_agents"]
+    assert len(sub_agents) == len(subagents_for("data_engineer"))
+    assert all(item["status"] == "ok" for item in sub_agents)
+    artifact_names = {Path(path).name for path in result.artifacts}
+    assert any(name.startswith("subagent-tsk_1-") for name in artifact_names)
+    events = [event for event in forge.audit.recent(limit=200) if event.action == "agent.subagent"]
+    assert len(events) == len(sub_agents)
+
+
+def test_subagents_do_not_spawn_further_agents(forge) -> None:
+    from llmforge.domain import Task
+
+    task = Task(
+        id="tsk_2",
+        title="Plan",
+        description="",
+        kind=TaskKind.PLAN,
+        owner_role="orchestrator",
+        acceptance_criteria=["planned"],
+    )
+    forge.store.add_task(task)
+    forge.runtime.execute(get_role("orchestrator"), task, depth=1)
+    events = [event for event in forge.audit.recent(limit=200) if event.action == "agent.subagent"]
+    assert events == []
+
+
+def test_alerts_fire_on_spend_pressure(forge) -> None:
+    forge.budget.set_limit(BudgetScope.GLOBAL, "global", 10.0)
+    forge.budget.record_spend(9.0, agent="ml_engineer")
+    engine = AlertEngine(forge.store, forge.audit, forge.budget)
+    alerts = engine.check_spend()
+    assert any(alert.kind == "spend_approaching_cap" for alert in alerts)
+    forge.budget.record_spend(2.0, agent="ml_engineer")
+    alerts = engine.check_spend()
+    assert any(alert.kind == "budget_exhausted" for alert in alerts)
+
+
+def test_alerts_fire_on_repeated_task_failures(forge) -> None:
+    from llmforge.domain import Task
+
+    task = Task(
+        id="tsk_3",
+        title="Flaky",
+        description="",
+        kind=TaskKind.OPS,
+        owner_role="orchestrator",
+        attempts=3,
+    )
+    forge.store.add_task(task)
+    engine = AlertEngine(forge.store, forge.audit, forge.budget)
+    alerts = engine.check_tasks(attempt_threshold=3)
+    assert any(alert.kind == "repeated_task_failures" for alert in alerts)
+
+
+def test_alerts_detect_anomalous_data_access(forge) -> None:
+    for index in range(30):
+        forge.audit.record(
+            actor="bulk_reader",
+            action="serving.search",
+            subject="ds_1",
+            inputs={"query_hash": f"h{index}"},
+        )
+    for index in range(5):
+        forge.audit.record(
+            actor="normal_reader",
+            action="serving.search",
+            subject="ds_1",
+            inputs={"query_hash": f"n{index}"},
+        )
+    engine = AlertEngine(forge.store, forge.audit, forge.budget)
+    alerts = engine.check_data_access()
+    assert any(alert.kind == "anomalous_data_access" for alert in alerts)
+    assert any(alert.subject == "bulk_reader" for alert in alerts)
+
+
+def test_alerts_can_be_acknowledged(forge) -> None:
+    engine = AlertEngine(forge.store, forge.audit, forge.budget)
+    alert = engine.raise_alert("test", "low", "subject", "message")
+    assert alert.id in {item.id for item in engine.list_alerts()}
+    engine.acknowledge(alert.id, "program_lead")
+    assert alert.id not in {item.id for item in engine.list_alerts(unacknowledged_only=True)}
+
+
+def test_pii_audit_passes_on_scrubbed_records() -> None:
+    from llmforge.data.records import Record
+
+    records = [
+        Record(
+            id="1",
+            record_key="a",
+            text="the ledgerline feed failed for account acct-1234 in the emea region",
+            source_id="s",
+        )
+    ]
+    result = pii_spot_check(records, sample_size=10)
+    assert result.passed
+    assert result.critical_findings == 0
+
+
+def test_pii_audit_catches_surviving_pii() -> None:
+    from llmforge.data.records import Record
+
+    records = [
+        Record(
+            id="1",
+            record_key="a",
+            text="contact person@example.com about the invoice reconciliation drift",
+            source_id="s",
+        )
+    ]
+    result = pii_spot_check(records, sample_size=10)
+    assert not result.passed
+    assert result.critical_findings >= 1
+    assert result.findings.get("email", 0) >= 1
+
+
+def test_release_is_blocked_when_pii_survives(forge, corpus_path, monkeypatch) -> None:
+    from llmforge.data.pipeline import DataPipeline
+
+    pipeline = DataPipeline(forge.store, forge.audit, forge.settings.root)
+    result = build_corpus(forge, [corpus_path], name="corpus-test")
+    rows = forge.store.dataset_records(result.dataset_id)
+    dirty = rows[0]
+    forge.store.conn.execute(
+        "UPDATE dataset_records SET payload = ? WHERE dataset_id = ? AND record_key = ?",
+        (
+            "reach me at person@example.com about the invoice reconciliation",
+            result.dataset_id,
+            dirty["record_key"],
+        ),
+    )
+    with pytest.raises(PermissionError, match="PII audit"):
+        pipeline.release(result.dataset_id, "ml_lead", gate_approved=True, sample_size=1000)
+
+
+def test_release_requires_the_gate(forge, corpus_path) -> None:
+    from llmforge.data.pipeline import DataPipeline
+
+    pipeline = DataPipeline(forge.store, forge.audit, forge.settings.root)
+    result = build_corpus(forge, [corpus_path], name="corpus-test")
+    with pytest.raises(PermissionError, match="dataset_release gate"):
+        pipeline.release(result.dataset_id, "ml_lead", gate_approved=False)
+    dataset = pipeline.release(result.dataset_id, "ml_lead", gate_approved=True)
+    assert dataset.released
+
+
+def test_withdrawn_source_is_excluded_from_new_versions(forge, corpus_path) -> None:
+    manager = RetentionManager(forge.store, forge.audit)
+    manager.withdraw_source(corpus_path.stem, "data owner request", "data_owner")
+    result = build_corpus(forge, [corpus_path], name="corpus-after-withdrawal")
+    assert result.records == 0
+    events = [
+        event
+        for event in forge.audit.recent(limit=50)
+        if event.action == "data.source_withdrawn_skipped"
+    ]
+    assert events
+
+
+def test_purge_removes_records_from_datasets(forge, corpus_path) -> None:
+    result = build_corpus(forge, [corpus_path], name="corpus-test")
+    before = len(forge.store.dataset_records(result.dataset_id))
+    manager = RetentionManager(forge.store, forge.audit)
+    removed = manager.purge_source_records(corpus_path.stem, "data_owner", "right to erasure")
+    assert removed == before
+    assert forge.store.dataset_records(result.dataset_id) == []
+
+
+def test_job_scheduler_rejects_over_cap_jobs(forge) -> None:
+    scheduler = JobScheduler(forge.audit, forge.budget, Sandbox(forge.settings.sandbox_dir))
+    job = scheduler.submit(
+        JobSpec(
+            name="big",
+            command=["echo", "hello"],
+            agent="ml_engineer",
+            tokens=10_000_000_000,
+            parameters=1_000_000_000,
+            cost_cap_usd=0.0001,
+        )
+    )
+    assert job.state == JobState.REJECTED
+    assert "cap" in job.rejection_reason
+    denied = [event for event in forge.audit.recent(limit=20) if event.action == "job.rejected"]
+    assert denied
+
+
+def test_job_scheduler_runs_a_job(forge) -> None:
+    scheduler = JobScheduler(forge.audit, forge.budget, Sandbox(forge.settings.sandbox_dir))
+    job = scheduler.submit(
+        JobSpec(
+            name="smoke",
+            command=["echo", "hello"],
+            agent="infra_engineer",
+            tokens=1000,
+            parameters=1000,
+            cost_cap_usd=1.0,
+        )
+    )
+    job = scheduler.run(job)
+    assert job.state == JobState.SUCCEEDED
+    assert "hello" in job.stdout
+
+
+def test_job_queue_is_priority_ordered(forge) -> None:
+    scheduler = JobScheduler(forge.audit, forge.budget, Sandbox(forge.settings.sandbox_dir))
+    low = scheduler.submit(
+        JobSpec(name="low", command=["echo"], agent="a", priority=1, tokens=1, parameters=1)
+    )
+    high = scheduler.submit(
+        JobSpec(name="high", command=["echo"], agent="a", priority=9, tokens=1, parameters=1)
+    )
+    assert next(job.id for job in scheduler.queue()) == high.id
+    assert low.id in {job.id for job in scheduler.queue()}
+
+
+def test_job_quota_limits_concurrency(forge) -> None:
+    scheduler = JobScheduler(forge.audit, forge.budget, Sandbox(forge.settings.sandbox_dir))
+    scheduler.set_quota("gpu", 1)
+    first = scheduler.submit(
+        JobSpec(name="a", command=["echo"], agent="a", quota="gpu", tokens=1, parameters=1)
+    )
+    scheduler.jobs[first.id].state = JobState.RUNNING
+    second = scheduler.submit(
+        JobSpec(name="b", command=["echo"], agent="a", quota="gpu", tokens=1, parameters=1)
+    )
+    assert scheduler.run_next() is None
+    assert second.state == JobState.QUEUED
+
+
+def test_label_set_scopes_to_the_subject() -> None:
+    from llmforge.data.records import Record
+
+    records = [
+        Record(
+            id="1",
+            record_key="a",
+            text=(
+                "Invoice reconciliation failed for account acct-1. "
+                "Later the warehouse audit mentioned shipment tracking."
+            ),
+            source_id="s",
+        )
+    ]
+    labelled = build_labeled_dataset(records)
+    assert labelled[0]["label"] == "billing"
+    assert BILLING_LABEL_SET.label_for("shipment tracking was delayed") == "fulfilment"
+
+
+def test_classifier_trains_and_reports_per_class(forge, corpus_path, tmp_path) -> None:
+    from llmforge.data.tokenizer import train_tokenizer
+    from llmforge.training.classifier import ClassifierConfig, ClassifierTrainer
+    from llmforge.training.model import TinyTransformer, TransformerConfig
+
+    texts = [
+        "Invoice reconciliation failed for account acct-1 in the emea region.",
+        "Shipment tracking stalled for account acct-2 in the amer region.",
+        "Customer onboarding stalled at the licence renewal step.",
+        "Warehouse audit completed and the backorderqueue was cleared.",
+    ] * 10
+    tokenizer = train_tokenizer(texts, vocab_size=200)
+    model_config = TransformerConfig(
+        vocab_size=tokenizer.vocab_size, d_model=32, n_heads=2, n_layers=2, d_ff=64, max_seq_len=64
+    )
+    encoder_path = tmp_path / "encoder.pt"
+    torch = pytest.importorskip("torch")
+    torch.save(
+        {
+            "model_state": TinyTransformer(model_config).state_dict(),
+            "model_config": model_config.to_dict(),
+        },
+        encoder_path,
+    )
+    labelled = build_labeled_dataset(
+        [
+            type("R", (), {"record_key": str(i), "text": text, "source_id": "s"})()
+            for i, text in enumerate(texts)
+        ]
+    )
+    trainer = ClassifierTrainer(
+        forge.store, forge.audit, forge.budget, tmp_path / "artifacts", root=tmp_path
+    )
+    outcome = trainer.train(
+        ClassifierConfig(epochs=30),
+        encoder_path,
+        tokenizer,
+        labelled,
+        [item["label"] for item in labelled],
+    )
+    assert outcome.status == "completed"
+    assert outcome.accuracy > 0.5
+    assert set(outcome.class_report) == set(outcome.labels)
+    assert all("f1" in scores for scores in outcome.class_report.values())

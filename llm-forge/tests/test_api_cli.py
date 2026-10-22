@@ -1,0 +1,64 @@
+"""Control plane API and CLI surface."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from llmforge.api import create_app
+from llmforge.cli import main
+
+
+def test_api_exposes_the_control_plane(tmp_path: Path) -> None:
+    app = create_app(root=tmp_path, llm_kind="scripted")
+    with TestClient(app) as client:
+        assert client.get("/health").json()["status"] == "ok"
+        assert client.get("/tasks").json() == []
+        assert client.get("/gates").json() == []
+        assert client.get("/audit/verify").json()["ok"] is True
+        roles = client.get("/roles").json()
+        assert {role["name"] for role in roles} >= {"orchestrator", "evaluation"}
+        assert client.get("/policy").json()["undecided"]
+
+
+def test_api_plan_and_run(tmp_path: Path) -> None:
+    app = create_app(root=tmp_path, llm_kind="scripted")
+    with TestClient(app) as client:
+        response = client.post(
+            "/plan",
+            json={"goal": "ship the embedding model", "planner": "template"},
+        )
+        assert response.status_code == 200
+        tasks = response.json()["tasks"]
+        assert tasks
+        assert all(task["state"] == "proposed" for task in tasks)
+        run = client.post("/run", json={"max_iterations": 2, "approve_by": "program_lead"})
+        assert run.status_code == 200
+        assert client.get("/tasks").json()
+
+
+def test_api_rejects_bad_transitions(tmp_path: Path) -> None:
+    app = create_app(root=tmp_path, llm_kind="scripted")
+    with TestClient(app) as client:
+        client.post("/plan", json={"goal": "g", "planner": "template"})
+        task_id = client.get("/tasks").json()[0]["id"]
+        response = client.post(
+            f"/tasks/{task_id}/transition", params={"state": "accepted", "actor": "program_lead"}
+        )
+        assert response.status_code == 409
+
+
+def test_api_requires_key_when_configured(tmp_path: Path) -> None:
+    app = create_app(root=tmp_path, llm_kind="scripted", api_key="secret")
+    with TestClient(app) as client:
+        assert client.get("/tasks").status_code == 401
+        assert client.get("/tasks", headers={"X-Forge-Key": "secret"}).status_code == 200
+
+
+def test_cli_demo_runs_end_to_end(tmp_path: Path, capsys) -> None:
+    exit_code = main(["--root", str(tmp_path), "demo", "--budget", "50"])
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert "audit chain verified: True" in output
+    assert "accepted" in output
