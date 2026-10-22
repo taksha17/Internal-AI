@@ -31,9 +31,10 @@ corpus inside company boundaries.
 - Fully autonomous operation (humans own decisions, approvals, and quality).
 
 ## Repository contents
-- `llm-forge/` — the platform implementation (Python package `llmforge`):
+- `src/llmforge/` — the platform implementation (Python package `llmforge`):
   orchestrator, role agents, gates, budgets, audit log, data pipeline,
-  training, evals, serving API, CLI, and a 46-test suite.
+  training, evals, serving API, CLI, and a 46-test suite. Platform docs live in
+  `docs/` and `AGENTS.md`.
 - `PRD Agent-Driven In-House LLM Build Platform.md` — the product requirements
   document (v1.0): scope, phasing, agent specifications, functional/non-functional
   requirements, gates, and success metrics.
