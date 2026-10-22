@@ -52,9 +52,10 @@ test that covers each one.
 1. **P1 to P5 were decided on 2026-10-22** and recorded through
    `policy_decision` gates (dual control: program_lead + legal) in the default
    `var/` home. Decided values: P1 `internal_data_only`; P2
-   `allowed_for_code_and_config_no_raw_data`; P3 `acceptable`; P4
-   `audited_open_model_exception_allowed` (a change from the PRD default "No"
-   — revisit with legal counsel if the exception is ever exercised); P5
+   `allowed_for_code_and_config_no_raw_data`; P3 `acceptable`; P4 `no` —
+   the open-model exception was briefly allowed and then reverted to the PRD
+   default the same day because no legal counsel is engaged to review it;
+   revisit with counsel before ever exercising the exception; P5
    `exclude_pii_customer_confidential_regulated`. Rerun
    `.venv/bin/python -m internal_ai.cli policy list` for the live state.
 2. **No GPU and no approved corpus in this environment.** Training is CPU
