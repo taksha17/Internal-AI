@@ -31,13 +31,27 @@ corpus inside company boundaries.
 - Fully autonomous operation (humans own decisions, approvals, and quality).
 
 ## Repository contents
-- `src/llmforge/` — the platform implementation (Python package `llmforge`):
+- `src/internal_ai/` — the platform implementation (Python package `internal_ai`):
   orchestrator, role agents, gates, budgets, audit log, data pipeline,
-  training, evals, serving API, CLI, and a 46-test suite. Platform docs live in
+  training, evals, serving API, CLI, and a 65-test suite. Platform docs live in
   `docs/` and `AGENTS.md`.
 - `PRD Agent-Driven In-House LLM Build Platform.md` — the product requirements
   document (v1.0): scope, phasing, agent specifications, functional/non-functional
   requirements, gates, and success metrics.
+
+## Quickstart
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
+.venv/bin/pip install -e ".[dev]"
+
+.venv/bin/python -m internal_ai.cli --root var_demo demo   # Phase 0 loop end to end
+```
+
+The full model path (sample corpus → build dataset → split → train tokenizer →
+train from scratch → freeze eval set → evaluate → register → promote → serve)
+is exercised by the test suite; see `docs/runbook.md` for day-to-day commands.
 
 ## License
 Apache 2.0 — see `LICENSE`.

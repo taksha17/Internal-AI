@@ -5,10 +5,10 @@ Day-to-day operation of the platform.
 ## Every morning
 
 ```bash
-export LLMFORGE_HOME=./var
-.venv/bin/python -m llmforge.cli report          # spend, blocked tasks, open gates, risks
-.venv/bin/python -m llmforge.cli board           # what is in flight
-.venv/bin/python -m llmforge.cli audit verify    # the chain must verify
+export INTERNAL_AI_HOME=./var
+.venv/bin/python -m internal_ai.cli report          # spend, blocked tasks, open gates, risks
+.venv/bin/python -m internal_ai.cli board           # what is in flight
+.venv/bin/python -m internal_ai.cli audit verify    # the chain must verify
 ```
 
 If the audit chain does not verify, stop and investigate before dispatching any
@@ -18,8 +18,8 @@ decision on top of it is in doubt.
 ## Clearing a gate
 
 ```bash
-.venv/bin/python -m llmforge.cli gates list --status pending
-.venv/bin/python -m llmforge.cli gates approve --gate-id <id> --by <approver_role> --note "<evidence>"
+.venv/bin/python -m internal_ai.cli gates list --status pending
+.venv/bin/python -m internal_ai.cli gates approve --gate-id <id> --by <approver_role> --note "<evidence>"
 ```
 
 Rules to remember:
@@ -50,14 +50,14 @@ Stop the run and investigate if:
 
 ```bash
 # stop all dispatch immediately
-.venv/bin/python -m llmforge.cli budget kill --actor <your_name>
+.venv/bin/python -m internal_ai.cli budget kill --actor <your_name>
 
 # inspect the history
-.venv/bin/python -m llmforge.cli audit list --action train.run_started --limit 20
-.venv/bin/python -m llmforge.cli audit list --actor ml_engineer --limit 50
+.venv/bin/python -m internal_ai.cli audit list --action train.run_started --limit 20
+.venv/bin/python -m internal_ai.cli audit list --actor ml_engineer --limit 50
 
 # resume dispatch
-.venv/bin/python -m llmforge.cli budget kill --release --actor <your_name>
+.venv/bin/python -m internal_ai.cli budget kill --release --actor <your_name>
 ```
 
 The kill switch is global and stops dispatch immediately. It does not stop a
@@ -77,7 +77,7 @@ model id.
 ## Releasing a dataset
 
 ```bash
-.venv/bin/python -m llmforge.cli data lineage --dataset-id <id>
+.venv/bin/python -m internal_ai.cli data lineage --dataset-id <id>
 ```
 
 The release gate needs a quality report, a PII audit sample and the lineage.
@@ -105,8 +105,8 @@ Confirm the per-step statistics, especially `pii_scrub.total_redactions` and
 Weekly, the program lead reviews:
 
 ```bash
-.venv/bin/python -m llmforge.cli budget status
-.venv/bin/python -m llmforge.cli report
+.venv/bin/python -m internal_ai.cli budget status
+.venv/bin/python -m internal_ai.cli report
 ```
 
 Look for spend concentrated in one agent, runs that were approved but never

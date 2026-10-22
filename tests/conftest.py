@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from llmforge.context import Forge
-from llmforge.data.samples import generate_corpus
-from llmforge.llm import ScriptedAdapter
+from internal_ai.context import Forge
+from internal_ai.data.samples import generate_corpus
+from internal_ai.llm import ScriptedAdapter
 
 
 @pytest.fixture()

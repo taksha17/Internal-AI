@@ -5,7 +5,6 @@ __pycache__/
 *.pyd
 .Python
 venv/
-venv/
 .venv/
 env/
 ENV/
@@ -21,7 +20,7 @@ htmlcov/
 # Lint / format
 .ruff_cache/
 
-# LLM-Forge runtime artifacts (generated at run time)
+# Internal-AI runtime artifacts (generated at run time)
 var/
 var_*/
 *.db

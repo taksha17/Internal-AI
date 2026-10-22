@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from llmforge.domain import BudgetScope, GateType, TaskState
-from llmforge.planner import TaskDraft, TemplatePlanner
-from llmforge.roles import all_roles, get_role, reviewer_for
+from internal_ai.domain import BudgetScope, GateType, TaskState
+from internal_ai.planner import TaskDraft, TemplatePlanner
+from internal_ai.roles import all_roles, get_role, reviewer_for
 
 
 def test_every_role_has_a_distinct_reviewer() -> None:
@@ -18,10 +18,10 @@ def test_roles_are_least_privilege(forge) -> None:
     orchestrator = get_role("orchestrator")
     assert not orchestrator.can(
         forge.runtime.capabilities_for
-        and __import__("llmforge.domain", fromlist=["Capability"]).Capability.DATA_READ
+        and __import__("internal_ai.domain", fromlist=["Capability"]).Capability.DATA_READ
     )
     assert not orchestrator.can(
-        __import__("llmforge.domain", fromlist=["Capability"]).Capability.DEPLOY
+        __import__("internal_ai.domain", fromlist=["Capability"]).Capability.DEPLOY
     )
 
 
@@ -87,7 +87,7 @@ def test_repeated_failure_escalates_to_a_human(forge) -> None:
         name = "failing"
 
         def complete(self, prompt, system="", max_tokens=2048, temperature=0.0):
-            from llmforge.llm import Completion
+            from internal_ai.llm import Completion
 
             return Completion(text='{"status":"failed","summary":"boom"}', model="failing")
 

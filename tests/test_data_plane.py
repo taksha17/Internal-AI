@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from llmforge.data.splits import contamination_report
-from llmforge.data.tokenizer import coverage_report, train_tokenizer
-from llmforge.data.transforms import deduplicate, filter_quality, scrub_pii
-from llmforge.workflows import build_corpus, derive_eval_items, split_corpus
+from internal_ai.data.splits import contamination_report
+from internal_ai.data.tokenizer import coverage_report, train_tokenizer
+from internal_ai.data.transforms import deduplicate, filter_quality, scrub_pii
+from internal_ai.workflows import build_corpus, derive_eval_items, split_corpus
 
 
 def test_pipeline_scrubs_pii_and_drops_duplicates(forge, corpus_path) -> None:
@@ -57,7 +57,7 @@ def test_splits_are_deterministic_and_leak_free(forge, corpus_path) -> None:
 
 
 def test_contamination_report_flags_overlap() -> None:
-    from llmforge.data.records import Record
+    from internal_ai.data.records import Record
 
     records = [
         Record(id="1", record_key="a", text="the ledgerline feed failed", source_id="s"),
@@ -69,7 +69,7 @@ def test_contamination_report_flags_overlap() -> None:
 
 
 def test_deduplicate_removes_exact_and_near_duplicates() -> None:
-    from llmforge.data.records import Record
+    from internal_ai.data.records import Record
 
     base = "the ledgerline feed failed during the warehouse audit reconciliation run"
     records = [
@@ -90,7 +90,7 @@ def test_deduplicate_removes_exact_and_near_duplicates() -> None:
 
 
 def test_scrubber_redacts_but_keeps_record() -> None:
-    from llmforge.data.records import Record
+    from internal_ai.data.records import Record
 
     records = [
         Record(
@@ -109,7 +109,7 @@ def test_scrubber_redacts_but_keeps_record() -> None:
 
 
 def test_quality_filter_drops_short_and_foreign_records() -> None:
-    from llmforge.data.records import Record
+    from internal_ai.data.records import Record
 
     records = [
         Record(id="1", record_key="a", text="short", source_id="s"),

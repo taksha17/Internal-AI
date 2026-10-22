@@ -4,7 +4,7 @@ Conventions for agents and humans working in this repository.
 
 ## Purpose
 
-LLM-Forge is the control plane for a multi-agent engineering organisation that
+Internal-AI is the control plane for a multi-agent engineering organisation that
 builds from-scratch models on company data. Changes here change how other
 agents behave, so the bar is higher than for ordinary application code.
 
@@ -28,10 +28,10 @@ agents behave, so the bar is higher than for ordinary application code.
 ## Change rules
 
 - Anything an agent can trigger is capability checked in
-  `llmforge/roles.py` and audited in `llmforge/agent.py` and
-  `llmforge/tools.py`. A new capability is a governance change: add it to the
+  `internal_ai/roles.py` and audited in `internal_ai/agent.py` and
+  `internal_ai/tools.py`. A new capability is a governance change: add it to the
   role that needs it, nowhere else.
-- Task states are enforced in `llmforge/store.py`. A new state needs a legal
+- Task states are enforced in `internal_ai/store.py`. A new state needs a legal
   transition map entry, and the map is the specification.
 - Budget caps exist at global, project, agent, job and weekly scope. New spend
   paths must call `BudgetManager.record_spend` or `check`; spending that
@@ -40,7 +40,7 @@ agents behave, so the bar is higher than for ordinary application code.
   with a new content hash and a lineage entry, not an edit.
 - Model promotion requires a passing eval report against a frozen set and an
   approved `model_promotion` gate. Both checks live in
-  `llmforge/workflows.py:promote_model`.
+  `internal_ai/workflows.py:promote_model`.
 
 ## Style
 
@@ -66,6 +66,6 @@ to the roles that must not hold it, not just a test that shows it works.
 ## Review rules
 
 - A builder never reviews its own work. Reviewer pairing is in
-  `llmforge/roles.py`.
+  `internal_ai/roles.py`.
 - Changes to `gates.py`, `budget.py`, `audit.py`, `policy.py` or `roles.py`
   need a second reviewer because they define the guardrails themselves.

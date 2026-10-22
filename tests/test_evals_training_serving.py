@@ -5,9 +5,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from llmforge.data.records import Record
-from llmforge.evals.harness import EvalHarness
-from llmforge.evals.metrics import (
+from internal_ai.data.records import Record
+from internal_ai.evals.harness import EvalHarness
+from internal_ai.evals.metrics import (
     bm25_scores,
     expected_calibration_error,
     mean_reciprocal_rank,
@@ -16,14 +16,14 @@ from llmforge.evals.metrics import (
     precision_recall_f1,
     recall_at_k,
 )
-from llmforge.serving.service import (
+from internal_ai.serving.service import (
     ModelRouter,
     Principal,
     RateLimiter,
     RetrievalService,
     parse_api_keys,
 )
-from llmforge.training.cost import estimate_cpu_run, estimate_gpu_run, training_flops
+from internal_ai.training.cost import estimate_cpu_run, estimate_gpu_run, training_flops
 
 
 class ConstantEmbedder:
@@ -87,8 +87,8 @@ def test_frozen_eval_set_cannot_be_written(forge) -> None:
 
 
 def test_evaluation_requires_frozen_set(forge) -> None:
-    from llmforge.evals.harness import EvalHarness
-    from llmforge.workflows import evaluate_embedding_model
+    from internal_ai.evals.harness import EvalHarness
+    from internal_ai.workflows import evaluate_embedding_model
 
     harness = EvalHarness(forge.store, forge.audit)
     eval_set = harness.create_eval_set("v1", [{"query": "q", "relevant_ids": ["d1"]}])
@@ -99,10 +99,10 @@ def test_evaluation_requires_frozen_set(forge) -> None:
 
 
 def test_promotion_requires_passing_eval_and_gate(forge) -> None:
-    from llmforge.workflows import promote_model
+    from internal_ai.workflows import promote_model
 
     model = forge.store.add_model(
-        __import__("llmforge.domain", fromlist=["ModelVersion"]).ModelVersion(
+        __import__("internal_ai.domain", fromlist=["ModelVersion"]).ModelVersion(
             id="mdl_1",
             name="embedding-v1",
             version=1,
@@ -117,8 +117,8 @@ def test_promotion_requires_passing_eval_and_gate(forge) -> None:
 
 
 def test_training_respects_cost_cap_and_records_reproducibility(forge, tmp_path) -> None:
-    from llmforge.data.tokenizer import train_tokenizer
-    from llmforge.training.trainer import TrainConfig, Trainer
+    from internal_ai.data.tokenizer import train_tokenizer
+    from internal_ai.training.trainer import TrainConfig, Trainer
 
     texts = [
         "the ledgerline feed failed during the warehouse audit reconciliation run today",
@@ -142,8 +142,8 @@ def test_training_respects_cost_cap_and_records_reproducibility(forge, tmp_path)
 
 
 def test_training_run_completes_and_checkpoints(forge, tmp_path) -> None:
-    from llmforge.data.tokenizer import train_tokenizer
-    from llmforge.training.trainer import TrainConfig, Trainer
+    from internal_ai.data.tokenizer import train_tokenizer
+    from internal_ai.training.trainer import TrainConfig, Trainer
 
     texts = [
         "the ledgerline feed failed during the warehouse audit reconciliation run today",
@@ -207,7 +207,7 @@ def test_retrieval_enforces_document_permissions(forge) -> None:
             return np.asarray([[float(len(text)), 1.0] for text in texts], dtype=np.float32)
 
     forge.store.add_dataset(
-        __import__("llmforge.domain", fromlist=["DatasetVersion"]).DatasetVersion(
+        __import__("internal_ai.domain", fromlist=["DatasetVersion"]).DatasetVersion(
             id="ds_1",
             name="c",
             version=1,
@@ -250,7 +250,7 @@ def test_retrieval_enforces_document_permissions(forge) -> None:
 
 
 def test_model_router_rolls_back(forge) -> None:
-    from llmforge.domain import ModelVersion
+    from internal_ai.domain import ModelVersion
 
     for index in (1, 2):
         forge.store.add_model(

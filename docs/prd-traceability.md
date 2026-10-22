@@ -21,7 +21,7 @@ Where each PRD requirement is implemented and verified.
 | FR-13 | Pre-registered cost estimate and hard cap enforced by the scheduler | `training/cost.py`, `trainer` cap checks | `test_evals_training_serving.py::test_cost_estimates_follow_prd_formula` |
 | FR-14 | Eval sets frozen after approval, changes need a new version | `evals/harness.freeze_eval_set` | `test_evals_training_serving.py::test_frozen_eval_set_cannot_be_written` |
 | FR-15 | Promotable only if it beats the baseline and passes safety and leakage checks | `evals/harness.evaluate_retrieval`, `workflows.promote_model` | `test_evals_training_serving.py::test_promotion_requires_passing_eval_and_gate` |
-| FR-16 | Model card with data sources, config, eval results, limitations, intended use | `workflows.register_model`, `workflows.model_card_markdown` | exercised by `llmforge model card` |
+| FR-16 | Model card with data sources, config, eval results, limitations, intended use | `workflows.register_model`, `workflows.model_card_markdown` | exercised by `internal_ai model card` |
 | FR-17 | Authenticated API, per-user rate limits, privacy-respecting request logging | `serving/service.py`, `serving/app.py` | `test_evals_training_serving.py::test_rate_limiter_blocks_after_limit` |
 | FR-18 | Retrieval enforces document-level permissions | `serving/service.RetrievalService.search` | `test_evals_training_serving.py::test_retrieval_enforces_document_permissions` |
 | FR-19 | Rollback to the previous model version within minutes | `serving/service.ModelRouter.rollback` | `test_evals_training_serving.py::test_model_router_rolls_back` |

@@ -6,8 +6,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from llmforge.api import create_app
-from llmforge.cli import main
+from internal_ai.api import create_app
+from internal_ai.cli import main
 
 
 def test_api_exposes_the_control_plane(tmp_path: Path) -> None:

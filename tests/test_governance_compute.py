@@ -6,15 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from llmforge.alerts import AlertEngine
-from llmforge.compute.scheduler import JobScheduler, JobSpec, JobState
-from llmforge.data.governance import RetentionManager, pii_spot_check
-from llmforge.data.labels import BILLING_LABEL_SET, build_labeled_dataset
-from llmforge.domain import BudgetScope, TaskKind
-from llmforge.roles import all_roles, get_role
-from llmforge.sandbox import Sandbox
-from llmforge.subagents import subagents_for, total_subagents
-from llmforge.workflows import build_corpus
+from internal_ai.alerts import AlertEngine
+from internal_ai.compute.scheduler import JobScheduler, JobSpec, JobState
+from internal_ai.data.governance import RetentionManager, pii_spot_check
+from internal_ai.data.labels import BILLING_LABEL_SET, build_labeled_dataset
+from internal_ai.domain import BudgetScope, TaskKind
+from internal_ai.roles import all_roles, get_role
+from internal_ai.sandbox import Sandbox
+from internal_ai.subagents import subagents_for, total_subagents
+from internal_ai.workflows import build_corpus
 
 
 def test_every_role_declares_subagents() -> None:
@@ -24,7 +24,7 @@ def test_every_role_declares_subagents() -> None:
 
 
 def test_subagents_run_and_write_artifacts(forge) -> None:
-    from llmforge.domain import Task
+    from internal_ai.domain import Task
 
     task = Task(
         id="tsk_1",
@@ -46,7 +46,7 @@ def test_subagents_run_and_write_artifacts(forge) -> None:
 
 
 def test_subagents_do_not_spawn_further_agents(forge) -> None:
-    from llmforge.domain import Task
+    from internal_ai.domain import Task
 
     task = Task(
         id="tsk_2",
@@ -74,7 +74,7 @@ def test_alerts_fire_on_spend_pressure(forge) -> None:
 
 
 def test_alerts_fire_on_repeated_task_failures(forge) -> None:
-    from llmforge.domain import Task
+    from internal_ai.domain import Task
 
     task = Task(
         id="tsk_3",
@@ -120,7 +120,7 @@ def test_alerts_can_be_acknowledged(forge) -> None:
 
 
 def test_pii_audit_passes_on_scrubbed_records() -> None:
-    from llmforge.data.records import Record
+    from internal_ai.data.records import Record
 
     records = [
         Record(
@@ -136,7 +136,7 @@ def test_pii_audit_passes_on_scrubbed_records() -> None:
 
 
 def test_pii_audit_catches_surviving_pii() -> None:
-    from llmforge.data.records import Record
+    from internal_ai.data.records import Record
 
     records = [
         Record(
@@ -153,7 +153,7 @@ def test_pii_audit_catches_surviving_pii() -> None:
 
 
 def test_release_is_blocked_when_pii_survives(forge, corpus_path, monkeypatch) -> None:
-    from llmforge.data.pipeline import DataPipeline
+    from internal_ai.data.pipeline import DataPipeline
 
     pipeline = DataPipeline(forge.store, forge.audit, forge.settings.root)
     result = build_corpus(forge, [corpus_path], name="corpus-test")
@@ -172,7 +172,7 @@ def test_release_is_blocked_when_pii_survives(forge, corpus_path, monkeypatch) -
 
 
 def test_release_requires_the_gate(forge, corpus_path) -> None:
-    from llmforge.data.pipeline import DataPipeline
+    from internal_ai.data.pipeline import DataPipeline
 
     pipeline = DataPipeline(forge.store, forge.audit, forge.settings.root)
     result = build_corpus(forge, [corpus_path], name="corpus-test")
@@ -266,7 +266,7 @@ def test_job_quota_limits_concurrency(forge) -> None:
 
 
 def test_label_set_scopes_to_the_subject() -> None:
-    from llmforge.data.records import Record
+    from internal_ai.data.records import Record
 
     records = [
         Record(
@@ -285,9 +285,9 @@ def test_label_set_scopes_to_the_subject() -> None:
 
 
 def test_classifier_trains_and_reports_per_class(forge, corpus_path, tmp_path) -> None:
-    from llmforge.data.tokenizer import train_tokenizer
-    from llmforge.training.classifier import ClassifierConfig, ClassifierTrainer
-    from llmforge.training.model import TinyTransformer, TransformerConfig
+    from internal_ai.data.tokenizer import train_tokenizer
+    from internal_ai.training.classifier import ClassifierConfig, ClassifierTrainer
+    from internal_ai.training.model import TinyTransformer, TransformerConfig
 
     texts = [
         "Invoice reconciliation failed for account acct-1 in the emea region.",

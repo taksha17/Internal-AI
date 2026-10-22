@@ -6,9 +6,9 @@ import sqlite3
 
 import pytest
 
-from llmforge.domain import AuditOutcome, BudgetScope, GateType, Task, TaskKind, TaskState
-from llmforge.gates import GateError
-from llmforge.store import TransitionError
+from internal_ai.domain import AuditOutcome, BudgetScope, GateType, Task, TaskKind, TaskState
+from internal_ai.gates import GateError
+from internal_ai.store import TransitionError
 
 
 def make_task(**kwargs) -> Task:

@@ -1,22 +1,29 @@
 # STATUS — hand-off & verification
 
-Updated 2026-10-21 after the second build pass. The authoritative PRD is
-`../PRD Agent-Driven In-House LLM Build Platform.md` (v1.0). The platform is
-`llm-forge/` in this repository.
+Updated 2026-10-22 after the rebrand to `internal_ai` (package `internal_ai`,
+distribution `internal-ai`, CLI `internal-ai` / `python -m internal_ai.cli`).
+The authoritative PRD is `../PRD Agent-Driven In-House LLM Build Platform.md`
+(v1.0).
 
 ## Verification
 
-- Tests: `.venv/bin/python -m pytest -q` → **65 passed**, exit 0 (torch 2.14.1+cpu).
-- Lint and format: `ruff check .` → clean; `ruff format --check .` → clean.
-- Phase 0 exit criteria: `python -m llmforge.cli demo` → plan submitted (13
-  tasks), approved by a human, **13/13 accepted**, gates cleared, **audit chain
-  verified (279 events)**.
-- Full model path exercised on a synthetic corpus: sample → build → split →
-  tokenizer → train → freeze eval set → evaluate → register → promote → serve.
-  The model beats the keyword-search baseline on the frozen eval set; the
-  classifier beats the majority-class baseline but misses the accuracy floor,
-  so the evaluation agent refuses to promote it. That refusal is the intended
-  behaviour.
+- Tests: `.venv/bin/python -m pytest` → **65 passed**, exit 0 (torch 2.14.1+cpu).
+- Lint and format: `.venv/bin/ruff check .` → clean; `.venv/bin/ruff format --check .`
+  → clean.
+- Phase 0 exit criteria: `.venv/bin/python -m internal_ai.cli --root var_demo
+  demo` → plan submitted (13 tasks), approved by a human, **13/13 accepted**,
+  gates cleared, **audit chain verified (279 events)**.
+- Full model path re-verified via the CLI on a synthetic corpus in `var_e2e`:
+  sample → build (dedup + PII scrub) → split (85/11/11) → tokenizer from
+  scratch → train (run `run_ca1d9a163c30`, 60 steps, CPU) → eval set frozen
+  behind an approved `eval_set_freeze` gate → eval **passed** (model beats the
+  keyword-search baseline; contamination and PII checks clean) → register →
+  promote behind an approved `model_promotion` gate (`mdl_59341e45cf70`) →
+  serving API: authenticated `/v1/search` and `/v1/embed` return 200 with the
+  promoted model, 401 for invalid keys.
+- The classifier path beats the majority-class baseline but misses the
+  accuracy floor, so the evaluation agent refuses to promote it. That refusal
+  is the intended behaviour.
 
 ## What is implemented
 
