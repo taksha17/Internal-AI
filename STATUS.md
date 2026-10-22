@@ -49,8 +49,14 @@ test that covers each one.
 
 ## Genuinely open items
 
-1. **P1 to P5 need human sign-off.** The platform runs on the PRD defaults
-   until a human decides. Each change goes through a `policy_decision` gate.
+1. **P1 to P5 were decided on 2026-10-22** and recorded through
+   `policy_decision` gates (dual control: program_lead + legal) in the default
+   `var/` home. Decided values: P1 `internal_data_only`; P2
+   `allowed_for_code_and_config_no_raw_data`; P3 `acceptable`; P4
+   `audited_open_model_exception_allowed` (a change from the PRD default "No"
+   — revisit with legal counsel if the exception is ever exercised); P5
+   `exclude_pii_customer_confidential_regulated`. Rerun
+   `.venv/bin/python -m internal_ai.cli policy list` for the live state.
 2. **No GPU and no approved corpus in this environment.** Training is CPU
    scale on synthetic data, so model quality is a pipeline demonstration, not
    a usable model. This is the real blocker for Phase 2b and Phase 4. It needs
@@ -72,8 +78,7 @@ test that covers each one.
 
 ## Recommended next actions
 
-A. Decide P1 to P5 with legal and the program lead. Everything downstream
-   inherits from those five answers.
+A. ~~Decide P1 to P5~~ — done 2026-10-22, see open items above.
 B. Approve the first two pilot sources and run the pipeline on them for real.
 C. Pick the compute option in section 10 and implement its backend against
    `compute/scheduler.py`.
