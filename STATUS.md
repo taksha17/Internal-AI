@@ -60,6 +60,14 @@ The human roster placeholder for `ml_lead` was replaced with a real person
 (Taksha) via the new `people replace` command; a test caught and fixed a bug
 where seeding overwrote real people with placeholder identities.
 
+Agentic retrieval over the real corpus works today and does not wait on a
+promotable embedding model: the app-builder code was versioned as a tree
+dataset (`data build-tree`, 40 files, lineage + ACLs) and the `ask` searcher
+answers natural questions with cited file:line evidence (e.g. it locates the
+autopilot's multi-page form logic and the shortlist apply script's
+docstring), and honestly reports "no supporting evidence" instead of guessing
+when the query does not match.
+
 ## What is implemented
 
 | PRD | Implementation |
