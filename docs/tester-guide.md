@@ -28,6 +28,23 @@ and `pkill -f 'internal_ai.cli serve-model'`.
 
 The old `X-Forge-Key` header is dead: it returns 401 on both APIs.
 
+## 0. One-command check
+
+Before reading further, run the whole endpoint sweep. It uses only the
+standard library and prints PASS or FAIL per check, exiting non-zero if
+anything fails:
+
+```bash
+INTERNAL_AI_CONTROL_KEY=cp-test-key-2026 \
+INTERNAL_AI_SERVING_KEY=serve-test-key \
+  .venv/bin/python scripts/probe.py
+```
+
+Expected: `18/18 checks passed` and exit code 0. It covers every endpoint
+below plus the three authentication negatives (no key, wrong key, legacy
+header). The rest of this guide explains what each check means and what
+else to exercise by hand.
+
 ## 1. Control plane
 
 ```bash
