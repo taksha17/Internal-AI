@@ -29,6 +29,61 @@ Rules to remember:
 - The requester cannot approve their own gate. This is enforced, not advisory.
 - Agents cannot approve gates at all.
 
+## The budget model
+
+Spend in this platform is virtual. No money moves and nothing external is
+billed: `BudgetManager.record_spend` writes accounting records to the local
+store, and the amounts come from the configured cost model (for example
+`demo --cost-per-run`). The caps are real in the sense that the platform
+refuses to dispatch work that exceeds them.
+
+Five scopes, all enforced at once:
+
+| scope | key | what it caps |
+|---|---|---|
+| `global` | `global` | everything the platform spends |
+| `project` | project name | one project |
+| `agent` | agent role or name | one agent |
+| `job` | job id | one compute-plane job |
+| `weekly` | Monday 00:00 UTC of the current week | spend inside one week |
+
+One spend call fans out into a record for each applicable scope: global,
+project, agent and weekly, plus `job` when the spend belongs to a job. The
+scope totals are rollups of the same spend, not separate charges.
+
+```bash
+.venv/bin/python -m internal_ai.cli budget set --scope global --key global \
+  --limit 500 --actor <your_name>
+.venv/bin/python -m internal_ai.cli budget status
+```
+
+`budget status` reports limit, spent, remaining, utilisation and whether the
+scope is exceeded.
+
+Enforcement happens before dispatch. `BudgetManager.check` evaluates the
+global, project, agent and weekly scopes, plus the job scope when a job id is
+given, and denies the work if any of them is exhausted. A scope with no cap
+set is unlimited, so the caps you never set are the ones that never stop
+anything. A scope is exceeded when spend is greater than the limit, so
+spending exactly to the cap is still allowed.
+
+The weekly scope is keyed by the Monday timestamp of the current week, for
+example `2026-10-19T00:00:00+00:00`. Spend rolls over on Monday by itself
+because the key changes; to cap the current week, set the cap against that
+key.
+
+The kill switch is separate from the caps and takes priority over them:
+
+```bash
+.venv/bin/python -m internal_ai.cli budget kill --actor <your_name>
+.venv/bin/python -m internal_ai.cli budget kill --release --actor <your_name>
+```
+
+While it is engaged every check is refused with "global kill switch is
+engaged", whatever the caps say. It stops dispatch of new work; a training
+job that is already running continues until it finishes or is cancelled
+through the compute plane.
+
 ## Watching a training run
 
 ```bash
