@@ -118,6 +118,55 @@ def test_promotion_requires_passing_eval_and_gate(platform) -> None:
         promote_model(platform, model.id, gate_approved=True)
 
 
+def test_serving_reports_the_model_that_is_actually_served(tmp_path) -> None:
+    from fastapi.testclient import TestClient
+
+    from internal_ai.context import Platform
+    from internal_ai.domain import ModelVersion
+    from internal_ai.serving.app import create_serving_app
+    from internal_ai.serving.service import Principal
+
+    platform = Platform.create(root=tmp_path)
+    platform.store.add_model(
+        ModelVersion(
+            id="mdl_candidate",
+            name="embedding-v1",
+            version=1,
+            content_hash="h1",
+            created_at="now",
+        )
+    )
+    platform.store.add_model(
+        ModelVersion(
+            id="mdl_promoted",
+            name="embedding-v1",
+            version=2,
+            content_hash="h2",
+            created_at="now",
+            status="promoted",
+        )
+    )
+    platform.close()
+
+    app = create_serving_app(
+        root=tmp_path,
+        principals={
+            "k": Principal(user_id="alice", groups=frozenset({"engineering"}), api_key="k")
+        },
+    )
+    with TestClient(app) as client:
+        listed = client.get("/v1/models", headers={"X-Internal-Key": "k"}).json()
+        served = {entry["id"]: entry["active"] for entry in listed}
+        assert served["mdl_promoted"] is True
+        assert served["mdl_candidate"] is False
+
+        app.state.router.set_active("embedding-v1", "mdl_candidate", "admin", "rollback")
+        listed = client.get("/v1/models", headers={"X-Internal-Key": "k"}).json()
+        served = {entry["id"]: entry["active"] for entry in listed}
+        assert served["mdl_candidate"] is True
+        assert served["mdl_promoted"] is False
+
+
 def test_title_mode_pairs_use_first_line(platform) -> None:
     from internal_ai.domain import DatasetVersion
     from internal_ai.workflows import build_pair_dataset

@@ -104,15 +104,20 @@ def create_serving_app(
     def list_models(principal: Principal = Depends(authenticate)) -> list[dict[str, Any]]:
         platform = get_platform()
         router: ModelRouter = app.state.router
+        models = platform.store.list_models()
+        served: dict[str, str | None] = {}
+        for name in {model.name for model in models}:
+            resolved = router.resolve(name)
+            served[name] = resolved.id if resolved else None
         return [
             {
                 "id": model.id,
                 "name": model.name,
                 "version": model.version,
                 "status": model.status,
-                "active": router.active.get(model.name) == model.id,
+                "active": served.get(model.name) == model.id,
             }
-            for model in platform.store.list_models()
+            for model in models
         ]
 
     @app.post("/v1/search")
