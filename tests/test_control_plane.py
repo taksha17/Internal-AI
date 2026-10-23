@@ -138,3 +138,19 @@ def test_kill_switch_stops_dispatch(forge) -> None:
     assert "kill switch" in decision.reason
     forge.budget.release_kill_switch()
     assert forge.budget.check("data_engineer").allowed
+
+
+def test_people_replace_swaps_placeholder_for_real_human(forge) -> None:
+    from internal_ai.people import PeopleRegistry
+
+    registry = PeopleRegistry(forge.store)
+    record = registry.replace("ppl_marcus_delgado", "Taksha", "ML lead", ["ml_lead"])
+    assert record["placeholder"] is False
+    assert record["roles"] == ["ml_lead"]
+    people = {person["id"]: person for person in registry.list_people()}
+    ml_lead = people["ppl_marcus_delgado"]
+    assert ml_lead["name"] == "Taksha"
+    assert ml_lead["placeholder"] is False
+    assert ml_lead["roles"] == ["ml_lead"]
+    untouched = people["ppl_priya_raghunathan"]
+    assert untouched["placeholder"] is True

@@ -116,6 +116,46 @@ def test_promotion_requires_passing_eval_and_gate(forge) -> None:
         promote_model(forge, model.id, gate_approved=True)
 
 
+def test_title_mode_pairs_use_first_line(forge) -> None:
+    from internal_ai.domain import DatasetVersion
+    from internal_ai.workflows import build_pair_dataset
+
+    forge.store.add_dataset(
+        DatasetVersion(
+            id="ds_pairs",
+            name="pairs",
+            version=1,
+            content_hash="h",
+            record_count=3,
+            token_count=3,
+            created_at="now",
+        )
+    )
+    forge.store.add_dataset_records(
+        "ds_pairs",
+        [
+            {
+                "record_key": "doc-1",
+                "payload": "# Architecture\n\nDesign notes for the control plane.",
+                "source_id": "s",
+                "acl": [],
+            },
+            {
+                "record_key": "doc-2",
+                "payload": "import json\n\nfrom pathlib import Path",
+                "source_id": "s",
+                "acl": [],
+            },
+            {"record_key": "doc-3", "payload": "tiny", "source_id": "s", "acl": []},
+        ],
+    )
+    pairs = build_pair_dataset(forge, "ds_pairs", mode="title")
+    assert [pair["query"] for pair in pairs] == ["# Architecture", "import json"]
+    assert all(pair["document"].startswith(pair["query"].split("\n")[0]) for pair in pairs)
+    paraphrase = build_pair_dataset(forge, "ds_pairs", mode="paraphrase")
+    assert paraphrase == []
+
+
 def test_training_respects_cost_cap_and_records_reproducibility(forge, tmp_path) -> None:
     from internal_ai.data.tokenizer import train_tokenizer
     from internal_ai.training.trainer import TrainConfig, Trainer

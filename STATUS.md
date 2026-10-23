@@ -7,7 +7,7 @@ The authoritative PRD is `../PRD Agent-Driven In-House LLM Build Platform.md`
 
 ## Verification
 
-- Tests: `.venv/bin/python -m pytest` → **65 passed**, exit 0 (torch 2.14.1+cpu).
+- Tests: `.venv/bin/python -m pytest` → **67 passed**, exit 0 (torch 2.14.1+cpu).
 - Lint and format: `.venv/bin/ruff check .` → clean; `.venv/bin/ruff format --check .`
   → clean.
 - Phase 0 exit criteria: `.venv/bin/python -m internal_ai.cli --root var_demo
@@ -24,6 +24,41 @@ The authoritative PRD is `../PRD Agent-Driven In-House LLM Build Platform.md`
 - The classifier path beats the majority-class baseline but misses the
   accuracy floor, so the evaluation agent refuses to promote it. That refusal
   is the intended behaviour.
+
+## Real-data pilot (2026-10-22, second pass)
+
+The first two pilot sources were selected by inventorying this machine with
+the platform's own scanner, which auto-excluded personal, regulated and
+pretrained-weight directories (it also caught that folders named "Docs"
+held personal identity documents — excluded under P5):
+
+- Source A: this repository's own engineering documentation.
+- Source B: the Taksha_AI_Application_Builder codebase (extension,
+  dashboard, scripts, site; its `resume` and `data` folders excluded).
+
+Both sources cleared `new_data_source` gates (data_owner + compliance) and
+were built into dataset `pilot-corpus` (98 records after dedup, 15 PII
+redactions, 25k tokens, leakage-safe 72/14/12 split). A tokenizer was trained
+from scratch (3143 vocab) and a from-scratch embedding model was trained
+under the trainer's divergence and collapse guardrails.
+
+Three honest findings, all from the platform working as designed:
+
+1. The paraphrase pair/eval builder only fits corpora containing the
+   synthetic ticket vocabulary, so a `title` pair mode was added
+   (`train run --pair-mode title`) and `--learning-rate` was exposed;
+   the default LR diverges on title pairs and the trainer stops itself.
+2. On the human-authored eval (8 natural-language queries over held-out
+   records, frozen behind a gate), BM25 keyword search beats the from-scratch
+   model (MRR 0.18 vs 0.06). The evaluation agent refuses promotion.
+   **This is the correct answer, not a failure:** 25k tokens cannot train a
+   from-scratch model past keyword search. The PRD predicted this in section 3.
+3. The path to a promotable model is data volume and compute (PRD section
+   10), not more training loops on the same 98 records.
+
+The human roster placeholder for `ml_lead` was replaced with a real person
+(Taksha) via the new `people replace` command; a test caught and fixed a bug
+where seeding overwrote real people with placeholder identities.
 
 ## What is implemented
 
@@ -58,10 +93,11 @@ test that covers each one.
    revisit with counsel before ever exercising the exception; P5
    `exclude_pii_customer_confidential_regulated`. Rerun
    `.venv/bin/python -m internal_ai.cli policy list` for the live state.
-2. **No GPU and no approved corpus in this environment.** Training is CPU
-   scale on synthetic data, so model quality is a pipeline demonstration, not
-   a usable model. This is the real blocker for Phase 2b and Phase 4. It needs
-   data owners, the compute decision in section 10 and a budget.
+2. **The pilot corpus is real but far too small.** The first real dataset
+   (98 records, 25k tokens) demonstrates the pipeline end to end, but no
+   from-scratch model can beat keyword search at that scale — see the
+   real-data pilot above. The blockers for a promotable model are data
+   volume and the compute decision in section 10.
 3. **Sandbox is subprocess-level.** Environment scrubbing, resource limits and
    a jailed working directory are in place; container isolation with a network
    policy is still open.

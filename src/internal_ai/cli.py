@@ -645,6 +645,23 @@ def cmd_people_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_people_replace(args: argparse.Namespace) -> int:
+    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+        from internal_ai.people import PeopleRegistry
+
+        registry = PeopleRegistry(forge.store)
+        record = registry.replace(args.id, args.name, args.title, args.roles.split(","))
+        forge.audit.record(
+            actor=args.by,
+            actor_kind="human",
+            action="people.replaced",
+            subject=args.id,
+            details={"name": args.name, "roles": args.roles},
+        )
+        _print(record)
+    return 0
+
+
 def cmd_people_approvers(args: argparse.Namespace) -> int:
     with Forge.create(root=args.root, llm_kind=args.llm) as forge:
         from internal_ai.people import PeopleRegistry
@@ -744,8 +761,11 @@ def cmd_train_run(args: argparse.Namespace) -> int:
             seq_len=args.seq_len,
             cost_cap_usd=args.cost_cap,
             seed=args.seed,
+            learning_rate=args.learning_rate,
         )
-        outcome = train_embedding_model(forge, args.dataset_id, tokenizer, config, actor=args.actor)
+        outcome = train_embedding_model(
+            forge, args.dataset_id, tokenizer, config, actor=args.actor, pair_mode=args.pair_mode
+        )
         _print(outcome.to_dict())
         return 0 if outcome.status == "completed" else 1
 
@@ -1043,6 +1063,13 @@ def build_parser() -> argparse.ArgumentParser:
     people_list = people_sub.add_parser("list")
     people_list.add_argument("--json", action="store_true")
     people_list.set_defaults(func=cmd_people_list)
+    people_replace = people_sub.add_parser("replace")
+    people_replace.add_argument("--id", required=True)
+    people_replace.add_argument("--name", required=True)
+    people_replace.add_argument("--title", required=True)
+    people_replace.add_argument("--roles", required=True)
+    people_replace.add_argument("--by", default="program_lead")
+    people_replace.set_defaults(func=cmd_people_replace)
     people_approvers = people_sub.add_parser("approvers")
     people_approvers.add_argument("--gate-type", required=True)
     people_approvers.set_defaults(func=cmd_people_approvers)
@@ -1125,7 +1152,9 @@ def build_parser() -> argparse.ArgumentParser:
     train_run.add_argument("--seq-len", type=int, default=128)
     train_run.add_argument("--cost-cap", type=float, default=5.0)
     train_run.add_argument("--seed", type=int, default=17)
+    train_run.add_argument("--learning-rate", type=float, default=3e-4)
     train_run.add_argument("--actor", default="ml_engineer")
+    train_run.add_argument("--pair-mode", default="paraphrase", choices=["paraphrase", "title"])
     train_run.set_defaults(func=cmd_train_run)
 
     evaluate = sub.add_parser("eval", help="evaluation harness")

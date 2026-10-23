@@ -132,15 +132,18 @@ class PeopleRegistry:
         self.store = store
 
     def seed(self) -> list[Person]:
+        """Insert roster entries that are missing, and never overwrite rows.
+
+        Replacing a placeholder with a real person must survive later seeding,
+        so an existing row is left alone even if the shipped roster changes.
+        """
         seeded: list[Person] = []
         for person in ROSTER:
             self.store.conn.execute(
                 """
                 INSERT INTO people (id, name, title, roles, groups, placeholder, created_at)
                 VALUES (?,?,?,?,?,?,?)
-                ON CONFLICT(id) DO UPDATE SET
-                    name=excluded.name, title=excluded.title, roles=excluded.roles,
-                    groups=excluded.groups, placeholder=excluded.placeholder
+                ON CONFLICT(id) DO NOTHING
                 """,
                 (
                     person.id,
