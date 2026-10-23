@@ -33,7 +33,7 @@ class Settings:
         return cls(
             root=base.resolve(),
             home=home,
-            db_path=home / "forge.db",
+            db_path=home / "internal_ai.db",
             artifacts_dir=home / "artifacts",
             workspace_dir=home / "workspace",
             datasets_dir=home / "datasets",

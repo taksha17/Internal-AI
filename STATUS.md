@@ -60,6 +60,13 @@ The human roster placeholder for `ml_lead` was replaced with a real person
 (Taksha) via the new `people replace` command; a test caught and fixed a bug
 where seeding overwrote real people with placeholder identities.
 
+The rename is now complete down to the public contracts: the control-plane and
+serving APIs authenticate with `X-Internal-Key` (the old `X-Forge-Key` is
+rejected with 401), the platform object is `Platform`, and the runtime
+database is `var/internal_ai.db`. The existing databases were migrated with
+SQLite's backup API so no audit event was lost, and the split seed keeps its
+original value because the released dataset versions were split with it.
+
 Agentic retrieval over the real corpus works today and does not wait on a
 promotable embedding model: the app-builder code was versioned as a tree
 dataset (`data build-tree`, 40 files, lineage + ACLs) and the `ask` searcher

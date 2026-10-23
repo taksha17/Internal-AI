@@ -11,7 +11,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
-from internal_ai.context import Forge
+from internal_ai.context import Platform
 from internal_ai.data.tokenizer import Tokenizer
 from internal_ai.serving.service import (
     ModelRouter,
@@ -44,15 +44,15 @@ def create_serving_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        forge = Forge.create(root=root)
-        app.state.forge = forge
-        app.state.router = ModelRouter(forge.store, forge.audit)
-        app.state.retrieval = RetrievalService(forge.store, forge.audit)
+        platform = Platform.create(root=root)
+        app.state.platform = platform
+        app.state.router = ModelRouter(platform.store, platform.audit)
+        app.state.retrieval = RetrievalService(platform.store, platform.audit)
         app.state.embedders: dict[str, TorchEmbedder] = {}
         try:
             yield
         finally:
-            forge.close()
+            platform.close()
 
     app = FastAPI(
         title="Internal-AI serving",
@@ -62,13 +62,13 @@ def create_serving_app(
     )
     limiter = RateLimiter(rate_limit_per_minute)
 
-    def get_forge() -> Forge:
-        return app.state.forge
+    def get_platform() -> Platform:
+        return app.state.platform
 
-    def authenticate(x_forge_key: str | None = Header(default=None)) -> Principal:
+    def authenticate(x_internal_key: str | None = Header(default=None)) -> Principal:
         if not key_table:
             raise HTTPException(status_code=503, detail="no serving keys configured")
-        principal = key_table.get(x_forge_key or "")
+        principal = key_table.get(x_internal_key or "")
         if principal is None:
             raise HTTPException(status_code=401, detail="invalid api key")
         if not limiter.allow(principal.user_id):
@@ -85,10 +85,10 @@ def create_serving_app(
     def embedder_for(model_path: str) -> TorchEmbedder:
         embedders: dict[str, TorchEmbedder] = app.state.embedders
         if model_path not in embedders:
-            forge = get_forge()
+            platform = get_platform()
             tokenizer_path = Path(model_path).with_suffix(".tokenizer.json")
             if not tokenizer_path.exists():
-                candidates = sorted(forge.settings.models_dir.glob("tokenizer-*.json"))
+                candidates = sorted(platform.settings.models_dir.glob("tokenizer-*.json"))
                 if not candidates:
                     raise HTTPException(status_code=500, detail="no tokenizer available")
                 tokenizer_path = candidates[-1]
@@ -97,12 +97,12 @@ def create_serving_app(
 
     @app.get("/health")
     def health() -> dict[str, Any]:
-        forge = get_forge()
-        return {"status": "ok", "models": len(forge.store.list_models())}
+        platform = get_platform()
+        return {"status": "ok", "models": len(platform.store.list_models())}
 
     @app.get("/v1/models")
     def list_models(principal: Principal = Depends(authenticate)) -> list[dict[str, Any]]:
-        forge = get_forge()
+        platform = get_platform()
         router: ModelRouter = app.state.router
         return [
             {
@@ -112,7 +112,7 @@ def create_serving_app(
                 "status": model.status,
                 "active": router.active.get(model.name) == model.id,
             }
-            for model in forge.store.list_models()
+            for model in platform.store.list_models()
         ]
 
     @app.post("/v1/search")
@@ -120,7 +120,7 @@ def create_serving_app(
         request: SearchRequest, principal: Principal = Depends(authenticate)
     ) -> dict[str, Any]:
         started = time.monotonic()
-        forge = get_forge()
+        platform = get_platform()
         router: ModelRouter = app.state.router
         retrieval: RetrievalService = app.state.retrieval
         model = router.resolve("embedding-v1")
@@ -143,12 +143,12 @@ def create_serving_app(
             raise
         except Exception as exc:
             log_request(
-                forge.audit, principal, "/v1/search", 500, (time.monotonic() - started) * 1000
+                platform.audit, principal, "/v1/search", 500, (time.monotonic() - started) * 1000
             )
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         latency = (time.monotonic() - started) * 1000
         log_request(
-            forge.audit,
+            platform.audit,
             principal,
             "/v1/search",
             200,
@@ -174,14 +174,14 @@ def create_serving_app(
         request: SearchRequest, principal: Principal = Depends(authenticate)
     ) -> dict[str, Any]:
         started = time.monotonic()
-        forge = get_forge()
+        platform = get_platform()
         router: ModelRouter = app.state.router
         model = router.resolve("embedding-v1")
         if model is None:
             raise HTTPException(status_code=404, detail="no embedding model is registered")
         vectors = embedder_for(model.path).embed([request.query])
         latency = (time.monotonic() - started) * 1000
-        log_request(forge.audit, principal, "/v1/embed", 200, latency, {"model_id": model.id})
+        log_request(platform.audit, principal, "/v1/embed", 200, latency, {"model_id": model.id})
         return {
             "model_id": model.id,
             "embedding": [round(float(value), 6) for value in vectors[0]],

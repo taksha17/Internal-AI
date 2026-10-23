@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from internal_ai.context import Forge
+from internal_ai.context import Platform
 from internal_ai.domain import BudgetScope, GateType
 from internal_ai.gates import GATE_CATALOG, GateError
 from internal_ai.llm import ScriptedAdapter
@@ -29,30 +29,30 @@ def _print(payload: Any) -> None:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
-        forge.budget.set_limit(BudgetScope.GLOBAL, "global", args.budget)
-        forge.budget.set_limit(BudgetScope.PROJECT, "default", args.budget)
-        forge.audit.record(
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        platform.budget.set_limit(BudgetScope.GLOBAL, "global", args.budget)
+        platform.budget.set_limit(BudgetScope.PROJECT, "default", args.budget)
+        platform.audit.record(
             actor=args.actor,
             actor_kind="human",
             action="platform.init",
             subject="internal-ai",
-            details={"root": str(forge.settings.root), "budget_usd": args.budget},
+            details={"root": str(platform.settings.root), "budget_usd": args.budget},
         )
-        print(f"initialized Internal-AI at {forge.settings.home}")
-        print(f"database: {forge.settings.db_path}")
+        print(f"initialized Internal-AI at {platform.settings.home}")
+        print(f"database: {platform.settings.db_path}")
     return 0
 
 
 def cmd_plan(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         planner = (
             TemplatePlanner()
             if args.planner == "template"
-            else LLMPlanner(llm=forge.runtime.llm, fallback=TemplatePlanner())
+            else LLMPlanner(llm=platform.runtime.llm, fallback=TemplatePlanner())
         )
         drafts = planner.plan(args.goal, {"milestone": args.milestone})
-        tasks = forge.orchestrator.submit_plan(drafts, approved_by=args.approve_by)
+        tasks = platform.orchestrator.submit_plan(drafts, approved_by=args.approve_by)
         _print(
             {
                 "planned": len(tasks),
@@ -74,18 +74,18 @@ def cmd_plan(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         if args.approve_by:
-            forge.orchestrator.approve_plan(args.approve_by)
-        summary = forge.orchestrator.run(max_iterations=args.max_iterations)
+            platform.orchestrator.approve_plan(args.approve_by)
+        summary = platform.orchestrator.run(max_iterations=args.max_iterations)
         summary.pop("outcomes", None)
         _print(summary)
     return 0
 
 
 def cmd_board(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
-        tasks = forge.store.list_tasks()
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        tasks = platform.store.list_tasks()
         if args.state:
             tasks = [task for task in tasks if str(task.state) == args.state]
         if args.json:
@@ -102,8 +102,8 @@ def cmd_board(args: argparse.Namespace) -> int:
 
 
 def cmd_gates_list(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
-        gates = forge.store.list_gates()
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        gates = platform.store.list_gates()
         if args.status:
             gates = [gate for gate in gates if str(gate.status) == args.status]
         for gate in gates:
@@ -116,13 +116,13 @@ def cmd_gates_list(args: argparse.Namespace) -> int:
 
 
 def cmd_gates_request(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.domain import GateType
 
         gate_type = GateType(args.gate_type)
         entry = GATE_CATALOG[gate_type]
         evidence = dict.fromkeys(entry.evidence, args.note or f"evidence for {args.gate_type}")
-        gate = forge.gates.request(
+        gate = platform.gates.request(
             gate_type,
             title=args.title,
             subject=args.subject,
@@ -130,7 +130,7 @@ def cmd_gates_request(args: argparse.Namespace) -> int:
             requested_by_kind="human",
             evidence=evidence,
         )
-        forge.audit.record(
+        platform.audit.record(
             actor=args.by,
             actor_kind="human",
             action="gate.requested",
@@ -142,9 +142,9 @@ def cmd_gates_request(args: argparse.Namespace) -> int:
 
 
 def cmd_gates_approve(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         try:
-            gate = forge.gates.decide(
+            gate = platform.gates.decide(
                 args.gate_id,
                 args.by,
                 approved=True,
@@ -154,7 +154,7 @@ def cmd_gates_approve(args: argparse.Namespace) -> int:
         except GateError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
-        forge.audit.record(
+        platform.audit.record(
             actor=args.by,
             actor_kind="human",
             action="gate.approved",
@@ -166,9 +166,9 @@ def cmd_gates_approve(args: argparse.Namespace) -> int:
 
 
 def cmd_gates_reject(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         try:
-            gate = forge.gates.decide(
+            gate = platform.gates.decide(
                 args.gate_id,
                 args.by,
                 approved=False,
@@ -178,7 +178,7 @@ def cmd_gates_reject(args: argparse.Namespace) -> int:
         except GateError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
-        forge.audit.record(
+        platform.audit.record(
             actor=args.by,
             actor_kind="human",
             action="gate.rejected",
@@ -190,8 +190,8 @@ def cmd_gates_reject(args: argparse.Namespace) -> int:
 
 
 def cmd_audit_list(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
-        events = forge.audit.recent(limit=args.limit, action=args.action, actor=args.actor)
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        events = platform.audit.recent(limit=args.limit, action=args.action, actor=args.actor)
         if args.json:
             _print([event.__dict__ for event in events])
             return 0
@@ -205,24 +205,24 @@ def cmd_audit_list(args: argparse.Namespace) -> int:
 
 
 def cmd_audit_verify(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
-        result = forge.audit.verify()
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        result = platform.audit.verify()
         _print(result.to_dict())
         return 0 if result.ok else 1
 
 
 def cmd_budget_status(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
-        statuses = forge.budget.all_status()
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        statuses = platform.budget.all_status()
         _print([status.to_dict() for status in statuses])
     return 0
 
 
 def cmd_budget_set(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         scope = BudgetScope(args.scope)
-        forge.budget.set_limit(scope, args.key, args.limit)
-        forge.audit.record(
+        platform.budget.set_limit(scope, args.key, args.limit)
+        platform.audit.record(
             actor=args.actor,
             actor_kind="human",
             action="budget.limit_set",
@@ -234,14 +234,14 @@ def cmd_budget_set(args: argparse.Namespace) -> int:
 
 
 def cmd_kill(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         if args.release:
-            forge.budget.release_kill_switch()
+            platform.budget.release_kill_switch()
             action = "budget.kill_switch_released"
         else:
-            forge.budget.engage_kill_switch()
+            platform.budget.engage_kill_switch()
             action = "budget.kill_switch_engaged"
-        forge.audit.record(
+        platform.audit.record(
             actor=args.actor,
             actor_kind="human",
             action=action,
@@ -252,17 +252,17 @@ def cmd_kill(args: argparse.Namespace) -> int:
 
 
 def cmd_policy_list(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
-        _print(forge.policy.status_summary())
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        _print(platform.policy.status_summary())
     return 0
 
 
 def cmd_policy_decide(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
-        _decision, gate_id = forge.policy.propose(
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        _decision, gate_id = platform.policy.propose(
             args.id, args.value, requested_by=args.by, rationale=args.rationale
         )
-        forge.audit.record(
+        platform.audit.record(
             actor=args.by,
             actor_kind="human",
             action="policy.proposed",
@@ -275,9 +275,9 @@ def cmd_policy_decide(args: argparse.Namespace) -> int:
 
 
 def cmd_policy_confirm(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
-        decision = forge.policy.confirm(args.id, decided_by=args.by, gate_id=args.gate_id)
-        forge.audit.record(
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        decision = platform.policy.confirm(args.id, decided_by=args.by, gate_id=args.gate_id)
+        platform.audit.record(
             actor=args.by,
             actor_kind="human",
             action="policy.decided",
@@ -289,8 +289,8 @@ def cmd_policy_confirm(args: argparse.Namespace) -> int:
 
 
 def cmd_report(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
-        report = forge.orchestrator.status_report()
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        report = platform.orchestrator.status_report()
         _print(
             {
                 "generated_at": report.generated_at,
@@ -307,11 +307,11 @@ def cmd_report(args: argparse.Namespace) -> int:
 
 
 def cmd_demo(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind="scripted") as forge:
-        forge.runtime.llm = ScriptedAdapter(nominal_cost_usd=args.cost_per_run)
-        forge.budget.set_limit(BudgetScope.GLOBAL, "global", args.budget)
-        forge.budget.set_limit(BudgetScope.PROJECT, "default", args.budget)
-        forge.audit.record(
+    with Platform.create(root=args.root, llm_kind="scripted") as platform:
+        platform.runtime.llm = ScriptedAdapter(nominal_cost_usd=args.cost_per_run)
+        platform.budget.set_limit(BudgetScope.GLOBAL, "global", args.budget)
+        platform.budget.set_limit(BudgetScope.PROJECT, "default", args.budget)
+        platform.audit.record(
             actor=DEMO_APPROVER,
             actor_kind="human",
             action="platform.init",
@@ -321,22 +321,22 @@ def cmd_demo(args: argparse.Namespace) -> int:
         drafts = TemplatePlanner().plan(
             "Deliver the first from-scratch embedding model in 8 weeks", {}
         )
-        tasks = forge.orchestrator.submit_plan(drafts)
-        forge.orchestrator.approve_plan(DEMO_APPROVER)
+        tasks = platform.orchestrator.submit_plan(drafts)
+        platform.orchestrator.approve_plan(DEMO_APPROVER)
         print(f"plan submitted: {len(tasks)} tasks, approved by {DEMO_APPROVER}\n")
 
         approvals = {str(entry.gate_type): entry.approvers for entry in GATE_CATALOG.values()}
         summary: dict[str, Any] = {}
         for _ in range(10):
-            summary = forge.orchestrator.run(max_iterations=50)
-            pending = forge.gates.pending()
+            summary = platform.orchestrator.run(max_iterations=50)
+            pending = platform.gates.pending()
             if not pending:
                 break
             for gate in pending:
                 pair = approvals.get(str(gate.gate_type), (DEMO_APPROVER, DEMO_COMPLIANCE))
                 for approver in pair:
                     try:
-                        forge.gates.decide(
+                        platform.gates.decide(
                             gate.id,
                             approver,
                             approved=True,
@@ -345,21 +345,21 @@ def cmd_demo(args: argparse.Namespace) -> int:
                         )
                     except GateError:
                         continue
-                forge.audit.record(
+                platform.audit.record(
                     actor=pair[0],
                     actor_kind="human",
                     action="gate.approved",
                     subject=gate.id,
                     details={"gate_type": str(gate.gate_type), "mode": "demo"},
                 )
-        summary = forge.orchestrator.run(max_iterations=50)
+        summary = platform.orchestrator.run(max_iterations=50)
         summary.pop("outcomes", None)
         print("run summary:")
         _print(summary)
         print("\ntask board:")
-        for task in forge.store.list_tasks():
+        for task in platform.store.list_tasks():
             print(f"  {task.id:<24} {task.state!s:<12} {task.owner_role:<18} {task.title}")
-        report = forge.orchestrator.status_report()
+        report = platform.orchestrator.status_report()
         print("\nstatus report:")
         _print(
             {
@@ -370,7 +370,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
                 "risks": report.risks,
             }
         )
-        verification = forge.audit.verify()
+        verification = platform.audit.verify()
         print(f"\naudit chain verified: {verification.ok} ({verification.checked} events)")
         if not verification.ok:
             print(f"broken at seq {verification.broken_at_seq}: {verification.reason}")
@@ -389,10 +389,10 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 
 def cmd_alerts_list(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.alerts import AlertEngine
 
-        engine = AlertEngine(forge.store, forge.audit, forge.budget)
+        engine = AlertEngine(platform.store, platform.audit, platform.budget)
         if args.check:
             engine.check_all()
         alerts = engine.list_alerts(unacknowledged_only=not args.all)
@@ -406,21 +406,21 @@ def cmd_alerts_list(args: argparse.Namespace) -> int:
 
 
 def cmd_alerts_ack(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.alerts import AlertEngine
 
-        engine = AlertEngine(forge.store, forge.audit, forge.budget)
+        engine = AlertEngine(platform.store, platform.audit, platform.budget)
         alert = engine.acknowledge(args.id, args.by)
         print(f"alert {alert.id} acknowledged")
     return 0
 
 
 def cmd_data_release(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.data.pipeline import DataPipeline
 
-        pipeline = DataPipeline(forge.store, forge.audit, forge.settings.root)
-        gate_approved = args.gate_id is not None and forge.gates.is_approved(args.gate_id)
+        pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+        gate_approved = args.gate_id is not None and platform.gates.is_approved(args.gate_id)
         try:
             dataset = pipeline.release(
                 args.dataset_id, args.by, gate_approved, sample_size=args.sample_size
@@ -439,20 +439,20 @@ def cmd_data_release(args: argparse.Namespace) -> int:
 
 
 def cmd_data_pii_audit(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.data.pipeline import DataPipeline
 
-        pipeline = DataPipeline(forge.store, forge.audit, forge.settings.root)
+        pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
         result = pipeline.run_pii_audit(args.dataset_id, sample_size=args.sample_size)
         _print(result)
         return 0 if result["passed"] else 1
 
 
 def cmd_data_withdraw(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.data.governance import RetentionManager
 
-        manager = RetentionManager(forge.store, forge.audit)
+        manager = RetentionManager(platform.store, platform.audit)
         result = manager.withdraw_source(args.source_id, args.reason, args.by)
         if args.purge:
             removed = manager.purge_source_records(args.source_id, args.by, args.reason)
@@ -462,7 +462,7 @@ def cmd_data_withdraw(args: argparse.Namespace) -> int:
 
 
 def cmd_classifier_train(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.data.tokenizer import Tokenizer
         from internal_ai.training.classifier import ClassifierConfig
         from internal_ai.workflows import train_classifier_model
@@ -472,31 +472,33 @@ def cmd_classifier_train(args: argparse.Namespace) -> int:
             name=args.name, epochs=args.epochs, cost_cap_usd=args.cost_cap, seed=args.seed
         )
         outcome = train_classifier_model(
-            forge, args.dataset_id, Path(args.encoder), tokenizer, config, actor=args.actor
+            platform, args.dataset_id, Path(args.encoder), tokenizer, config, actor=args.actor
         )
         _print(outcome.to_dict())
         return 0 if outcome.status == "completed" else 1
 
 
 def cmd_classifier_eval(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.data.tokenizer import Tokenizer
         from internal_ai.workflows import evaluate_classifier_model
 
         tokenizer = Tokenizer.load(Path(args.tokenizer))
         result = evaluate_classifier_model(
-            forge, Path(args.model_path), tokenizer, args.dataset_id, split=args.split
+            platform, Path(args.model_path), tokenizer, args.dataset_id, split=args.split
         )
         _print(result)
         return 0 if result["passed"] else 1
 
 
 def cmd_job_submit(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.compute.scheduler import JobScheduler, JobSpec
         from internal_ai.sandbox import Sandbox
 
-        scheduler = JobScheduler(forge.audit, forge.budget, Sandbox(forge.settings.sandbox_dir))
+        scheduler = JobScheduler(
+            platform.audit, platform.budget, Sandbox(platform.settings.sandbox_dir)
+        )
         job = scheduler.submit(
             JobSpec(
                 name=args.name,
@@ -514,11 +516,13 @@ def cmd_job_submit(args: argparse.Namespace) -> int:
 
 
 def cmd_job_run(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.compute.scheduler import JobScheduler, JobSpec
         from internal_ai.sandbox import Sandbox
 
-        scheduler = JobScheduler(forge.audit, forge.budget, Sandbox(forge.settings.sandbox_dir))
+        scheduler = JobScheduler(
+            platform.audit, platform.budget, Sandbox(platform.settings.sandbox_dir)
+        )
         job = scheduler.submit(
             JobSpec(
                 name=args.name,
@@ -552,7 +556,7 @@ def cmd_inventory(args: argparse.Namespace) -> int:
 
 
 def cmd_data_build_tree(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.data.tree import TreeFile, TreeIndex, build_tree_index, index_hashes
         from internal_ai.workflows import build_tree_corpus
 
@@ -571,7 +575,7 @@ def cmd_data_build_tree(args: argparse.Namespace) -> int:
             truncated=sum(item["truncated"] for item in stats),
         )
         result = build_tree_corpus(
-            forge,
+            platform,
             merged,
             name=args.name,
             version=args.version,
@@ -593,7 +597,7 @@ def cmd_data_build_tree(args: argparse.Namespace) -> int:
 
 
 def cmd_ask(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.agentic import AgenticSearcher
         from internal_ai.serving.service import Principal
 
@@ -602,11 +606,11 @@ def cmd_ask(args: argparse.Namespace) -> int:
             groups=frozenset(args.groups.split(",")) if args.groups else frozenset({"engineering"}),
         )
         searcher = AgenticSearcher(
-            forge.store,
-            forge.audit,
-            forge.budget,
+            platform.store,
+            platform.audit,
+            platform.budget,
             embedder=None,
-            llm=forge.runtime.llm if args.planner == "model" else None,
+            llm=platform.runtime.llm if args.planner == "model" else None,
         )
         result = searcher.search(
             args.question,
@@ -628,10 +632,10 @@ def cmd_ask(args: argparse.Namespace) -> int:
 
 
 def cmd_people_list(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.people import PeopleRegistry
 
-        registry = PeopleRegistry(forge.store)
+        registry = PeopleRegistry(platform.store)
         people = registry.list_people()
         if args.json:
             _print(people)
@@ -646,12 +650,12 @@ def cmd_people_list(args: argparse.Namespace) -> int:
 
 
 def cmd_people_replace(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.people import PeopleRegistry
 
-        registry = PeopleRegistry(forge.store)
+        registry = PeopleRegistry(platform.store)
         record = registry.replace(args.id, args.name, args.title, args.roles.split(","))
-        forge.audit.record(
+        platform.audit.record(
             actor=args.by,
             actor_kind="human",
             action="people.replaced",
@@ -663,10 +667,10 @@ def cmd_people_replace(args: argparse.Namespace) -> int:
 
 
 def cmd_people_approvers(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.people import PeopleRegistry
 
-        registry = PeopleRegistry(forge.store)
+        registry = PeopleRegistry(platform.store)
         _print(registry.approvers_for(args.gate_type))
     return 0
 
@@ -692,11 +696,11 @@ def cmd_sample(args: argparse.Namespace) -> int:
 
 
 def cmd_data_build(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.workflows import build_corpus
 
         result = build_corpus(
-            forge,
+            platform,
             [Path(path) for path in args.source],
             name=args.name,
             version=args.version,
@@ -715,17 +719,17 @@ def cmd_data_build(args: argparse.Namespace) -> int:
 
 
 def cmd_data_split(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.workflows import split_corpus
 
-        result = split_corpus(forge, args.dataset_id, seed=args.seed)
+        result = split_corpus(platform, args.dataset_id, seed=args.seed)
         _print(result.stats)
     return 0
 
 
 def cmd_data_lineage(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
-        dataset = forge.store.get_dataset(args.dataset_id)
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        dataset = platform.store.get_dataset(args.dataset_id)
         if dataset is None:
             print(f"unknown dataset: {args.dataset_id}", file=sys.stderr)
             return 1
@@ -734,19 +738,19 @@ def cmd_data_lineage(args: argparse.Namespace) -> int:
 
 
 def cmd_tokenizer_train(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.workflows import train_tokenizer_for
 
         jargon = args.jargon.split(",") if args.jargon else None
         _, coverage = train_tokenizer_for(
-            forge, args.dataset_id, vocab_size=args.vocab_size, jargon=jargon
+            platform, args.dataset_id, vocab_size=args.vocab_size, jargon=jargon
         )
         _print(coverage)
     return 0
 
 
 def cmd_train_run(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.data.tokenizer import Tokenizer
         from internal_ai.training.trainer import TrainConfig
         from internal_ai.workflows import train_embedding_model
@@ -764,29 +768,29 @@ def cmd_train_run(args: argparse.Namespace) -> int:
             learning_rate=args.learning_rate,
         )
         outcome = train_embedding_model(
-            forge, args.dataset_id, tokenizer, config, actor=args.actor, pair_mode=args.pair_mode
+            platform, args.dataset_id, tokenizer, config, actor=args.actor, pair_mode=args.pair_mode
         )
         _print(outcome.to_dict())
         return 0 if outcome.status == "completed" else 1
 
 
 def cmd_eval_create(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.evals.harness import EvalHarness
 
         items = json.loads(Path(args.file).read_text(encoding="utf-8"))
-        harness = EvalHarness(forge.store, forge.audit)
+        harness = EvalHarness(platform.store, platform.audit)
         eval_set = harness.create_eval_set(args.name, items, version=args.version)
         _print({"eval_set_id": eval_set.id, "items": len(items), "frozen": eval_set.frozen})
     return 0
 
 
 def cmd_eval_freeze(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.evals.harness import EvalHarness
 
-        harness = EvalHarness(forge.store, forge.audit)
-        gate_approved = args.gate_id is not None and forge.gates.is_approved(args.gate_id)
+        harness = EvalHarness(platform.store, platform.audit)
+        gate_approved = args.gate_id is not None and platform.gates.is_approved(args.gate_id)
         try:
             eval_set = harness.freeze_eval_set(args.id, args.by, gate_approved)
         except PermissionError as exc:
@@ -803,25 +807,25 @@ def cmd_eval_freeze(args: argparse.Namespace) -> int:
 
 
 def cmd_eval_derive(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.evals.harness import EvalHarness
         from internal_ai.workflows import derive_eval_items
 
-        items = derive_eval_items(forge, args.dataset_id, count=args.count, mode=args.mode)
-        harness = EvalHarness(forge.store, forge.audit)
+        items = derive_eval_items(platform, args.dataset_id, count=args.count, mode=args.mode)
+        harness = EvalHarness(platform.store, platform.audit)
         eval_set = harness.create_eval_set(args.name, items, version=args.version)
         _print({"eval_set_id": eval_set.id, "items": len(items), "frozen": eval_set.frozen})
     return 0
 
 
 def cmd_eval_run(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.data.tokenizer import Tokenizer
         from internal_ai.workflows import evaluate_embedding_model
 
         tokenizer = Tokenizer.load(Path(args.tokenizer))
         result = evaluate_embedding_model(
-            forge,
+            platform,
             Path(args.model_path),
             args.eval_set,
             tokenizer,
@@ -834,7 +838,7 @@ def cmd_eval_run(args: argparse.Namespace) -> int:
 
 
 def cmd_model_register(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.training.trainer import TrainingOutcome
         from internal_ai.workflows import register_model
 
@@ -844,7 +848,7 @@ def cmd_model_register(args: argparse.Namespace) -> int:
             candidate = Path(args.model_path).stem
             if candidate.startswith("run_"):
                 run_id = candidate
-        run_dir = forge.settings.artifacts_dir / "runs" / run_id
+        run_dir = platform.settings.artifacts_dir / "runs" / run_id
         reproducibility_file = run_dir / "reproducibility.json"
         if reproducibility_file.exists():
             reproducibility = json.loads(reproducibility_file.read_text(encoding="utf-8"))
@@ -862,18 +866,18 @@ def cmd_model_register(args: argparse.Namespace) -> int:
             model_path=args.model_path,
             reproducibility=reproducibility,
         )
-        model = register_model(forge, args.name, Path(args.model_path), outcome, args.dataset_id)
+        model = register_model(platform, args.name, Path(args.model_path), outcome, args.dataset_id)
         _print({"model_id": model.id, "name": model.name, "version": model.version})
     return 0
 
 
 def cmd_model_promote(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.workflows import promote_model
 
-        gate_approved = args.gate_id is not None and forge.gates.is_approved(args.gate_id)
+        gate_approved = args.gate_id is not None and platform.gates.is_approved(args.gate_id)
         try:
-            model = promote_model(forge, args.id, gate_approved, approver=args.by)
+            model = promote_model(platform, args.id, gate_approved, approver=args.by)
         except (PermissionError, KeyError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
@@ -882,10 +886,10 @@ def cmd_model_promote(args: argparse.Namespace) -> int:
 
 
 def cmd_model_card(args: argparse.Namespace) -> int:
-    with Forge.create(root=args.root, llm_kind=args.llm) as forge:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.workflows import model_card_markdown
 
-        model = forge.store.get_model(args.id)
+        model = platform.store.get_model(args.id)
         if model is None:
             print(f"unknown model: {args.id}", file=sys.stderr)
             return 1

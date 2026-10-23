@@ -18,7 +18,7 @@ from internal_ai.tools import ToolRegistry
 
 
 @dataclass(slots=True)
-class Forge:
+class Platform:
     settings: Settings
     store: Store
     audit: AuditLog
@@ -37,7 +37,7 @@ class Forge:
         llm_kind: str = "auto",
         engine_config: EngineConfig | None = None,
         project: str = "default",
-    ) -> Forge:
+    ) -> Platform:
         settings = Settings.from_env(root)
         settings.ensure_dirs()
         store = Store(settings.db_path)
@@ -67,7 +67,7 @@ class Forge:
     def close(self) -> None:
         self.store.close()
 
-    def __enter__(self) -> Forge:
+    def __enter__(self) -> Platform:
         return self
 
     def __exit__(self, *exc: object) -> None:

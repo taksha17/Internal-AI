@@ -28,7 +28,12 @@ def make_splits(
     seed: str = "forge-v1",
     leakage_threshold: int = 3,
 ) -> SplitResult:
-    """Split records deterministically and drop cross-split near duplicates."""
+    """Split records deterministically and drop cross-split near duplicates.
+
+    The default seed is kept as it was issued before the rename: it is the
+    identifier the released dataset versions were split with, and changing it
+    would silently produce a different assignment for every corpus.
+    """
     train_ratio, val_ratio, _ = ratios
     splits: dict[str, list[Record]] = {"train": [], "validation": [], "test": []}
     for record in records:

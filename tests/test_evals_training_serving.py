@@ -70,8 +70,8 @@ def test_bm25_prefers_lexical_overlap() -> None:
     assert scores[0] > scores[1]
 
 
-def test_frozen_eval_set_cannot_be_written(forge) -> None:
-    harness = EvalHarness(forge.store, forge.audit)
+def test_frozen_eval_set_cannot_be_written(platform) -> None:
+    harness = EvalHarness(platform.store, platform.audit)
     eval_set = harness.create_eval_set("v1", [{"query": "q", "relevant_ids": ["d1"]}])
     with pytest.raises(PermissionError):
         harness.freeze_eval_set(eval_set.id, "ml_lead", gate_approved=False)
@@ -81,27 +81,29 @@ def test_frozen_eval_set_cannot_be_written(forge) -> None:
     with pytest.raises(PermissionError):
         harness.write_to_frozen_set(eval_set.id, "data_scientist")
     denied = [
-        event for event in forge.audit.recent(limit=20) if event.action == "eval_set.write_attempt"
+        event
+        for event in platform.audit.recent(limit=20)
+        if event.action == "eval_set.write_attempt"
     ]
     assert denied
 
 
-def test_evaluation_requires_frozen_set(forge) -> None:
+def test_evaluation_requires_frozen_set(platform) -> None:
     from internal_ai.evals.harness import EvalHarness
     from internal_ai.workflows import evaluate_embedding_model
 
-    harness = EvalHarness(forge.store, forge.audit)
+    harness = EvalHarness(platform.store, platform.audit)
     eval_set = harness.create_eval_set("v1", [{"query": "q", "relevant_ids": ["d1"]}])
     with pytest.raises(PermissionError, match="frozen"):
-        evaluate_embedding_model(forge, __file__, eval_set.id, None, "ds_1")
+        evaluate_embedding_model(platform, __file__, eval_set.id, None, "ds_1")
     with pytest.raises(KeyError):
-        evaluate_embedding_model(forge, __file__, "evs_missing", None, "ds_1")
+        evaluate_embedding_model(platform, __file__, "evs_missing", None, "ds_1")
 
 
-def test_promotion_requires_passing_eval_and_gate(forge) -> None:
+def test_promotion_requires_passing_eval_and_gate(platform) -> None:
     from internal_ai.workflows import promote_model
 
-    model = forge.store.add_model(
+    model = platform.store.add_model(
         __import__("internal_ai.domain", fromlist=["ModelVersion"]).ModelVersion(
             id="mdl_1",
             name="embedding-v1",
@@ -111,16 +113,16 @@ def test_promotion_requires_passing_eval_and_gate(forge) -> None:
         )
     )
     with pytest.raises(PermissionError):
-        promote_model(forge, model.id, gate_approved=False)
+        promote_model(platform, model.id, gate_approved=False)
     with pytest.raises(PermissionError):
-        promote_model(forge, model.id, gate_approved=True)
+        promote_model(platform, model.id, gate_approved=True)
 
 
-def test_title_mode_pairs_use_first_line(forge) -> None:
+def test_title_mode_pairs_use_first_line(platform) -> None:
     from internal_ai.domain import DatasetVersion
     from internal_ai.workflows import build_pair_dataset
 
-    forge.store.add_dataset(
+    platform.store.add_dataset(
         DatasetVersion(
             id="ds_pairs",
             name="pairs",
@@ -131,7 +133,7 @@ def test_title_mode_pairs_use_first_line(forge) -> None:
             created_at="now",
         )
     )
-    forge.store.add_dataset_records(
+    platform.store.add_dataset_records(
         "ds_pairs",
         [
             {
@@ -149,14 +151,14 @@ def test_title_mode_pairs_use_first_line(forge) -> None:
             {"record_key": "doc-3", "payload": "tiny", "source_id": "s", "acl": []},
         ],
     )
-    pairs = build_pair_dataset(forge, "ds_pairs", mode="title")
+    pairs = build_pair_dataset(platform, "ds_pairs", mode="title")
     assert [pair["query"] for pair in pairs] == ["# Architecture", "import json"]
     assert all(pair["document"].startswith(pair["query"].split("\n")[0]) for pair in pairs)
-    paraphrase = build_pair_dataset(forge, "ds_pairs", mode="paraphrase")
+    paraphrase = build_pair_dataset(platform, "ds_pairs", mode="paraphrase")
     assert paraphrase == []
 
 
-def test_training_respects_cost_cap_and_records_reproducibility(forge, tmp_path) -> None:
+def test_training_respects_cost_cap_and_records_reproducibility(platform, tmp_path) -> None:
     from internal_ai.data.tokenizer import train_tokenizer
     from internal_ai.training.trainer import TrainConfig, Trainer
 
@@ -169,7 +171,9 @@ def test_training_respects_cost_cap_and_records_reproducibility(forge, tmp_path)
         Record(id=str(index), record_key=str(index), text=text, source_id="s")
         for index, text in enumerate(texts)
     ]
-    trainer = Trainer(forge.store, forge.audit, forge.budget, tmp_path / "artifacts", root=tmp_path)
+    trainer = Trainer(
+        platform.store, platform.audit, platform.budget, tmp_path / "artifacts", root=tmp_path
+    )
     outcome = trainer.train(
         TrainConfig(steps=2, batch_size=2, seq_len=32, cost_cap_usd=0.0),
         records,
@@ -181,7 +185,7 @@ def test_training_respects_cost_cap_and_records_reproducibility(forge, tmp_path)
     assert outcome.alerts
 
 
-def test_training_run_completes_and_checkpoints(forge, tmp_path) -> None:
+def test_training_run_completes_and_checkpoints(platform, tmp_path) -> None:
     from internal_ai.data.tokenizer import train_tokenizer
     from internal_ai.training.trainer import TrainConfig, Trainer
 
@@ -194,7 +198,9 @@ def test_training_run_completes_and_checkpoints(forge, tmp_path) -> None:
         Record(id=str(index), record_key=str(index), text=text, source_id="s")
         for index, text in enumerate(texts)
     ]
-    trainer = Trainer(forge.store, forge.audit, forge.budget, tmp_path / "artifacts", root=tmp_path)
+    trainer = Trainer(
+        platform.store, platform.audit, platform.budget, tmp_path / "artifacts", root=tmp_path
+    )
     outcome = trainer.train(
         TrainConfig(steps=3, batch_size=2, seq_len=32, cost_cap_usd=10.0),
         records,
@@ -238,7 +244,7 @@ def test_api_key_parsing() -> None:
     assert principals["k2"].groups == frozenset()
 
 
-def test_retrieval_enforces_document_permissions(forge) -> None:
+def test_retrieval_enforces_document_permissions(platform) -> None:
 
     class Embedder:
         name = "test"
@@ -246,7 +252,7 @@ def test_retrieval_enforces_document_permissions(forge) -> None:
         def embed(self, texts):
             return np.asarray([[float(len(text)), 1.0] for text in texts], dtype=np.float32)
 
-    forge.store.add_dataset(
+    platform.store.add_dataset(
         __import__("internal_ai.domain", fromlist=["DatasetVersion"]).DatasetVersion(
             id="ds_1",
             name="c",
@@ -257,7 +263,7 @@ def test_retrieval_enforces_document_permissions(forge) -> None:
             created_at="now",
         )
     )
-    forge.store.add_dataset_records(
+    platform.store.add_dataset_records(
         "ds_1",
         [
             {
@@ -274,7 +280,7 @@ def test_retrieval_enforces_document_permissions(forge) -> None:
             },
         ],
     )
-    service = RetrievalService(forge.store, forge.audit)
+    service = RetrievalService(platform.store, platform.audit)
     support = Principal(user_id="alice", groups=frozenset({"support"}))
     hits = service.search(Embedder(), "ds_1", "ledgerline", support, top_k=5)
     assert {hit.document_id for hit in hits} == {"public"}
@@ -289,11 +295,11 @@ def test_retrieval_enforces_document_permissions(forge) -> None:
     assert len(hits) == 2
 
 
-def test_model_router_rolls_back(forge) -> None:
+def test_model_router_rolls_back(platform) -> None:
     from internal_ai.domain import ModelVersion
 
     for index in (1, 2):
-        forge.store.add_model(
+        platform.store.add_model(
             ModelVersion(
                 id=f"mdl_{index}",
                 name="embedding-v1",
@@ -303,14 +309,14 @@ def test_model_router_rolls_back(forge) -> None:
                 status="promoted",
             )
         )
-    router = ModelRouter(forge.store, forge.audit)
+    router = ModelRouter(platform.store, platform.audit)
     router.set_active("embedding-v1", "mdl_2", actor="admin", reason="deploy")
     assert router.resolve("embedding-v1").id == "mdl_2"
     router.rollback("embedding-v1", "mdl_1", actor="admin")
     assert router.resolve("embedding-v1").id == "mdl_1"
     events = [
         event
-        for event in forge.audit.recent(limit=20)
+        for event in platform.audit.recent(limit=20)
         if event.action == "serving.version_activated"
     ]
     assert len(events) == 2

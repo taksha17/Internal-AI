@@ -33,7 +33,7 @@ corpus inside company boundaries.
 ## Repository contents
 - `src/internal_ai/` — the platform implementation (Python package `internal_ai`):
   orchestrator, role agents, gates, budgets, audit log, data pipeline,
-  training, evals, serving API, CLI, and a 65-test suite. Platform docs live in
+  training, evals, serving API, CLI, and a 67-test suite. Platform docs live in
   `docs/` and `AGENTS.md`.
 - `PRD Agent-Driven In-House LLM Build Platform.md` — the product requirements
   document (v1.0): scope, phasing, agent specifications, functional/non-functional

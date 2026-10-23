@@ -17,13 +17,13 @@ from typing import Any
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from internal_ai.context import Forge
+from internal_ai.context import Platform
 from internal_ai.domain import BudgetScope, TaskState
 from internal_ai.gates import GateError
 from internal_ai.planner import LLMPlanner, TemplatePlanner
 from internal_ai.store import TransitionError
 
-API_KEY_HEADER = "X-Forge-Key"
+API_KEY_HEADER = "X-Internal-Key"
 
 
 class PlanRequest(BaseModel):
@@ -63,12 +63,12 @@ def create_app(
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        forge = Forge.create(root=root, llm_kind=llm_kind)
-        app.state.forge = forge
+        platform = Platform.create(root=root, llm_kind=llm_kind)
+        app.state.platform = platform
         try:
             yield
         finally:
-            forge.close()
+            platform.close()
 
     app = FastAPI(
         title="Internal-AI control plane",
@@ -78,26 +78,26 @@ def create_app(
     )
     key = api_key or os.environ.get("INTERNAL_AI_API_KEY", "")
 
-    def get_forge() -> Forge:
-        forge: Forge | None = getattr(app.state, "forge", None)
-        if forge is None:
-            forge = Forge.create(root=root, llm_kind=llm_kind)
-            app.state.forge = forge
-        return forge
+    def get_platform() -> Platform:
+        platform: Platform | None = getattr(app.state, "platform", None)
+        if platform is None:
+            platform = Platform.create(root=root, llm_kind=llm_kind)
+            app.state.platform = platform
+        return platform
 
-    def require_key(x_forge_key: str | None = Header(default=None)) -> None:
+    def require_key(x_internal_key: str | None = Header(default=None)) -> None:
         if not key:
             return
-        if x_forge_key != key:
-            raise HTTPException(status_code=401, detail="invalid or missing X-Forge-Key")
+        if x_internal_key != key:
+            raise HTTPException(status_code=401, detail="invalid or missing X-Internal-Key")
 
     @app.get("/health")
     def health() -> dict[str, Any]:
-        forge = get_forge()
+        platform = get_platform()
         return {
             "status": "ok",
-            "kill_switch": forge.budget.kill_switch_engaged(),
-            "budget": [status.to_dict() for status in forge.budget.all_status()],
+            "kill_switch": platform.budget.kill_switch_engaged(),
+            "budget": [status.to_dict() for status in platform.budget.all_status()],
         }
 
     @app.get("/tasks")
@@ -106,38 +106,38 @@ def create_app(
         owner_role: str | None = None,
         _: None = Depends(require_key),
     ) -> list[dict[str, Any]]:
-        forge = get_forge()
+        platform = get_platform()
         return [
-            task.to_dict() for task in forge.store.list_tasks(state=state, owner_role=owner_role)
+            task.to_dict() for task in platform.store.list_tasks(state=state, owner_role=owner_role)
         ]
 
     @app.get("/tasks/{task_id}")
     def get_task(task_id: str, _: None = Depends(require_key)) -> dict[str, Any]:
-        forge = get_forge()
-        task = forge.store.get_task(task_id)
+        platform = get_platform()
+        task = platform.store.get_task(task_id)
         if task is None:
             raise HTTPException(status_code=404, detail="unknown task")
-        events = [event.__dict__ for event in forge.store.task_events(task_id)]
+        events = [event.__dict__ for event in platform.store.task_events(task_id)]
         return {"task": task.to_dict(), "events": events}
 
     @app.post("/plan")
     def submit_plan(request: PlanRequest, _: None = Depends(require_key)) -> dict[str, Any]:
-        forge = get_forge()
+        platform = get_platform()
         planner = (
             TemplatePlanner()
             if request.planner == "template"
-            else LLMPlanner(llm=forge.runtime.llm, fallback=TemplatePlanner())
+            else LLMPlanner(llm=platform.runtime.llm, fallback=TemplatePlanner())
         )
         drafts = planner.plan(request.goal, {"milestone": request.milestone})
-        tasks = forge.orchestrator.submit_plan(drafts, approved_by=request.approve_by)
+        tasks = platform.orchestrator.submit_plan(drafts, approved_by=request.approve_by)
         return {"tasks": [task.to_dict() for task in tasks]}
 
     @app.post("/run")
     def run(request: RunRequest, _: None = Depends(require_key)) -> dict[str, Any]:
-        forge = get_forge()
+        platform = get_platform()
         if request.approve_by:
-            forge.orchestrator.approve_plan(request.approve_by)
-        summary = forge.orchestrator.run(max_iterations=request.max_iterations)
+            platform.orchestrator.approve_plan(request.approve_by)
+        summary = platform.orchestrator.run(max_iterations=request.max_iterations)
         summary.pop("outcomes", None)
         return summary
 
@@ -145,8 +145,8 @@ def create_app(
     def list_gates(
         status: str | None = None, _: None = Depends(require_key)
     ) -> list[dict[str, Any]]:
-        forge = get_forge()
-        gates = forge.store.list_gates(status=status)
+        platform = get_platform()
+        gates = platform.store.list_gates(status=status)
         return [
             {
                 "id": gate.id,
@@ -167,9 +167,9 @@ def create_app(
     def decide_gate(
         gate_id: str, request: GateDecisionRequest, _: None = Depends(require_key)
     ) -> dict[str, Any]:
-        forge = get_forge()
+        platform = get_platform()
         try:
-            gate = forge.gates.decide(
+            gate = platform.gates.decide(
                 gate_id,
                 request.approver,
                 approved=request.approved,
@@ -179,7 +179,7 @@ def create_app(
             )
         except GateError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        forge.audit.record(
+        platform.audit.record(
             actor=request.approver,
             actor_kind="human",
             action="gate.approved" if request.approved else "gate.rejected",
@@ -195,8 +195,8 @@ def create_app(
         actor: str | None = None,
         _: None = Depends(require_key),
     ) -> list[dict[str, Any]]:
-        forge = get_forge()
-        events = forge.audit.recent(limit=limit, action=action, actor=actor)
+        platform = get_platform()
+        events = platform.audit.recent(limit=limit, action=action, actor=actor)
         return [
             {
                 "seq": event.seq,
@@ -215,26 +215,26 @@ def create_app(
 
     @app.get("/audit/verify")
     def verify_audit(_: None = Depends(require_key)) -> dict[str, Any]:
-        forge = get_forge()
-        return forge.audit.verify().to_dict()
+        platform = get_platform()
+        return platform.audit.verify().to_dict()
 
     @app.get("/budget")
     def budget(_: None = Depends(require_key)) -> dict[str, Any]:
-        forge = get_forge()
+        platform = get_platform()
         return {
-            "status": [status.to_dict() for status in forge.budget.all_status()],
-            "kill_switch": forge.budget.kill_switch_engaged(),
+            "status": [status.to_dict() for status in platform.budget.all_status()],
+            "kill_switch": platform.budget.kill_switch_engaged(),
         }
 
     @app.post("/budget/limits")
     def set_limit(request: BudgetLimitRequest, _: None = Depends(require_key)) -> dict[str, Any]:
-        forge = get_forge()
+        platform = get_platform()
         try:
             scope = BudgetScope(request.scope)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=f"unknown scope: {request.scope}") from exc
-        forge.budget.set_limit(scope, request.key, request.limit_usd)
-        forge.audit.record(
+        platform.budget.set_limit(scope, request.key, request.limit_usd)
+        platform.audit.record(
             actor=request.actor,
             actor_kind="human",
             action="budget.limit_set",
@@ -245,16 +245,16 @@ def create_app(
 
     @app.get("/policy")
     def policy(_: None = Depends(require_key)) -> dict[str, Any]:
-        forge = get_forge()
-        return forge.policy.status_summary()
+        platform = get_platform()
+        return platform.policy.status_summary()
 
     @app.post("/policy/{policy_id}")
     def decide_policy(
         policy_id: str, request: PolicyRequest, _: None = Depends(require_key)
     ) -> dict[str, Any]:
-        forge = get_forge()
+        platform = get_platform()
         try:
-            decision, gate_id = forge.policy.propose(
+            decision, gate_id = platform.policy.propose(
                 policy_id,
                 request.value,
                 requested_by=request.requested_by,
@@ -262,7 +262,7 @@ def create_app(
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        forge.audit.record(
+        platform.audit.record(
             actor=request.requested_by,
             actor_kind="human",
             action="policy.proposed",
@@ -273,8 +273,8 @@ def create_app(
 
     @app.get("/report")
     def report(_: None = Depends(require_key)) -> dict[str, Any]:
-        forge = get_forge()
-        status = forge.orchestrator.status_report()
+        platform = get_platform()
+        status = platform.orchestrator.status_report()
         return {
             "generated_at": status.generated_at,
             "tasks_by_state": status.tasks_by_state,
@@ -294,8 +294,8 @@ def create_app(
     ) -> list[dict[str, Any]]:
         from internal_ai.alerts import AlertEngine
 
-        forge = get_forge()
-        engine = AlertEngine(forge.store, forge.audit, forge.budget)
+        platform = get_platform()
+        engine = AlertEngine(platform.store, platform.audit, platform.budget)
         if check:
             engine.check_all()
         return [alert.to_dict() for alert in engine.list_alerts(unacknowledged_only=not all_alerts)]
@@ -306,8 +306,8 @@ def create_app(
     ) -> dict[str, Any]:
         from internal_ai.alerts import AlertEngine
 
-        forge = get_forge()
-        engine = AlertEngine(forge.store, forge.audit, forge.budget)
+        platform = get_platform()
+        engine = AlertEngine(platform.store, platform.audit, platform.budget)
         try:
             alert = engine.acknowledge(alert_id, actor)
         except KeyError as exc:
@@ -327,8 +327,8 @@ def create_app(
         actor: str,
         _: None = Depends(require_key),
     ) -> dict[str, Any]:
-        forge = get_forge()
-        task = forge.store.get_task(task_id)
+        platform = get_platform()
+        task = platform.store.get_task(task_id)
         if task is None:
             raise HTTPException(status_code=404, detail="unknown task")
         try:
@@ -336,7 +336,7 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=f"unknown state: {state}") from exc
         try:
-            forge.store.set_task_state(task, target, actor, "human", "manual transition")
+            platform.store.set_task_state(task, target, actor, "human", "manual transition")
         except TransitionError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"id": task.id, "state": str(task.state)}

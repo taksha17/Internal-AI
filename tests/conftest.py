@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from internal_ai.context import Forge
+from internal_ai.context import Platform
 from internal_ai.data.samples import generate_corpus
 from internal_ai.llm import ScriptedAdapter
 
 
 @pytest.fixture()
-def forge(tmp_path: Path) -> Forge:
-    instance = Forge.create(root=tmp_path, llm_kind="scripted")
+def platform(tmp_path: Path) -> Platform:
+    instance = Platform.create(root=tmp_path, llm_kind="scripted")
     instance.runtime.llm = ScriptedAdapter(nominal_cost_usd=0.01)
     yield instance
     instance.close()

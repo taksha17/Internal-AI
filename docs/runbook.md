@@ -67,7 +67,7 @@ running training job; cancel that job through the compute plane.
 
 ```bash
 curl -X POST http://localhost:8081/v1/models/embedding-v1/rollback \
-  -H "X-Forge-Key: <admin key>" \
+  -H "X-Internal-Key: <admin key>" \
   -d '{"model_id": "<previous model id>", "reason": "regression in pilot"}'
 ```
 

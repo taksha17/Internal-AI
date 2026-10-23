@@ -23,7 +23,7 @@ def test_every_role_declares_subagents() -> None:
     assert total_subagents() >= 40
 
 
-def test_subagents_run_and_write_artifacts(forge) -> None:
+def test_subagents_run_and_write_artifacts(platform) -> None:
     from internal_ai.domain import Task
 
     task = Task(
@@ -34,18 +34,20 @@ def test_subagents_run_and_write_artifacts(forge) -> None:
         owner_role="data_engineer",
         acceptance_criteria=["corpus is clean", "lineage is complete"],
     )
-    forge.store.add_task(task)
-    result = forge.runtime.execute(get_role("data_engineer"), task)
+    platform.store.add_task(task)
+    result = platform.runtime.execute(get_role("data_engineer"), task)
     sub_agents = result.metadata["sub_agents"]
     assert len(sub_agents) == len(subagents_for("data_engineer"))
     assert all(item["status"] == "ok" for item in sub_agents)
     artifact_names = {Path(path).name for path in result.artifacts}
     assert any(name.startswith("subagent-tsk_1-") for name in artifact_names)
-    events = [event for event in forge.audit.recent(limit=200) if event.action == "agent.subagent"]
+    events = [
+        event for event in platform.audit.recent(limit=200) if event.action == "agent.subagent"
+    ]
     assert len(events) == len(sub_agents)
 
 
-def test_subagents_do_not_spawn_further_agents(forge) -> None:
+def test_subagents_do_not_spawn_further_agents(platform) -> None:
     from internal_ai.domain import Task
 
     task = Task(
@@ -56,24 +58,26 @@ def test_subagents_do_not_spawn_further_agents(forge) -> None:
         owner_role="orchestrator",
         acceptance_criteria=["planned"],
     )
-    forge.store.add_task(task)
-    forge.runtime.execute(get_role("orchestrator"), task, depth=1)
-    events = [event for event in forge.audit.recent(limit=200) if event.action == "agent.subagent"]
+    platform.store.add_task(task)
+    platform.runtime.execute(get_role("orchestrator"), task, depth=1)
+    events = [
+        event for event in platform.audit.recent(limit=200) if event.action == "agent.subagent"
+    ]
     assert events == []
 
 
-def test_alerts_fire_on_spend_pressure(forge) -> None:
-    forge.budget.set_limit(BudgetScope.GLOBAL, "global", 10.0)
-    forge.budget.record_spend(9.0, agent="ml_engineer")
-    engine = AlertEngine(forge.store, forge.audit, forge.budget)
+def test_alerts_fire_on_spend_pressure(platform) -> None:
+    platform.budget.set_limit(BudgetScope.GLOBAL, "global", 10.0)
+    platform.budget.record_spend(9.0, agent="ml_engineer")
+    engine = AlertEngine(platform.store, platform.audit, platform.budget)
     alerts = engine.check_spend()
     assert any(alert.kind == "spend_approaching_cap" for alert in alerts)
-    forge.budget.record_spend(2.0, agent="ml_engineer")
+    platform.budget.record_spend(2.0, agent="ml_engineer")
     alerts = engine.check_spend()
     assert any(alert.kind == "budget_exhausted" for alert in alerts)
 
 
-def test_alerts_fire_on_repeated_task_failures(forge) -> None:
+def test_alerts_fire_on_repeated_task_failures(platform) -> None:
     from internal_ai.domain import Task
 
     task = Task(
@@ -84,35 +88,35 @@ def test_alerts_fire_on_repeated_task_failures(forge) -> None:
         owner_role="orchestrator",
         attempts=3,
     )
-    forge.store.add_task(task)
-    engine = AlertEngine(forge.store, forge.audit, forge.budget)
+    platform.store.add_task(task)
+    engine = AlertEngine(platform.store, platform.audit, platform.budget)
     alerts = engine.check_tasks(attempt_threshold=3)
     assert any(alert.kind == "repeated_task_failures" for alert in alerts)
 
 
-def test_alerts_detect_anomalous_data_access(forge) -> None:
+def test_alerts_detect_anomalous_data_access(platform) -> None:
     for index in range(30):
-        forge.audit.record(
+        platform.audit.record(
             actor="bulk_reader",
             action="serving.search",
             subject="ds_1",
             inputs={"query_hash": f"h{index}"},
         )
     for index in range(5):
-        forge.audit.record(
+        platform.audit.record(
             actor="normal_reader",
             action="serving.search",
             subject="ds_1",
             inputs={"query_hash": f"n{index}"},
         )
-    engine = AlertEngine(forge.store, forge.audit, forge.budget)
+    engine = AlertEngine(platform.store, platform.audit, platform.budget)
     alerts = engine.check_data_access()
     assert any(alert.kind == "anomalous_data_access" for alert in alerts)
     assert any(alert.subject == "bulk_reader" for alert in alerts)
 
 
-def test_alerts_can_be_acknowledged(forge) -> None:
-    engine = AlertEngine(forge.store, forge.audit, forge.budget)
+def test_alerts_can_be_acknowledged(platform) -> None:
+    engine = AlertEngine(platform.store, platform.audit, platform.budget)
     alert = engine.raise_alert("test", "low", "subject", "message")
     assert alert.id in {item.id for item in engine.list_alerts()}
     engine.acknowledge(alert.id, "program_lead")
@@ -152,14 +156,14 @@ def test_pii_audit_catches_surviving_pii() -> None:
     assert result.findings.get("email", 0) >= 1
 
 
-def test_release_is_blocked_when_pii_survives(forge, corpus_path, monkeypatch) -> None:
+def test_release_is_blocked_when_pii_survives(platform, corpus_path, monkeypatch) -> None:
     from internal_ai.data.pipeline import DataPipeline
 
-    pipeline = DataPipeline(forge.store, forge.audit, forge.settings.root)
-    result = build_corpus(forge, [corpus_path], name="corpus-test")
-    rows = forge.store.dataset_records(result.dataset_id)
+    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+    result = build_corpus(platform, [corpus_path], name="corpus-test")
+    rows = platform.store.dataset_records(result.dataset_id)
     dirty = rows[0]
-    forge.store.conn.execute(
+    platform.store.conn.execute(
         "UPDATE dataset_records SET payload = ? WHERE dataset_id = ? AND record_key = ?",
         (
             "reach me at person@example.com about the invoice reconciliation",
@@ -171,41 +175,43 @@ def test_release_is_blocked_when_pii_survives(forge, corpus_path, monkeypatch) -
         pipeline.release(result.dataset_id, "ml_lead", gate_approved=True, sample_size=1000)
 
 
-def test_release_requires_the_gate(forge, corpus_path) -> None:
+def test_release_requires_the_gate(platform, corpus_path) -> None:
     from internal_ai.data.pipeline import DataPipeline
 
-    pipeline = DataPipeline(forge.store, forge.audit, forge.settings.root)
-    result = build_corpus(forge, [corpus_path], name="corpus-test")
+    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+    result = build_corpus(platform, [corpus_path], name="corpus-test")
     with pytest.raises(PermissionError, match="dataset_release gate"):
         pipeline.release(result.dataset_id, "ml_lead", gate_approved=False)
     dataset = pipeline.release(result.dataset_id, "ml_lead", gate_approved=True)
     assert dataset.released
 
 
-def test_withdrawn_source_is_excluded_from_new_versions(forge, corpus_path) -> None:
-    manager = RetentionManager(forge.store, forge.audit)
+def test_withdrawn_source_is_excluded_from_new_versions(platform, corpus_path) -> None:
+    manager = RetentionManager(platform.store, platform.audit)
     manager.withdraw_source(corpus_path.stem, "data owner request", "data_owner")
-    result = build_corpus(forge, [corpus_path], name="corpus-after-withdrawal")
+    result = build_corpus(platform, [corpus_path], name="corpus-after-withdrawal")
     assert result.records == 0
     events = [
         event
-        for event in forge.audit.recent(limit=50)
+        for event in platform.audit.recent(limit=50)
         if event.action == "data.source_withdrawn_skipped"
     ]
     assert events
 
 
-def test_purge_removes_records_from_datasets(forge, corpus_path) -> None:
-    result = build_corpus(forge, [corpus_path], name="corpus-test")
-    before = len(forge.store.dataset_records(result.dataset_id))
-    manager = RetentionManager(forge.store, forge.audit)
+def test_purge_removes_records_from_datasets(platform, corpus_path) -> None:
+    result = build_corpus(platform, [corpus_path], name="corpus-test")
+    before = len(platform.store.dataset_records(result.dataset_id))
+    manager = RetentionManager(platform.store, platform.audit)
     removed = manager.purge_source_records(corpus_path.stem, "data_owner", "right to erasure")
     assert removed == before
-    assert forge.store.dataset_records(result.dataset_id) == []
+    assert platform.store.dataset_records(result.dataset_id) == []
 
 
-def test_job_scheduler_rejects_over_cap_jobs(forge) -> None:
-    scheduler = JobScheduler(forge.audit, forge.budget, Sandbox(forge.settings.sandbox_dir))
+def test_job_scheduler_rejects_over_cap_jobs(platform) -> None:
+    scheduler = JobScheduler(
+        platform.audit, platform.budget, Sandbox(platform.settings.sandbox_dir)
+    )
     job = scheduler.submit(
         JobSpec(
             name="big",
@@ -218,12 +224,14 @@ def test_job_scheduler_rejects_over_cap_jobs(forge) -> None:
     )
     assert job.state == JobState.REJECTED
     assert "cap" in job.rejection_reason
-    denied = [event for event in forge.audit.recent(limit=20) if event.action == "job.rejected"]
+    denied = [event for event in platform.audit.recent(limit=20) if event.action == "job.rejected"]
     assert denied
 
 
-def test_job_scheduler_runs_a_job(forge) -> None:
-    scheduler = JobScheduler(forge.audit, forge.budget, Sandbox(forge.settings.sandbox_dir))
+def test_job_scheduler_runs_a_job(platform) -> None:
+    scheduler = JobScheduler(
+        platform.audit, platform.budget, Sandbox(platform.settings.sandbox_dir)
+    )
     job = scheduler.submit(
         JobSpec(
             name="smoke",
@@ -239,8 +247,10 @@ def test_job_scheduler_runs_a_job(forge) -> None:
     assert "hello" in job.stdout
 
 
-def test_job_queue_is_priority_ordered(forge) -> None:
-    scheduler = JobScheduler(forge.audit, forge.budget, Sandbox(forge.settings.sandbox_dir))
+def test_job_queue_is_priority_ordered(platform) -> None:
+    scheduler = JobScheduler(
+        platform.audit, platform.budget, Sandbox(platform.settings.sandbox_dir)
+    )
     low = scheduler.submit(
         JobSpec(name="low", command=["echo"], agent="a", priority=1, tokens=1, parameters=1)
     )
@@ -251,8 +261,10 @@ def test_job_queue_is_priority_ordered(forge) -> None:
     assert low.id in {job.id for job in scheduler.queue()}
 
 
-def test_job_quota_limits_concurrency(forge) -> None:
-    scheduler = JobScheduler(forge.audit, forge.budget, Sandbox(forge.settings.sandbox_dir))
+def test_job_quota_limits_concurrency(platform) -> None:
+    scheduler = JobScheduler(
+        platform.audit, platform.budget, Sandbox(platform.settings.sandbox_dir)
+    )
     scheduler.set_quota("gpu", 1)
     first = scheduler.submit(
         JobSpec(name="a", command=["echo"], agent="a", quota="gpu", tokens=1, parameters=1)
@@ -284,7 +296,7 @@ def test_label_set_scopes_to_the_subject() -> None:
     assert BILLING_LABEL_SET.label_for("shipment tracking was delayed") == "fulfilment"
 
 
-def test_classifier_trains_and_reports_per_class(forge, corpus_path, tmp_path) -> None:
+def test_classifier_trains_and_reports_per_class(platform, corpus_path, tmp_path) -> None:
     from internal_ai.data.tokenizer import train_tokenizer
     from internal_ai.training.classifier import ClassifierConfig, ClassifierTrainer
     from internal_ai.training.model import TinyTransformer, TransformerConfig
@@ -315,7 +327,7 @@ def test_classifier_trains_and_reports_per_class(forge, corpus_path, tmp_path) -
         ]
     )
     trainer = ClassifierTrainer(
-        forge.store, forge.audit, forge.budget, tmp_path / "artifacts", root=tmp_path
+        platform.store, platform.audit, platform.budget, tmp_path / "artifacts", root=tmp_path
     )
     outcome = trainer.train(
         ClassifierConfig(epochs=30),

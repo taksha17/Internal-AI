@@ -8,22 +8,22 @@ from internal_ai.data.transforms import deduplicate, filter_quality, scrub_pii
 from internal_ai.workflows import build_corpus, derive_eval_items, split_corpus
 
 
-def test_pipeline_scrubs_pii_and_drops_duplicates(forge, corpus_path) -> None:
+def test_pipeline_scrubs_pii_and_drops_duplicates(platform, corpus_path) -> None:
     result = build_corpus(
-        forge, [corpus_path], name="corpus-test", approved=True, owner="data_owner"
+        platform, [corpus_path], name="corpus-test", approved=True, owner="data_owner"
     )
     steps = {step["step"]: step for step in result.stats["steps"]}
     assert steps["pii_scrub"]["total_redactions"] > 0
     assert steps["deduplicate"]["exact_duplicates_removed"] > 0
     assert steps["sensitivity_exclusion"]["output"] < steps["sensitivity_exclusion"]["input"]
-    payloads = [row["payload"] for row in forge.store.dataset_records(result.dataset_id)]
+    payloads = [row["payload"] for row in platform.store.dataset_records(result.dataset_id)]
     assert all("@example.com" not in payload for payload in payloads)
     assert all("AKIAIOSFODNN7EXAMPLE" not in payload for payload in payloads)
 
 
-def test_dataset_is_versioned_with_lineage(forge, corpus_path) -> None:
-    result = build_corpus(forge, [corpus_path], name="corpus-test")
-    dataset = forge.store.get_dataset(result.dataset_id)
+def test_dataset_is_versioned_with_lineage(platform, corpus_path) -> None:
+    result = build_corpus(platform, [corpus_path], name="corpus-test")
+    dataset = platform.store.get_dataset(result.dataset_id)
     assert dataset is not None
     assert dataset.content_hash
     assert dataset.lineage["sources"][0]["source_id"] == corpus_path.stem
@@ -33,21 +33,21 @@ def test_dataset_is_versioned_with_lineage(forge, corpus_path) -> None:
     assert len(dataset.lineage["steps"]) >= 5
 
 
-def test_unapproved_source_is_not_ingested(forge, corpus_path) -> None:
-    result = build_corpus(forge, [corpus_path], name="corpus-test", approved=False)
+def test_unapproved_source_is_not_ingested(platform, corpus_path) -> None:
+    result = build_corpus(platform, [corpus_path], name="corpus-test", approved=False)
     assert result.records == 0
     denied = [
-        event for event in forge.audit.recent(limit=50) if event.action == "data.source_rejected"
+        event for event in platform.audit.recent(limit=50) if event.action == "data.source_rejected"
     ]
     assert denied
 
 
-def test_splits_are_deterministic_and_leak_free(forge, corpus_path) -> None:
-    result = build_corpus(forge, [corpus_path], name="corpus-test")
-    first = split_corpus(forge, result.dataset_id)
-    second = split_corpus(forge, result.dataset_id)
+def test_splits_are_deterministic_and_leak_free(platform, corpus_path) -> None:
+    result = build_corpus(platform, [corpus_path], name="corpus-test")
+    first = split_corpus(platform, result.dataset_id)
+    second = split_corpus(platform, result.dataset_id)
     assert first.stats["counts"] == second.stats["counts"]
-    rows = forge.store.dataset_records(result.dataset_id)
+    rows = platform.store.dataset_records(result.dataset_id)
     splits = {row["record_key"]: row["split"] for row in rows}
     assert set(splits.values()) <= {"train", "validation", "test", ""}
     train_keys = {key for key, value in splits.items() if value == "train"}
@@ -144,13 +144,14 @@ def test_tokenizer_is_trained_from_scratch_and_covers_jargon() -> None:
     assert coverage["per_source"]["s"]["mean_tokens_per_word"] <= 1.5
 
 
-def test_eval_items_come_from_the_held_out_split(forge, corpus_path) -> None:
-    result = build_corpus(forge, [corpus_path], name="corpus-test")
-    split_corpus(forge, result.dataset_id)
-    items = derive_eval_items(forge, result.dataset_id)
+def test_eval_items_come_from_the_held_out_split(platform, corpus_path) -> None:
+    result = build_corpus(platform, [corpus_path], name="corpus-test")
+    split_corpus(platform, result.dataset_id)
+    items = derive_eval_items(platform, result.dataset_id)
     assert items
     test_keys = {
-        row["record_key"] for row in forge.store.dataset_records_by_split(result.dataset_id, "test")
+        row["record_key"]
+        for row in platform.store.dataset_records_by_split(result.dataset_id, "test")
     }
     for item in items:
         assert set(item["relevant_ids"]) <= test_keys

@@ -53,7 +53,7 @@ def test_api_requires_key_when_configured(tmp_path: Path) -> None:
     app = create_app(root=tmp_path, llm_kind="scripted", api_key="secret")
     with TestClient(app) as client:
         assert client.get("/tasks").status_code == 401
-        assert client.get("/tasks", headers={"X-Forge-Key": "secret"}).status_code == 200
+        assert client.get("/tasks", headers={"X-Internal-Key": "secret"}).status_code == 200
 
 
 def test_cli_demo_runs_end_to_end(tmp_path: Path, capsys) -> None:

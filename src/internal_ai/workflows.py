@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from internal_ai.context import Forge
+from internal_ai.context import Platform
 from internal_ai.data.pipeline import DataPipeline, PipelineConfig
 from internal_ai.data.records import Record, Source
 from internal_ai.data.splits import SplitResult, make_splits
@@ -30,7 +30,7 @@ class CorpusBuild:
 
 
 def build_corpus(
-    forge: Forge,
+    platform: Platform,
     source_paths: list[Path],
     name: str,
     version: int = 1,
@@ -39,7 +39,7 @@ def build_corpus(
     actor: str = "data_engineer",
     config: PipelineConfig | None = None,
 ) -> CorpusBuild:
-    pipeline = DataPipeline(forge.store, forge.audit, forge.settings.root)
+    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
     sources = [
         Source(
             source_id=path.stem,
@@ -63,8 +63,8 @@ def build_corpus(
     )
 
 
-def split_corpus(forge: Forge, dataset_id: str, seed: str = "forge-v1") -> SplitResult:
-    rows = forge.store.dataset_records(dataset_id)
+def split_corpus(platform: Platform, dataset_id: str, seed: str = "forge-v1") -> SplitResult:
+    rows = platform.store.dataset_records(dataset_id)
     records = [
         Record(
             id=row["id"],
@@ -83,14 +83,14 @@ def split_corpus(forge: Forge, dataset_id: str, seed: str = "forge-v1") -> Split
     for split_name, split_records in result.splits.items():
         for record in split_records:
             assignments[record.record_key] = split_name
-    forge.store.set_record_splits(dataset_id, assignments)
-    dataset = forge.store.get_dataset(dataset_id)
+    platform.store.set_record_splits(dataset_id, assignments)
+    dataset = platform.store.get_dataset(dataset_id)
     if dataset is not None:
         lineage = dict(dataset.lineage)
         lineage["splits"] = result.stats
         dataset.lineage = lineage
         dataset.stats = {**dataset.stats, "splits": result.stats}
-        forge.store.conn.execute(
+        platform.store.conn.execute(
             "UPDATE datasets SET lineage = ?, stats = ? WHERE id = ?",
             (
                 json.dumps(lineage, sort_keys=True, default=str),
@@ -98,7 +98,7 @@ def split_corpus(forge: Forge, dataset_id: str, seed: str = "forge-v1") -> Split
                 dataset_id,
             ),
         )
-    forge.audit.record(
+    platform.audit.record(
         actor="data_engineer",
         action="data.splits_created",
         subject=dataset_id,
@@ -108,15 +108,15 @@ def split_corpus(forge: Forge, dataset_id: str, seed: str = "forge-v1") -> Split
 
 
 def train_tokenizer_for(
-    forge: Forge,
+    platform: Platform,
     dataset_id: str,
     vocab_size: int = 4_000,
     jargon: list[str] | None = None,
     actor: str = "data_engineer",
 ) -> tuple[Tokenizer, dict[str, Any]]:
-    rows = forge.store.dataset_records_by_split(dataset_id, "train")
+    rows = platform.store.dataset_records_by_split(dataset_id, "train")
     if not rows:
-        rows = forge.store.dataset_records(dataset_id)
+        rows = platform.store.dataset_records(dataset_id)
     if not rows:
         raise ValueError(f"dataset {dataset_id} has no records")
     texts = [row["payload"] for row in rows]
@@ -125,13 +125,13 @@ def train_tokenizer_for(
     for row in rows:
         by_source.setdefault(row["source_id"], []).append(row["payload"])
     coverage = coverage_report(tokenizer, by_source, jargon=jargon)
-    path = forge.settings.models_dir / f"tokenizer-{dataset_id}.json"
+    path = platform.settings.models_dir / f"tokenizer-{dataset_id}.json"
     tokenizer.save(path)
     coverage["tokenizer_path"] = str(path)
     coverage["dataset_id"] = dataset_id
     coverage["trained_on_split"] = "train"
     coverage["trained_on_documents"] = len(texts)
-    forge.audit.record(
+    platform.audit.record(
         actor=actor,
         action="tokenizer.trained",
         subject=dataset_id,
@@ -141,7 +141,7 @@ def train_tokenizer_for(
 
 
 def train_embedding_model(
-    forge: Forge,
+    platform: Platform,
     dataset_id: str,
     tokenizer: Tokenizer,
     config: TrainConfig | None = None,
@@ -151,9 +151,9 @@ def train_embedding_model(
 ) -> TrainingOutcome:
     from internal_ai.training.trainer import Trainer
 
-    rows = forge.store.dataset_records_by_split(dataset_id, split)
+    rows = platform.store.dataset_records_by_split(dataset_id, split)
     if not rows:
-        rows = forge.store.dataset_records(dataset_id)
+        rows = platform.store.dataset_records(dataset_id)
     records = [
         Record(
             id=row["id"],
@@ -167,16 +167,16 @@ def train_embedding_model(
         )
         for row in rows
     ]
-    dataset = forge.store.get_dataset(dataset_id)
+    dataset = platform.store.get_dataset(dataset_id)
     trainer = Trainer(
-        forge.store,
-        forge.audit,
-        forge.budget,
-        forge.settings.artifacts_dir,
-        root=forge.settings.root,
+        platform.store,
+        platform.audit,
+        platform.budget,
+        platform.settings.artifacts_dir,
+        root=platform.settings.root,
     )
     train_config = config or TrainConfig()
-    pairs = build_pair_dataset(forge, dataset_id, split=split, mode=pair_mode)
+    pairs = build_pair_dataset(platform, dataset_id, split=split, mode=pair_mode)
     return trainer.train(
         train_config,
         records,
@@ -189,7 +189,7 @@ def train_embedding_model(
 
 
 def evaluate_embedding_model(
-    forge: Forge,
+    platform: Platform,
     model_path: Path,
     eval_set_id: str,
     tokenizer: Tokenizer,
@@ -200,15 +200,15 @@ def evaluate_embedding_model(
 ) -> dict[str, Any]:
     from internal_ai.evals.harness import EvalHarness
 
-    harness = EvalHarness(forge.store, forge.audit)
-    eval_set = forge.store.get_eval_set(eval_set_id)
+    harness = EvalHarness(platform.store, platform.audit)
+    eval_set = platform.store.get_eval_set(eval_set_id)
     if eval_set is None:
         raise KeyError(f"unknown eval set: {eval_set_id}")
     if not eval_set.frozen:
         raise PermissionError(
             f"eval set {eval_set_id} is not frozen; evaluate against frozen sets only (FR-14)"
         )
-    corpus_rows = forge.store.dataset_records(dataset_id)
+    corpus_rows = platform.store.dataset_records(dataset_id)
     corpus = [
         Record(
             id=row["id"],
@@ -222,7 +222,7 @@ def evaluate_embedding_model(
         )
         for row in corpus_rows
     ]
-    training_rows = forge.store.dataset_records_by_split(dataset_id, "train")
+    training_rows = platform.store.dataset_records_by_split(dataset_id, "train")
     training_records = [
         Record(
             id=row["id"],
@@ -253,7 +253,7 @@ def evaluate_embedding_model(
 
 
 def register_model(
-    forge: Forge,
+    platform: Platform,
     name: str,
     model_path: Path,
     outcome: TrainingOutcome,
@@ -261,9 +261,9 @@ def register_model(
     intended_use: str = "internal semantic search and retrieval",
     actor: str = "ml_engineer",
 ) -> ModelVersion:
-    existing = forge.store.list_models(name=name)
+    existing = platform.store.list_models(name=name)
     version = max((item.version for item in existing), default=0) + 1
-    dataset = forge.store.get_dataset(dataset_id)
+    dataset = platform.store.get_dataset(dataset_id)
     card = {
         "intended_use": intended_use,
         "data_sources": [
@@ -296,8 +296,8 @@ def register_model(
         card=card,
         path=str(model_path),
     )
-    forge.store.add_model(model)
-    forge.audit.record(
+    platform.store.add_model(model)
+    platform.audit.record(
         actor=actor,
         action="model.registered",
         subject=model.id,
@@ -307,18 +307,18 @@ def register_model(
 
 
 def promote_model(
-    forge: Forge,
+    platform: Platform,
     model_id: str,
     gate_approved: bool,
     approver: str = "ml_lead",
     actor: str = "evaluation",
 ) -> ModelVersion:
-    model = forge.store.get_model(model_id)
+    model = platform.store.get_model(model_id)
     if model is None:
         raise KeyError(f"unknown model: {model_id}")
     if not gate_approved:
         raise PermissionError("model promotion requires an approved model_promotion gate (FR-15)")
-    reports = forge.store.list_eval_reports(model_id)
+    reports = platform.store.list_eval_reports(model_id)
     if not reports or not reports[-1].passed:
         raise PermissionError(
             "model promotion requires a passing eval report on a frozen eval set (FR-15)"
@@ -328,16 +328,16 @@ def promote_model(
     model.card["eval_report_id"] = reports[-1].id
     model.card["promoted_by"] = approver
     model.card["promoted_at"] = now_iso()
-    forge.store.update_model_card(model_id, model.card)
-    forge.store.set_model_status(model_id, "promoted", reports[-1].id)
-    forge.audit.record(
+    platform.store.update_model_card(model_id, model.card)
+    platform.store.set_model_status(model_id, "promoted", reports[-1].id)
+    platform.audit.record(
         actor=approver,
         actor_kind="human",
         action="model.promoted",
         subject=model_id,
         details={"eval_report_id": reports[-1].id},
     )
-    return forge.store.get_model(model_id)
+    return platform.store.get_model(model_id)
 
 
 def model_card_markdown(model: ModelVersion) -> str:
@@ -382,7 +382,7 @@ def _paraphrase_query(text: str, variant: int = 0) -> str | None:
 
 
 def build_pair_dataset(
-    forge: Forge, dataset_id: str, split: str = "train", mode: str = "paraphrase"
+    platform: Platform, dataset_id: str, split: str = "train", mode: str = "paraphrase"
 ) -> list[dict[str, str]]:
     """Query-document pairs for contrastive training, built from internal text.
 
@@ -394,9 +394,9 @@ def build_pair_dataset(
     header. Title mode exists because real engineering corpora do not contain
     the support-ticket vocabulary the paraphrase builder depends on.
     """
-    rows = forge.store.dataset_records_by_split(dataset_id, split)
+    rows = platform.store.dataset_records_by_split(dataset_id, split)
     if not rows:
-        rows = forge.store.dataset_records(dataset_id)
+        rows = platform.store.dataset_records(dataset_id)
     pairs: list[dict[str, str]] = []
     for row in sorted(rows, key=lambda item: item["record_key"]):
         if mode == "title":
@@ -429,7 +429,7 @@ def build_pair_dataset(
 
 
 def derive_eval_items(
-    forge: Forge, dataset_id: str, count: int = 24, mode: str = "paraphrase"
+    platform: Platform, dataset_id: str, count: int = 24, mode: str = "paraphrase"
 ) -> list[dict[str, Any]]:
     """Build query-document pairs from the held-out split so relevance is grounded.
 
@@ -437,9 +437,9 @@ def derive_eval_items(
     title mode the query is the document's own first line, which is the task a
     developer performs when they search for a module by its header.
     """
-    rows = forge.store.dataset_records_by_split(dataset_id, "test")
+    rows = platform.store.dataset_records_by_split(dataset_id, "test")
     if not rows:
-        rows = forge.store.dataset_records(dataset_id)
+        rows = platform.store.dataset_records(dataset_id)
     rows = sorted(rows, key=lambda row: row["record_key"])
     items: list[dict[str, Any]] = []
     for row in rows:
@@ -478,7 +478,7 @@ def derive_eval_items(
 
 
 def train_classifier_model(
-    forge: Forge,
+    platform: Platform,
     dataset_id: str,
     encoder_path: Path,
     tokenizer: Tokenizer,
@@ -490,9 +490,9 @@ def train_classifier_model(
     from internal_ai.data.labels import build_labeled_dataset
     from internal_ai.training.classifier import ClassifierTrainer
 
-    rows = forge.store.dataset_records_by_split(dataset_id, split)
+    rows = platform.store.dataset_records_by_split(dataset_id, split)
     if not rows:
-        rows = forge.store.dataset_records(dataset_id)
+        rows = platform.store.dataset_records(dataset_id)
     records = [
         Record(
             id=row["id"],
@@ -509,11 +509,11 @@ def train_classifier_model(
     labelled = build_labeled_dataset(records)
     baseline = [item["label"] for item in labelled]
     trainer = ClassifierTrainer(
-        forge.store,
-        forge.audit,
-        forge.budget,
-        forge.settings.artifacts_dir,
-        root=forge.settings.root,
+        platform.store,
+        platform.audit,
+        platform.budget,
+        platform.settings.artifacts_dir,
+        root=platform.settings.root,
     )
     train_config = config or ClassifierConfig()
     return trainer.train(
@@ -527,7 +527,7 @@ def train_classifier_model(
 
 
 def evaluate_classifier_model(
-    forge: Forge,
+    platform: Platform,
     model_path: Path,
     tokenizer: Tokenizer,
     dataset_id: str,
@@ -546,9 +546,9 @@ def evaluate_classifier_model(
     from internal_ai.evals.harness import EvalHarness
     from internal_ai.training.classifier import predict_classifier
 
-    rows = forge.store.dataset_records_by_split(dataset_id, split)
+    rows = platform.store.dataset_records_by_split(dataset_id, split)
     if not rows:
-        rows = forge.store.dataset_records(dataset_id)
+        rows = platform.store.dataset_records(dataset_id)
     records = [
         Record(
             id=row["id"],
@@ -570,7 +570,7 @@ def evaluate_classifier_model(
     counts = label_counts(labelled)
     majority_label = max(counts, key=lambda label: (counts[label], label))
     majority_baseline = [majority_label] * len(truth)
-    harness = EvalHarness(forge.store, forge.audit)
+    harness = EvalHarness(platform.store, platform.audit)
     outcome = harness.evaluate_classifier(predictions, truth, actor=actor)
     baseline_outcome = harness.evaluate_classifier(majority_baseline, truth, actor=actor)
     per_class = _per_class_report(predictions, truth, sorted(counts))
@@ -617,7 +617,7 @@ def _per_class_report(
 
 
 def build_tree_corpus(
-    forge: Forge,
+    platform: Platform,
     index: Any,
     name: str,
     version: int = 1,
@@ -654,15 +654,15 @@ def build_tree_corpus(
             "steps": [{"step": "ingest_tree", **index.stats()}],
             "config": {"name": name, "version": version, "acl": acl or []},
             "config_hash": content_hash({"name": name, "version": version}),
-            "code_commit": _git_commit(forge.settings.root),
+            "code_commit": _git_commit(platform.settings.root),
             "created_at": now_iso(),
         },
         stats={"steps": [{"step": "ingest_tree", **index.stats()}]},
         released=False,
     )
-    forge.store.add_dataset(dataset)
-    forge.store.add_dataset_records(dataset.id, [record.to_row() for record in records])
-    forge.audit.record(
+    platform.store.add_dataset(dataset)
+    platform.store.add_dataset_records(dataset.id, [record.to_row() for record in records])
+    platform.audit.record(
         actor=actor,
         action="dataset.version_created",
         subject=dataset.id,
