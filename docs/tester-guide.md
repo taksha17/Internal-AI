@@ -42,7 +42,8 @@ curl -s -H 'X-Internal-Key: cp-test-key-2026' http://127.0.0.1:8080/report
 
 Expected: `/health` reports `kill_switch: false` and the global budget at
 `limit_usd 500.0`, `spent_usd 0.0189`. `/audit/verify` reports
-`{"ok": true, "checked": 77}` on the pilot state. `/tasks` is empty because
+`{"ok": true, "checked": 82}` on the pilot state; the count grows with every
+audited action, and `broken_at_seq` stays `null`. `/tasks` is empty because
 the pilot ran its tasks in a separate root; `/gates` shows 11 approved gates
 and `/policy` shows P1 to P5 decided.
 
