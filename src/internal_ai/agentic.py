@@ -9,6 +9,10 @@ The planner has two modes. With a model available it asks for the next query.
 Without one it uses pseudo-relevance feedback: the terms that distinguish the
 best documents become the next query, which is how classic iterative retrieval
 works and it needs no external model.
+
+Records are filtered by the caller's document permissions before anything is
+read, so the agentic path enforces the same ACLs as the serving API. A
+principal who can read nothing gets a denial, never the corpus.
 """
 
 from __future__ import annotations
@@ -413,9 +417,27 @@ class AgenticSearcher:
         min_steps: int = 2,
         max_files: int = 12,
     ) -> AgenticSearchResult:
-        rows = self._corpus(dataset_id)
-        if not rows:
+        corpus = self._corpus(dataset_id)
+        if not corpus:
             raise ValueError(f"dataset {dataset_id} has no documents")
+        rows = [row for row in corpus if principal.can_read(row["acl"], row["sensitivity"])]
+        if not rows:
+            self.audit.record(
+                actor=actor,
+                action="agentic_search.denied",
+                subject=dataset_id,
+                outcome=AuditOutcome.DENIED,
+                inputs={"question_hash": hash(question) & 0xFFFFFFFF},
+                details={
+                    "user": principal.user_id,
+                    "visible_documents": 0,
+                    "total_documents": len(corpus),
+                    "reason": "no record in the dataset is readable by this principal",
+                },
+            )
+            raise PermissionError(
+                f"no records in dataset {dataset_id} are readable by {principal.user_id}"
+            )
         decision = self.budget.check(actor, task_id=None)
         if not decision.allowed:
             raise PermissionError(f"search blocked: {decision.reason}")

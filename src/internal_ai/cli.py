@@ -612,15 +612,19 @@ def cmd_ask(args: argparse.Namespace) -> int:
             embedder=None,
             llm=platform.runtime.llm if args.planner == "model" else None,
         )
-        result = searcher.search(
-            args.question,
-            args.dataset_id,
-            principal,
-            max_steps=args.max_steps,
-            top_k=args.top_k,
-            cost_cap_usd=args.cost_cap,
-            actor=args.actor,
-        )
+        try:
+            result = searcher.search(
+                args.question,
+                args.dataset_id,
+                principal,
+                max_steps=args.max_steps,
+                top_k=args.top_k,
+                cost_cap_usd=args.cost_cap,
+                actor=args.actor,
+            )
+        except PermissionError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
         if args.json:
             _print(result.to_dict())
         else:
