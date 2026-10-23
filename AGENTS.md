@@ -63,6 +63,21 @@ agents behave, so the bar is higher than for ordinary application code.
 Every new capability, gate type or state needs a test that shows it is denied
 to the roles that must not hold it, not just a test that shows it works.
 
+## Git
+
+- Every change is committed, and every commit is pushed to `origin/main`.
+  Leave neither uncommitted work nor unpushed commits.
+- Agent commits use the agent identity so machine work is distinguishable from
+  human work in the history:
+
+  ```bash
+  git -c user.name='Cline Agent' -c user.email='cline.agent@internal-ai.local' commit -m '...'
+  ```
+
+  The repository's default identity stays the human owner's, so human commits
+  are never misattributed to the agent.
+- A commit leaves `pytest` and `ruff` green (see Tests).
+
 ## Review rules
 
 - A builder never reviews its own work. Reviewer pairing is in
