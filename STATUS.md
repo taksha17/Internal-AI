@@ -1,15 +1,20 @@
 # STATUS — hand-off & verification
 
-Updated 2026-10-22 after the rebrand to `internal_ai` (package `internal_ai`,
+Updated 2026-10-23 after the rebrand to `internal_ai` (package `internal_ai`,
 distribution `internal-ai`, CLI `internal-ai` / `python -m internal_ai.cli`).
 The authoritative PRD is `../PRD Agent-Driven In-House LLM Build Platform.md`
 (v1.0).
 
 ## Verification
 
-- Tests: `.venv/bin/python -m pytest` → **67 passed**, exit 0 (torch 2.14.1+cpu).
+- Tests: `.venv/bin/python -m pytest` → **73 passed**, exit 0 (torch 2.14.1+cpu).
 - Lint and format: `.venv/bin/ruff check .` → clean; `.venv/bin/ruff format --check .`
   → clean.
+- Tester-facing gaps closed on 2026-10-23: the serving API now reports the
+  version the router actually serves as `active`, and the agentic search path
+  enforces document ACLs like the serving API does. The agentic path had no
+  tests before, so it now has coverage for citations, per-group visibility and
+  the audited denial. `docs/tester-guide.md` is the test sheet.
 - Phase 0 exit criteria: `.venv/bin/python -m internal_ai.cli --root var_demo
   demo` → plan submitted (13 tasks), approved by a human, **13/13 accepted**,
   gates cleared, **audit chain verified (279 events)**.

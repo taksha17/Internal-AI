@@ -33,7 +33,7 @@ corpus inside company boundaries.
 ## Repository contents
 - `src/internal_ai/` — the platform implementation (Python package `internal_ai`):
   orchestrator, role agents, gates, budgets, audit log, data pipeline,
-  training, evals, serving API, CLI, and a 67-test suite. Platform docs live in
+  training, evals, serving API, CLI, and a 73-test suite. Platform docs live in
   `docs/` and `AGENTS.md`.
 - `PRD Agent-Driven In-House LLM Build Platform.md` — the product requirements
   document (v1.0): scope, phasing, agent specifications, functional/non-functional
@@ -51,7 +51,16 @@ python3 -m venv .venv
 
 The full model path (sample corpus → build dataset → split → train tokenizer →
 train from scratch → freeze eval set → evaluate → register → promote → serve)
-is exercised by the test suite; see `docs/runbook.md` for day-to-day commands.
+is exercised by the test suite; see `docs/runbook.md` for day-to-day commands
+and `docs/tester-guide.md` for a test sheet against a running instance.
+
+## Documentation
+- `docs/tester-guide.md` — test sheet for the control-plane and serving APIs,
+  the agentic search path and the governance refusals that must hold.
+- `docs/runbook.md` — operating commands, including the budget model.
+- `docs/architecture.md` — how the planes fit together.
+- `docs/prd-traceability.md` — requirement to code and test mapping.
+- `STATUS.md` — what is done, what is open, what is blocked.
 
 ## License
 Apache 2.0 — see `LICENSE`.

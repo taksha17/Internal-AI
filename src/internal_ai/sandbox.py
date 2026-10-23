@@ -81,7 +81,7 @@ class Sandbox:
         child_env["HOME"] = str(workdir)
         child_env["TMPDIR"] = str(workdir)
         child_env["PYTHONHASHSEED"] = "0"
-        child_env["FORGE_NETWORK"] = "deny"
+        child_env["INTERNAL_AI_NETWORK"] = "deny"
         if env:
             child_env.update(env)
         started = time.monotonic()
@@ -160,7 +160,7 @@ class ContainerSandbox(Sandbox):
         child_env["HOME"] = "/workspace"
         child_env["TMPDIR"] = "/tmp"
         child_env["PYTHONHASHSEED"] = "0"
-        child_env["FORGE_NETWORK"] = "deny"
+        child_env["INTERNAL_AI_NETWORK"] = "deny"
         if env:
             child_env.update(env)
 
