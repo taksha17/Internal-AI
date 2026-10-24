@@ -11,6 +11,7 @@ from typing import Any
 
 from internal_ai.context import Platform
 from internal_ai.domain import BudgetScope, GateType
+from internal_ai.engine import PlanError
 from internal_ai.gates import GATE_CATALOG, GateError
 from internal_ai.llm import ScriptedAdapter
 from internal_ai.planner import LLMPlanner, TemplatePlanner
@@ -213,6 +214,8 @@ def cmd_audit_verify(args: argparse.Namespace) -> int:
 
 def cmd_budget_status(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        engaged = platform.budget.kill_switch_engaged()
+        print(f"kill switch: {'engaged' if engaged else 'released'}")
         statuses = platform.budget.all_status()
         _print([status.to_dict() for status in statuses])
     return 0
@@ -1221,7 +1224,11 @@ def main(argv: list[str] | None = None) -> int:
     if not hasattr(args, "func"):
         parser.print_help()
         return 1
-    return int(args.func(args))
+    try:
+        return int(args.func(args))
+    except PlanError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

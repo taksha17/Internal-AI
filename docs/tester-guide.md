@@ -130,7 +130,11 @@ Use a scratch root so the pilot state stays untouched:
 ```
 
 The demo ends with `audit chain verified: True (279 events)` and 13 accepted
-tasks.
+tasks. Task ids are derived from the plan, so a root holds one plan. Running
+the demo a second time in the same root is refused, with exit code 1 and no
+traceback: `error: plan already submitted: 13 of 13 tasks already exist (first
+tsk_corpus); use a fresh root or a different goal`. Use a new root for a
+second run.
 
 Request a gate, then try the forbidden approvals:
 
@@ -139,26 +143,58 @@ Request a gate, then try the forbidden approvals:
   --gate-type model_promotion --title 'Test gate' --subject tsk_promote --by ml_lead
 ```
 
-- The requester approving their own gate is refused:
-  `error: dual control violation: ml_lead requested gate ... and cannot approve it`.
+That prints `gate gate_b320bed391dc opened; approvers: ml_lead, domain_expert`.
+Use the id it gives you in the commands below.
+
+- The requester approving their own gate is refused, exit code 1:
+  `error: dual control violation: ml_lead requested gate gate_b320bed391dc and
+  cannot approve it`.
 - An approver whose roles do not cover the required ones leaves the gate
-  pending: the CLI prints `gate ... is now pending` and the gate does not pass.
+  pending: the CLI prints `gate gate_b320bed391dc is now pending` and the gate
+  does not pass.
 - A gate only passes once the union of approver roles covers every required
-  approver.
+  approver. `model_promotion` needs `ml_lead` and `domain_expert`, so
+  `gates approve --gate-id <id> --by "Marcus Delgado"` (ml_lead) leaves it
+  pending, and `gates approve --gate-id <id> --by "Aisha Okonkwo"`
+  (domain_expert) completes it: `gate ... is now approved`.
+
+The kill switch stops work and says so. The demo root has no work left, so
+use a second scratch root with a plan that has not run yet:
+
+```bash
+.venv/bin/python -m internal_ai.cli --root /tmp/guide_kill init --budget 500
+.venv/bin/python -m internal_ai.cli --root /tmp/guide_kill plan \
+  --goal 'Deliver the first from-scratch embedding model in 8 weeks'
+.venv/bin/python -m internal_ai.cli --root /tmp/guide_kill budget kill
+.venv/bin/python -m internal_ai.cli --root /tmp/guide_kill budget status
+.venv/bin/python -m internal_ai.cli --root /tmp/guide_kill run --approve-by program_lead
+```
+
+`budget status` prints `kill switch: engaged`. The run summary reports
+`"kill_switch": "engaged"`, `"dispatched": 0` and `"spend_usd": 0.0`. The
+tasks that were ready move to `blocked` on the board, and each one gets a
+`budget.kill_switch_blocked` entry with outcome `denied` in the audit log.
+Releasing the switch puts them back in the queue:
+
+```bash
+.venv/bin/python -m internal_ai.cli --root /tmp/guide_kill budget kill --release
+.venv/bin/python -m internal_ai.cli --root /tmp/guide_kill run
+```
+
+The next run reports `"kill_switch": "released"` and dispatches the work that
+was held.
 
 Other refusals worth checking:
 
 ```bash
-.venv/bin/python -m internal_ai.cli --root /tmp/guide_test budget kill
-.venv/bin/python -m internal_ai.cli --root /tmp/guide_test budget kill --release
-.venv/bin/python -m internal_ai.cli --root /tmp/guide_test budget status
+.venv/bin/python -m internal_ai.cli --root /tmp/guide_test budget set \
+  --scope global --key global --limit 1
 .venv/bin/python -m internal_ai.cli --root /tmp/guide_test audit verify
 ```
 
-With the kill switch engaged, spend is denied first and the reason names the
-kill switch. `--release` restores the allowance. `budget set --scope global
---key global --limit N` sets a cap; spending exactly the cap is allowed and
-going over it is denied.
+`budget set` caps spend: spending exactly the cap is allowed and going over it
+is denied. `audit verify` reports `"ok": true`; the event count grows with
+every audited action.
 
 ## 5. Trust model, stated plainly
 

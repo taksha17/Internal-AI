@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from internal_ai.context import Platform
 from internal_ai.domain import BudgetScope, TaskState
+from internal_ai.engine import PlanError
 from internal_ai.gates import GateError
 from internal_ai.planner import LLMPlanner, TemplatePlanner
 from internal_ai.store import TransitionError
@@ -129,7 +130,10 @@ def create_app(
             else LLMPlanner(llm=platform.runtime.llm, fallback=TemplatePlanner())
         )
         drafts = planner.plan(request.goal, {"milestone": request.milestone})
-        tasks = platform.orchestrator.submit_plan(drafts, approved_by=request.approve_by)
+        try:
+            tasks = platform.orchestrator.submit_plan(drafts, approved_by=request.approve_by)
+        except PlanError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"tasks": [task.to_dict() for task in tasks]}
 
     @app.post("/run")

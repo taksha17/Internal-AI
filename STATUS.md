@@ -7,7 +7,7 @@ The authoritative PRD is `../PRD Agent-Driven In-House LLM Build Platform.md`
 
 ## Verification
 
-- Tests: `.venv/bin/python -m pytest` → **73 passed**, exit 0 (torch 2.14.1+cpu).
+- Tests: `.venv/bin/python -m pytest` → **79 passed**, exit 0 (torch 2.14.1+cpu).
 - Lint and format: `.venv/bin/ruff check .` → clean; `.venv/bin/ruff format --check .`
   → clean.
 - Tester-facing gaps closed on 2026-10-23: the serving API now reports the
@@ -15,6 +15,15 @@ The authoritative PRD is `../PRD Agent-Driven In-House LLM Build Platform.md`
   enforces document ACLs like the serving API does. The agentic path had no
   tests before, so it now has coverage for citations, per-group visibility and
   the audited denial. `docs/tester-guide.md` is the test sheet.
+- Second tester sweep on 2026-10-23, running the governance section of the
+  guide by hand, closed three more gaps: a plan submitted twice into the same
+  root was an unhandled `sqlite3.IntegrityError` and is now a clean refusal
+  (CLI exit 1, API 409); the kill switch stopped work without saying why and
+  now blocks the tasks it holds, names the reason on the board, in the run
+  summary and in the audit log, and releases them back into the queue when the
+  switch is lifted; `budget status` now reports the kill switch state. The
+  guide's governance section was executed verbatim afterwards: 20 checks, all
+  passing.
 - Phase 0 exit criteria: `.venv/bin/python -m internal_ai.cli --root var_demo
   demo` → plan submitted (13 tasks), approved by a human, **13/13 accepted**,
   gates cleared, **audit chain verified (279 events)**.

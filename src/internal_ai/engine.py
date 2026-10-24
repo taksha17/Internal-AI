@@ -47,6 +47,13 @@ class BudgetBlocked(RuntimeError):
     pass
 
 
+class PlanError(RuntimeError):
+    """Raised when a plan cannot be submitted to the current state."""
+
+
+KILL_SWITCH_REASON = "global kill switch engaged"
+
+
 class Orchestrator:
     def __init__(
         self,
@@ -74,6 +81,12 @@ class Orchestrator:
         approver_kind: str = "human",
     ) -> list[Task]:
         ids = {draft.key: f"tsk_{draft.key}" for draft in drafts}
+        existing = sorted(task_id for task_id in ids.values() if self.store.get_task(task_id))
+        if existing:
+            raise PlanError(
+                f"plan already submitted: {len(existing)} of {len(ids)} tasks already exist "
+                f"(first {existing[0]}); use a fresh root or a different goal"
+            )
         tasks: list[Task] = []
         for draft in drafts:
             task = Task(
@@ -185,7 +198,16 @@ class Orchestrator:
     def release_unblocked(self) -> list[Task]:
         """Move tasks back into the queue once their gate has been approved."""
         released: list[Task] = []
+        kill_switch_off = not self.budget.kill_switch_engaged()
         for task in self.store.list_tasks(state=str(TaskState.BLOCKED)):
+            if task.blocked_reason == KILL_SWITCH_REASON:
+                if not kill_switch_off:
+                    continue
+                self.store.set_task_state(
+                    task, TaskState.APPROVED, "orchestrator", "agent", "kill switch released"
+                )
+                released.append(task)
+                continue
             if not task.gate_id:
                 continue
             gate = self.store.get_gate(task.gate_id)
@@ -220,9 +242,23 @@ class Orchestrator:
             return False, f"gate {gate.id} was rejected: {gate.decision_note}"
         return False, f"awaiting human approval on gate {gate.id} ({gate.gate_type})"
 
+    def _block_for_kill_switch(self, task: Task) -> None:
+        if task.state != TaskState.BLOCKED:
+            self.store.set_task_state(
+                task, TaskState.BLOCKED, "orchestrator", "agent", KILL_SWITCH_REASON
+            )
+        self.audit.record(
+            actor="orchestrator",
+            action="budget.kill_switch_blocked",
+            subject=task.id,
+            outcome=AuditOutcome.DENIED,
+            details={"reason": KILL_SWITCH_REASON},
+        )
+
     def dispatch(self, task: Task) -> DispatchOutcome:
         if self.budget.kill_switch_engaged():
-            return DispatchOutcome(task.id, str(task.state), "global kill switch engaged")
+            self._block_for_kill_switch(task)
+            return DispatchOutcome(task.id, str(task.state), KILL_SWITCH_REASON)
         gate_ok, gate_reason = self._gate_ready(task)
         if not gate_ok:
             if task.state != TaskState.BLOCKED:
@@ -322,6 +358,8 @@ class Orchestrator:
         while iterations < limit:
             iterations += 1
             if self.budget.kill_switch_engaged():
+                for task in self.ready_tasks():
+                    self._block_for_kill_switch(task)
                 break
             self.release_unblocked()
             ready = self.ready_tasks()
@@ -343,6 +381,7 @@ class Orchestrator:
             "accepted": sum(1 for item in outcomes if item.state == str(TaskState.ACCEPTED)),
             "blocked": sum(1 for item in outcomes if item.state == str(TaskState.BLOCKED)),
             "escalated": len(self.escalations),
+            "kill_switch": "engaged" if self.budget.kill_switch_engaged() else "released",
             "spend_usd": round(self.budget.store.spend_by(BudgetScope.GLOBAL, "global"), 4),
             "outcomes": [asdict(outcome) for outcome in outcomes],
         }
