@@ -6,24 +6,31 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false, "allowScriptTags": false}'>
   <title>{% block title %}Console{% endblock %} · Internal-AI</title>
+  <link rel="icon" href="/console/static/brand/internal-ai-icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/console/static/console.css">
   <script src="/console/static/htmx.min.js" defer></script>
 </head>
-<body>
+<body{% if actor %} class="signed-in"{% else %} class="signed-out"{% endif %}>
 {% if actor %}
-<header class="topbar">
-  <div class="brand">Internal-AI console</div>
-  <nav>
+<aside class="rail">
+  <a class="brand" href="/console/home">
+    <img class="brand-mark" src="/console/static/brand/internal-ai-icon.svg" alt="" width="28" height="28">
+    <span>internal<span class="brand-ai">-ai</span></span>
+  </a>
+  <nav class="rail-nav" aria-label="Console">
     {% for label, href in nav %}
     <a href="{{ href }}" class="{{ 'active' if path.startswith(href) else '' }}">{{ label }}{% if label == "Approvals" and inbox %} <span class="count">{{ inbox }}</span>{% endif %}</a>
     {% endfor %}
   </nav>
   <div class="who">
     <a href="/console/account">{{ actor.name }}</a>
-    <span class="muted">{{ actor.roles | sort | join(", ") }}</span>
+    <span class="roles">{{ actor.roles | sort | join(", ") }}</span>
     <form method="post" action="/console/signout" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="link">Sign out</button></form>
   </div>
-</header>
+</aside>
+{% endif %}
+<div class="column">
+{% if actor %}
 <section class="killbar {{ 'engaged' if kill.engaged else '' }}">
   {% if kill.engaged %}
   <strong>Kill switch engaged.</strong> No new jobs or spend.
@@ -50,5 +57,6 @@
   {% endfor %}
   {% block content %}{% endblock %}
 </main>
+</div>
 </body>
 </html>

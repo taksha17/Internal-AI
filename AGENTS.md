@@ -7,6 +7,8 @@ Conventions for agents and humans working in this repository.
 Internal-AI is the control plane for a multi-agent engineering organisation that
 builds from-scratch models on company data. Changes here change how other
 agents behave, so the bar is higher than for ordinary application code.
+The repository is licensed under the Polychrome License in `LICENSE`. Do not
+restore the Apache License.
 
 ## Non-negotiables
 
@@ -41,6 +43,45 @@ agents behave, so the bar is higher than for ordinary application code.
 - Model promotion requires a passing eval report against a frozen set and an
   approved `model_promotion` gate. Both checks live in
   `internal_ai/workflows.py:promote_model`.
+
+## Console
+
+The browser console is a third client of the same services as the CLI and the
+JSON API. It is mounted at `/console`. Pages are server-rendered. htmx is
+vendored under `src/internal_ai/console/static/`. There is no CDN, no inline
+script, and no inline style. How the console is built and which safety checks
+it keeps are in `docs/phase-2-console.md`.
+
+Sign-in posts must keep the session cookie and the form token, both
+`SameSite=Strict`. A missing `Origin` or `Origin: null` is accepted: some
+browsers send `null` for a same-site form, and the cookie is what proves the
+post. `Sec-Fetch-Site: cross-site` and a named foreign origin are refused.
+Treat a regression here as a safety bug. A person is found by id or by exact
+name, including case. The failure text is the same for an unknown account and
+a wrong password.
+
+Brand marks:
+
+- Originals, SVG and PNG, stay in `Logo/`. The package does not ship that
+  folder. The three SVGs that the app serves are copied to
+  `src/internal_ai/console/static/brand/`.
+- Favicon on every page: `internal-ai-icon.svg`.
+- Signed-in header: the icon at about 28px, then the wordmark in HTML
+  (`internal` in ink, `-ai` in sage). Do not put the lockup SVG in the bar.
+  Its solid card does not fit there.
+- Sign-in: the full lockup. Light and dark are two images. The dark one is
+  hidden until `prefers-color-scheme: dark`. The tagline stays inside the
+  artwork. No theme toggle and no extra script.
+
+Color comes from those marks. Light paper is `#F7F8F6`, ink `#202A31`. Dark
+field is `#171D22`, ink `#F0F3F1`. Sage is the accent: button fill with ink
+text. The lockup's lighter sage fails as text on paper, so light-mode text
+and links use `#3F5C4E`. Body text stays at or above roughly 4.5:1. Ok,
+danger, and pending stay distinct from sage. The gate stripe is a 1px line.
+Type names Inter first, then the system UI face. Do not download a font.
+
+The kill switch stays on every signed-in page, with a typed reason. Engaging
+is immediate. Releasing needs a different person.
 
 ## Style
 

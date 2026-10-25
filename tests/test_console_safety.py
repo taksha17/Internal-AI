@@ -35,6 +35,8 @@ from internal_ai.services.permissions import (
 
 pytestmark = pytest.mark.filterwarnings("ignore:Using `httpx` with `starlette.testclient`")
 
+BRAND = Path(__file__).resolve().parents[1] / "src" / "internal_ai" / "console" / "static" / "brand"
+
 
 def human(roles: set[str], kind: str = "human") -> Actor:
     return Actor(
@@ -200,6 +202,50 @@ def test_weight_files_outside_paths_frozen_sets_and_spend(
         build.ask(platform, stranger, dataset_id, "what is the payroll figure")
 
 
+def test_signin_accepts_a_null_origin_and_refuses_a_foreign_one(tmp_path: Path) -> None:
+    app = create_app(root=tmp_path, llm_kind="scripted")
+    with TestClient(app) as client:
+        page = client.get("/console/signin")
+        null_origin = client.post(
+            "/console/signin",
+            data={
+                "person": "nobody",
+                "password": "wrong-password",
+                "csrf_token": csrf_from(page.text),
+            },
+            headers={"Origin": "null"},
+        )
+        assert null_origin.status_code == 401
+        assert "expired" not in null_origin.text
+        fresh = client.get("/console/signin")
+        foreign = client.post(
+            "/console/signin",
+            data={
+                "person": "nobody",
+                "password": "wrong-password",
+                "csrf_token": csrf_from(fresh.text),
+            },
+            headers={"Origin": "https://evil.example"},
+        )
+        assert foreign.status_code == 403
+
+        lead = enroll(app.state.platform, "Lena Lead", ["program_lead"])
+        again = client.get("/console/signin")
+        cross_site = client.post(
+            "/console/signin",
+            data={
+                "person": lead.name,
+                "password": PASSWORD,
+                "csrf_token": csrf_from(again.text),
+            },
+            headers={"Sec-Fetch-Site": "cross-site", "Origin": "null"},
+        )
+        assert cross_site.status_code == 403
+        assert "iai_session" not in cross_site.cookies
+        unsigned = client.get("/console/home", follow_redirects=False)
+        assert unsigned.status_code == 303
+
+
 def test_console_refuses_anonymous_wrong_role_and_missing_csrf(tmp_path: Path) -> None:
     app = create_app(root=tmp_path, llm_kind="scripted", sync_jobs=True)
     with TestClient(app) as client:
@@ -304,3 +350,66 @@ def test_api_rejects_asserted_identity_writes(tmp_path: Path) -> None:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert refused.status_code == 403
+
+
+def test_signin_keeps_strict_cookies_and_the_page_token(tmp_path: Path) -> None:
+    app = create_app(root=tmp_path, llm_kind="scripted")
+    with TestClient(app) as client:
+        page = client.get("/console/signin")
+        form_cookie = page.headers["set-cookie"].lower()
+        assert "iai_signin=" in form_cookie
+        assert "httponly" in form_cookie
+        assert "samesite=strict" in form_cookie
+
+        lead = enroll(app.state.platform, "Lena Lead", ["program_lead"])
+        signed = sign_in(client, lead.name)
+        session_cookie = signed.headers["set-cookie"].lower()
+        assert "iai_session=" in session_cookie
+        assert "httponly" in session_cookie
+        assert "samesite=strict" in session_cookie
+
+
+def test_every_signed_in_page_keeps_the_brand_and_the_kill_switch(tmp_path: Path) -> None:
+    app = create_app(root=tmp_path, llm_kind="scripted")
+    with TestClient(app) as client:
+        signin = client.get("/console/signin")
+        assert signin.status_code == 200
+        assert 'rel="icon" href="/console/static/brand/internal-ai-icon.svg"' in signin.text
+        assert "brand/internal-ai-lockup.svg" in signin.text
+        assert "brand/internal-ai-lockup-dark.svg" in signin.text
+        for name in (
+            "internal-ai-icon.svg",
+            "internal-ai-lockup.svg",
+            "internal-ai-lockup-dark.svg",
+        ):
+            assert (BRAND / name).is_file(), name
+            asset = client.get(f"/console/static/brand/{name}")
+            assert asset.status_code == 200, name
+            assert asset.headers["content-type"].startswith("image/svg+xml"), name
+
+        lead = enroll(app.state.platform, "Lena Lead", ["program_lead"])
+        sign_in(client, lead.name)
+        pages = [
+            "/console/home",
+            "/console/approvals",
+            "/console/sources",
+            "/console/datasets",
+            "/console/evals",
+            "/console/models",
+            "/console/jobs",
+            "/console/ask",
+            "/console/plan",
+            "/console/audit",
+            "/console/admin/people",
+            "/console/account",
+        ]
+        for path in pages:
+            page = client.get(path)
+            assert page.status_code == 200, path
+            assert 'rel="icon"' in page.text, path
+            assert 'class="brand-mark"' in page.text, path
+            assert '<span>internal<span class="brand-ai">-ai</span></span>' in page.text, path
+            assert "internal-ai-lockup" not in page.text, path
+            assert 'action="/console/kill-switch"' in page.text, path
+            assert "<script>" not in page.text, path
+            assert ' style="' not in page.text, path

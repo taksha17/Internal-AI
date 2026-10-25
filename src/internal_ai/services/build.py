@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -121,8 +122,22 @@ class SourceInspection:
         }
 
 
-def inspect_source(platform: Platform, raw_path: str) -> SourceInspection:
-    """What the platform sees in a candidate source, and every reason to refuse it."""
+def inspect_source(
+    platform: Platform,
+    raw_path: str,
+    progress: Callable[[int, str], None] | None = None,
+) -> SourceInspection:
+    """What the platform sees in a candidate source, and every reason to refuse it.
+
+    A caller that shows progress gets a percentage and a short line describing
+    the work: the file walk happens first, then the files are read one by one,
+    so the number matches files actually examined.
+    """
+
+    def report(percent: int, detail: str) -> None:
+        if progress is not None:
+            progress(percent, detail)
+
     problems: list[str] = []
     path = Path(raw_path).expanduser()
     try:
@@ -147,15 +162,23 @@ def inspect_source(platform: Platform, raw_path: str) -> SourceInspection:
     secret_hits: dict[str, int] = {}
     if resolved.is_dir():
         kind = "tree"
-        entry = scan_source(resolved)
+        report(0, "listing files")
+
+        def scanned(done: int, total: int) -> None:
+            percent = int(90 * done / total) if total else 90
+            report(percent, f"{done:,} of {total:,} files read")
+
+        entry = scan_source(resolved, progress=scanned)
         files, text_files = entry.file_count, entry.text_file_count
         secret_hits = dict(entry.secret_hits)
+        report(94, "checking for weight files")
         for directory, _dirs, names in os.walk(resolved):
             for name in names:
                 if Path(name).suffix.lower() in WEIGHT_SUFFIXES:
                     weight_files.append(str(Path(directory, name).relative_to(resolved)))
     else:
         kind = "file"
+        report(30, "reading file")
         files, text_files = 1, 0
         suffix = resolved.suffix.lower()
         if suffix in WEIGHT_SUFFIXES:
@@ -187,6 +210,7 @@ def inspect_source(platform: Platform, raw_path: str) -> SourceInspection:
         )
     if kind == "tree" and text_files == 0:
         problems.append("the folder has no text files to learn from")
+    report(100, "done")
     return SourceInspection(
         str(resolved),
         kind,

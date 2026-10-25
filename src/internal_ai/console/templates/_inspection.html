@@ -1,0 +1,26 @@
+{% import "_macros.html" as m with context %}
+<h2>What the platform sees</h2>
+{% if inspect_error %}
+<div class="refusal">The inspection failed: {{ inspect_error }}</div>
+{% elif inspection %}
+<p><code>{{ inspection.path }}</code>: {{ inspection.kind }}, {{ inspection.files }} files, {{ inspection.text_files }} text, classified {{ m.status_badge(inspection.sensitivity) }}</p>
+{% if inspection.secret_hits and not inspection.problems %}
+<p class="callout">It contains what look like secrets ({% for name, count in inspection.secret_hits | dictsort %}{{ name }} {{ count }} {% endfor %}). The dataset build redacts them, the PII audit checks nothing survived before release, and the approver sees these counts.</p>
+{% endif %}
+{% if inspection.problems %}
+<div class="refusal"><strong>This source would be refused:</strong>
+  <ul>{% for problem in inspection.problems %}<li>{{ problem }}</li>{% endfor %}</ul></div>
+{% elif can("register_source") %}
+<form method="post" action="/console/sources" class="stack">
+  {{ m.csrf_field() }}
+  <h3>2. Register it and ask for approval</h3>
+  <input type="hidden" name="path" value="{{ inspection.path }}">
+  <label>Name <input type="text" name="name" required maxlength="80" placeholder="support-tickets"></label>
+  <label>Purpose <input type="text" name="purpose" required maxlength="300" placeholder="Search over resolved support tickets"></label>
+  <label>Who may read it (groups, comma separated) <input type="text" name="acl" value="engineering"></label>
+  <button type="submit" class="primary">Register and request approval</button>
+</form>
+{% else %}
+<p class="callout">The source looks acceptable. Registering it needs data_owner or ml_lead.</p>
+{% endif %}
+{% endif %}

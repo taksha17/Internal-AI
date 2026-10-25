@@ -1,0 +1,13 @@
+{% if inspect_running %}
+<div id="inspect-live" class="inspect-live" role="status" aria-live="polite" hx-get="/console/sources/inspect/{{ inspect_token }}" hx-trigger="every 700ms" hx-swap="outerHTML">
+  <progress value="{{ inspect_percent }}" max="100" aria-label="Inspection progress"></progress>
+  <strong>{{ inspect_percent }}%</strong>
+  <span class="muted small">{{ inspect_detail }}</span>
+</div>
+{% if inspect_clear_result %}<section class="card" id="inspect-result" hx-swap-oob="true" hidden></section>{% endif %}
+{% else %}
+<div id="inspect-live"></div>
+<section class="card" id="inspect-result" hx-swap-oob="true">
+  {% include "_inspection.html" %}
+</section>
+{% endif %}

@@ -3,6 +3,8 @@
 {% block title %}Sign in{% endblock %}
 {% block content %}
 <div class="narrow card">
+  <img class="mark mark-light" src="/console/static/brand/internal-ai-lockup.svg" alt="internal-ai, private by design" width="1200" height="360">
+  <img class="mark mark-dark" src="/console/static/brand/internal-ai-lockup-dark.svg" alt="internal-ai, private by design" width="1200" height="360">
   <h1>Sign in</h1>
   <p class="muted">Every decision you make here is recorded under your name in the audit log.</p>
   {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}

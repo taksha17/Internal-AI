@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from pathlib import Path
 
 from conftest import enroll, session_csrf, sign_in
@@ -14,6 +15,7 @@ from internal_ai.domain import GateType
 from internal_ai.services import build
 
 FLASH_ERROR = re.compile(r'class="flash flash-error"[^>]*>([^<]*)')
+INSPECT_TOKEN = re.compile(r"/console/sources/inspect/([A-Za-z0-9_-]+)")
 
 
 class Person:
@@ -38,6 +40,19 @@ class Person:
         response = self.client.get(url)
         assert response.status_code == 200, response.text
         return response.text
+
+    def inspected(self, page: str, timeout: float = 5.0) -> str:
+        """Follow the live status of a scan the page started, as the poll would."""
+        match = INSPECT_TOKEN.search(page)
+        if match is None:
+            return page
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            body = self.get(f"/console/sources/inspect/{match.group(1)}")
+            if "What the platform sees" in body:
+                return body
+            time.sleep(0.02)
+        raise AssertionError("the inspection never reported a result")
 
 
 def approve(platform: Platform, person: Person, gate_type: GateType, subject: str) -> None:
@@ -65,7 +80,7 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
 
         assert "Build a model, step by step" in mo.get("/console/home")
 
-        page = mo.post("/console/sources/sample", records="80")
+        page = mo.inspected(mo.post("/console/sources/sample", records="80"))
         assert "What the platform sees" in page
         sample = next(build.samples_dir(platform).glob("*.jsonl"))
         mo.post(

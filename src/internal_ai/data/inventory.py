@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -239,44 +240,63 @@ def _is_text_file(path: Path) -> bool:
     return path.name.lower() in ("dockerfile", "makefile", "readme", "license")
 
 
-def scan_source(path: Path, max_bytes_per_file: int = 2_000_000) -> SourceEntry:
+def _absorb(entry: SourceEntry, file_path: Path, max_bytes_per_file: int) -> None:
+    try:
+        size = file_path.stat().st_size
+    except OSError:
+        return
+    entry.file_count += 1
+    entry.total_bytes += size
+    suffix = file_path.suffix.lower() or "<none>"
+    entry.formats[suffix] = entry.formats.get(suffix, 0) + 1
+    if suffix in BINARY_SUFFIXES:
+        entry.binary_file_count += 1
+        return
+    if not _is_text_file(file_path):
+        entry.binary_file_count += 1
+        return
+    entry.text_file_count += 1
+    if size > max_bytes_per_file:
+        return
+    try:
+        content = file_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return
+    for kind, pattern in SECRET_PATTERNS.items():
+        hits = len(pattern.findall(content))
+        if hits:
+            entry.secret_hits[kind] = entry.secret_hits.get(kind, 0) + hits
+
+
+def scan_source(
+    path: Path,
+    max_bytes_per_file: int = 2_000_000,
+    progress: Callable[[int, int], None] | None = None,
+) -> SourceEntry:
+    """Catalogue one tree, reporting how many files of the total it has read.
+
+    The listing pass runs first so a caller can report an honest percentage
+    instead of an animation that guesses at the work left.
+    """
     sensitivity, reason = classify_path(path)
     entry = SourceEntry(
         path=str(path), name=path.name, sensitivity=sensitivity, sensitivity_reason=reason
     )
+    candidates: list[Path] = []
     for root, directories, files in os.walk(path, topdown=True):
         directories[:] = [
             name
             for name in directories
             if name not in SKIP_DIRECTORIES and not name.startswith(".cache")
         ]
-        for filename in files:
-            file_path = Path(root) / filename
-            try:
-                size = file_path.stat().st_size
-            except OSError:
-                continue
-            entry.file_count += 1
-            entry.total_bytes += size
-            suffix = file_path.suffix.lower() or "<none>"
-            entry.formats[suffix] = entry.formats.get(suffix, 0) + 1
-            if suffix in BINARY_SUFFIXES:
-                entry.binary_file_count += 1
-                continue
-            if not _is_text_file(file_path):
-                entry.binary_file_count += 1
-                continue
-            entry.text_file_count += 1
-            if size > max_bytes_per_file:
-                continue
-            try:
-                content = file_path.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
-                continue
-            for kind, pattern in SECRET_PATTERNS.items():
-                hits = len(pattern.findall(content))
-                if hits:
-                    entry.secret_hits[kind] = entry.secret_hits.get(kind, 0) + hits
+        candidates.extend(Path(root) / filename for filename in files)
+    total = len(candidates)
+    if progress is not None:
+        progress(0, total)
+    for done, file_path in enumerate(candidates, start=1):
+        _absorb(entry, file_path, max_bytes_per_file)
+        if progress is not None:
+            progress(done, total)
     return entry
 
 

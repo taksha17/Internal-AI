@@ -78,4 +78,4 @@ and `docs/runbook.md` for day-to-day commands.
 - `STATUS.md` — what is done, what is open, what is blocked.
 
 ## License
-Apache 2.0 — see `LICENSE`.
+Polychrome License — see `LICENSE`.

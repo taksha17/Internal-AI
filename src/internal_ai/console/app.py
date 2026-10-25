@@ -91,6 +91,21 @@ class Ctx:
     session: Session
 
 
+@dataclass(slots=True)
+class InspectionRun:
+    token: str
+    actor_id: str
+    path: str
+    percent: int = 0
+    detail: str = "starting"
+    done: bool = False
+    result: build.SourceInspection | None = None
+    error: str = ""
+
+
+INSPECTIONS_KEPT = 32
+
+
 class SignInLimiter:
     """Slows down password guessing from one client before the account lockout."""
 
@@ -178,6 +193,8 @@ def mount_console(
     limiter = SignInLimiter()
     flashes: dict[str, list[tuple[str, str]]] = {}
     flash_lock = threading.Lock()
+    inspections: dict[str, InspectionRun] = {}
+    inspections_lock = threading.Lock()
 
     @app.exception_handler(SignInRequired)
     async def _to_signin(request: Request, exc: SignInRequired) -> Response:
@@ -209,9 +226,18 @@ def mount_console(
             return flashes.pop(ctx.session.token, [])
 
     def same_origin(request: Request) -> bool:
+        """Whether this form post came from this host.
+
+        A browser can send Origin: null for a same-site form. The console
+        cookies are SameSite=Strict, so another site cannot attach one, and a
+        matching cookie is what proves the post. A named foreign origin is
+        still refused.
+        """
+        if request.headers.get("sec-fetch-site") == "cross-site":
+            return False
         origin = request.headers.get("origin")
         if not origin or origin == "null":
-            return origin is None
+            return True
         return urlsplit(origin).netloc == request.url.netloc
 
     async def posted(ctx: Ctx) -> dict[str, str]:
@@ -660,18 +686,86 @@ def mount_console(
 
     # -------------------------------------------------------------- sources
 
+    def start_inspection(ctx: Ctx, raw_path: str) -> InspectionRun:
+        """Scan in a worker so the page can show a real percentage of the walk."""
+        path = raw_path.strip()
+        with inspections_lock:
+            for run in inspections.values():
+                if run.actor_id == ctx.actor.id and run.path == path and not run.done:
+                    return run
+            run = InspectionRun(secrets.token_urlsafe(12), ctx.actor.id, path)
+            inspections[run.token] = run
+            finished = [key for key, value in inspections.items() if value.done]
+            for key in finished[: max(0, len(inspections) - INSPECTIONS_KEPT)]:
+                inspections.pop(key, None)
+
+        def progress(percent: int, detail: str) -> None:
+            with inspections_lock:
+                run.percent, run.detail = percent, detail
+
+        def work() -> None:
+            try:
+                result = build.inspect_source(ctx.platform, path, progress=progress)
+            except Exception as exc:
+                with inspections_lock:
+                    run.error, run.percent, run.detail, run.done = str(exc), 100, "failed", True
+                return
+            with inspections_lock:
+                run.result, run.percent, run.detail, run.done = result, 100, "done", True
+
+        threading.Thread(target=work, name=f"inspect-{run.token}", daemon=True).start()
+        return run
+
+    def inspection_panel(ctx: Ctx, run: InspectionRun, clear_result: bool = False) -> HTMLResponse:
+        return templates.TemplateResponse(
+            ctx.request,
+            "_inspect_live.html",
+            {
+                "csrf": ctx.session.csrf_token,
+                "inspect_token": run.token,
+                "inspect_running": not run.done,
+                "inspect_percent": run.percent,
+                "inspect_detail": run.detail,
+                "inspection": run.result,
+                "inspect_error": run.error,
+                "inspect_clear_result": clear_result and not run.done,
+                "can": lambda action: allowed(ctx.actor, Action(action)),
+            },
+        )
+
     @app.get("/console/sources", include_in_schema=False)
     def sources_page(request: Request, inspect: str = "") -> Response:
         ctx = context(request)
-        inspection = build.inspect_source(ctx.platform, inspect) if inspect.strip() else None
+        run = start_inspection(ctx, inspect) if inspect.strip() else None
         return render(
             ctx,
             "sources.html",
             sources=build.list_sources(ctx.platform),
             roots=build.data_roots(ctx.platform),
-            inspection=inspection,
+            inspection=run.result if run else None,
             inspect_path=inspect,
+            inspect_token=run.token if run else "",
+            inspect_running=bool(run and not run.done),
+            inspect_percent=run.percent if run else 0,
+            inspect_detail=run.detail if run else "",
+            inspect_error=run.error if run else "",
         )
+
+    @app.get("/console/sources/inspect", include_in_schema=False)
+    def source_inspect(request: Request, inspect: str = "") -> Response:
+        ctx = context(request)
+        if not inspect.strip():
+            return HTMLResponse("")
+        return inspection_panel(ctx, start_inspection(ctx, inspect), clear_result=True)
+
+    @app.get("/console/sources/inspect/{token}", include_in_schema=False)
+    def source_inspect_status(request: Request, token: str) -> Response:
+        ctx = context(request)
+        with inspections_lock:
+            run = inspections.get(token)
+        if run is None or run.actor_id != ctx.actor.id:
+            raise HTTPException(status_code=404, detail="unknown inspection")
+        return inspection_panel(ctx, run)
 
     @app.post("/console/sources/sample", include_in_schema=False)
     async def source_sample(request: Request) -> Response:
