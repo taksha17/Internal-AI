@@ -78,4 +78,4 @@ and `docs/runbook.md` for day-to-day commands.
 - `STATUS.md` — what is done, what is open, what is blocked.
 
 ## License
-Polychrome License — see `LICENSE`.
+PolyForm Noncommercial 1.0.0 — see `LICENSE`. People, schools, nonprofits, and governments may use, change, and share the software for noncommercial purposes. A company needs a separate license from the owners to use it in its business or to sell something built on it.

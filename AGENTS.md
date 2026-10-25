@@ -7,8 +7,9 @@ Conventions for agents and humans working in this repository.
 Internal-AI is the control plane for a multi-agent engineering organisation that
 builds from-scratch models on company data. Changes here change how other
 agents behave, so the bar is higher than for ordinary application code.
-The repository is licensed under the Polychrome License in `LICENSE`. Do not
-restore the Apache License.
+The repository is licensed under the PolyForm Noncommercial License 1.0.0
+in `LICENSE`. Do not restore the Apache License or a permissive grant. A
+company needs a separate license from the owners for commercial use.
 
 ## Non-negotiables
 
