@@ -1,58 +1,41 @@
-# Internal-AI
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="Logo/internal-ai-lockup-dark.png">
+    <img src="Logo/internal-ai-lockup.png" width="720" height="216" alt="internal-ai. Private by design.">
+  </picture>
+</p>
 
-**Internal-AI** is an agent-driven in-house LLM build platform. It designs,
-trains, evaluates, and deploys **from-scratch** models on company data — no
-pretrained weights, no third-party model output, no raw records sent to an
-external API. Built so a data-rich company can move off third-party AI
-providers (Claude, ChatGPT, etc.) while keeping every byte of its proprietary
-corpus inside company boundaries.
+A company trains its own model from random weights, on its own documents. People approve every gate. The corpus stays inside the boundary: no pretrained weights, no third-party model output, no raw records sent to an external API.
 
-## What it is
-- A multi-agent engineering organisation (orchestrator + role agents:
-  data, ML, evaluation, infra, security, program lead, …) supervised by a
-  small group of humans.
-- A control plane: orchestrator, dependency-ordered task graph, approval
-  gates with dual control, per-agent/job/weekly budget caps and kill
-  switches, an immutable hash-chained audit log, and full data lineage.
-- A data plane: ingestion, exact/near-duplicate removal, PII/secret scrubbing,
-  quality/language filtering, versioned immutable datasets, tokenizer trained
-  from scratch, and leakage-safe train/eval splits.
-- A training plane: from-scratch transformer, reproducible runs (commit +
-  config + dataset hash + seed), checkpointing, resume, cost caps, metric
-  streaming, and divergence/loss-spike detectors.
-- An eval plane: frozen eval sets approved by humans, independent evaluation
-  agent, promotion gates, model cards.
-- A serving plane: authenticated inference + permission-aware retrieval API
-  with per-user rate limits and rollback.
+## What it does
 
-## What it is NOT
-- A general-purpose conversational assistant competitive with frontier models.
-- A distillation pipeline (training on third-party model output is prohibited).
-- Fully autonomous operation (humans own decisions, approvals, and quality).
+The platform is a small engineering organisation of role agents, supervised by people.
 
-## Repository contents
-- `src/internal_ai/` — the platform implementation (Python package `internal_ai`):
-  orchestrator, role agents, gates, budgets, audit log, data pipeline,
-  training, evals, serving API, CLI, a browser console, and the pytest suite.
-  Platform docs live in `docs/` and `AGENTS.md`.
-- `PRD Agent-Driven In-House LLM Build Platform.md` — the product requirements
-  document (v1.0): scope, phasing, agent specifications, functional/non-functional
-  requirements, gates, and success metrics.
+- **Control.** An orchestrator walks a dependency-ordered task graph. Gates need a second person. Budgets cap spend per agent, job, and week. A kill switch stops new jobs. The audit log is append-only and hash-chained. Lineage records where every artifact came from.
+- **Data.** Ingestion, exact and near-duplicate removal, PII and secret scrubbing, quality and language filters, immutable dataset versions, a tokenizer trained from scratch, and leakage-safe train and eval splits.
+- **Training.** A from-scratch transformer. Each run records its commit, config, dataset hash, and seed. It checkpoints, resumes, caps cost, streams metrics, and stops on divergence or a loss spike.
+- **Evaluation.** Frozen eval sets that only a person can approve, an independent evaluation agent, promotion gates, and model cards.
+- **Serving.** Authenticated inference and permission-aware retrieval, with per-user rate limits and rollback.
 
-## Quickstart
+It is not a general chat product competing with frontier models, and it is not a distillation pipeline. Agents prepare the work. People own the decisions.
+
+## Run it
+
+Create a virtualenv, install the CPU build of PyTorch, then the package:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
 .venv/bin/pip install -e ".[dev]"
-
-.venv/bin/python -m internal_ai.cli --root var_demo demo   # Phase 0 loop end to end
 ```
 
-The full model path (sample corpus → build dataset → split → train tokenizer →
-train from scratch → freeze eval set → evaluate → register → promote → serve)
-is exercised by the test suite. The same path can be clicked through in the
-browser: create the first account, then open the console.
+The Phase 0 loop, end to end, on a demo root:
+
+```bash
+.venv/bin/python -m internal_ai.cli --root var_demo demo
+```
+
+The same path — sample corpus, dataset, split, tokenizer, training from scratch, a frozen eval set, evaluation, registration, promotion, serving — is what the test suite runs. To click through it, create the first account and open the console:
 
 ```bash
 .venv/bin/python -m internal_ai.cli --root var_console people replace \
@@ -63,19 +46,19 @@ browser: create the first account, then open the console.
 .venv/bin/python -m internal_ai.cli --root var_console serve --host 127.0.0.1 --port 8080
 ```
 
-Open `http://127.0.0.1:8080/console`, sign in with the one-time password the
-command printed, and change it. See `docs/tester-guide.md` for the walkthrough
-and `docs/runbook.md` for day-to-day commands.
+Open [http://127.0.0.1:8080/console](http://127.0.0.1:8080/console), sign in with the one-time password the command printed, and change it.
 
-## Documentation
-- `docs/tester-guide.md` — test sheet for the control-plane and serving APIs,
-  the browser console, the agentic search path and the governance refusals.
-- `docs/phase-2-console.md` — how the console is built and which safety
-  rules it carries.
-- `docs/runbook.md` — operating commands, including the budget model.
-- `docs/architecture.md` — how the planes fit together.
-- `docs/prd-traceability.md` — requirement to code and test mapping.
-- `STATUS.md` — what is done, what is open, what is blocked.
+## Read next
+
+The implementation is the Python package `internal_ai` in [`src/internal_ai/`](src/internal_ai/). Conventions for people and agents are in [`AGENTS.md`](AGENTS.md). The product requirements are in [PRD Agent-Driven In-House LLM Build Platform.md](<PRD%20Agent-Driven%20In-House%20LLM%20Build%20Platform.md>).
+
+- [Tester guide](docs/tester-guide.md) — the control plane, the serving API, the console, search, and the refusals.
+- [Console](docs/phase-2-console.md) — how the browser client is built, and the safety rules it keeps.
+- [Runbook](docs/runbook.md) — day-to-day commands, including the budget model.
+- [Architecture](docs/architecture.md) — how the planes fit together.
+- [Traceability](docs/prd-traceability.md) — requirement to code and test.
+- [Status](STATUS.md) — what is done, what is open, what is blocked.
 
 ## License
-PolyForm Noncommercial 1.0.0 — see `LICENSE`. People, schools, nonprofits, and governments may use, change, and share the software for noncommercial purposes. A company needs a separate license from the owners to use it in its business or to sell something built on it.
+
+[PolyForm Noncommercial 1.0.0](LICENSE). People, schools, nonprofits, and governments may use, change, and share the software for noncommercial purposes. A company needs a separate license from the owners to use it in its business or to sell something built on it.
