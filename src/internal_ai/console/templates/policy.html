@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Policy{% endblock %}
+{% block content %}
+<h1>Policy decisions</h1>
+<p class="tabs"><a href="/console/admin/people">People</a><a href="/console/admin/policy" class="active">Policy</a><a href="/console/admin/budget">Budget</a></p>
+<p class="muted">Open questions from the PRD. A proposal opens a policy gate; once a second person approves it, confirm it to make it current.</p>
+{% for row in decisions %}
+{% set decision = row.decision %}
+<section class="card">
+  <h2>{{ decision.id }} {{ m.status_badge(decision.status) }}</h2>
+  <p>{{ decision.question }}</p>
+  <p>Current: <strong>{{ decision.current_value }}</strong> <span class="muted">(default {{ decision.default_value }}{% if decision.decided_by %}, decided by {{ decision.decided_by }}{% endif %})</span></p>
+  {% if row.gate %}{{ m.gate_box(row.gate) }}{% endif %}
+  {% if can("decide_policy") %}
+    {% if row.gate and row.gate.status == "approved" and decision.status != "decided" %}
+    <form method="post" action="/console/admin/policy/{{ decision.id }}">{{ m.csrf_field() }}<input type="hidden" name="confirm" value="1"><button type="submit" class="primary">Confirm decision</button></form>
+    {% elif not row.gate or row.gate.status != "pending" %}
+    <form method="post" action="/console/admin/policy/{{ decision.id }}" class="inline-form">{{ m.csrf_field() }}
+      <label>Value <input type="text" name="value" required></label>
+      <label>Rationale <input type="text" name="rationale" required></label>
+      <button type="submit">Propose</button></form>
+    {% endif %}
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

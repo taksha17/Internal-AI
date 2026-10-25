@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+<div class="narrow card">
+  <h1>Sign in</h1>
+  <p class="muted">Every decision you make here is recorded under your name in the audit log.</p>
+  {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
+  <form method="post" action="/console/signin" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ signin_csrf }}">
+    <label>Name or person id <input type="text" name="person" autocomplete="username" required autofocus></label>
+    <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
+    <button type="submit" class="primary">Sign in</button>
+  </form>
+  <p class="muted small">No account? An administrator creates one for you. The first account is created on the command line with <code>internal-ai console create-account --person "Your Name"</code>.</p>
+</div>
+{% endblock %}

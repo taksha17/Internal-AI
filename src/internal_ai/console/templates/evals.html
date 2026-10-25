@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Eval sets{% endblock %}
+{% block content %}
+<h1>Eval sets</h1>
+<p class="muted">An eval set is the exam a model sits. Its answers must come only from the held-out test split, and once frozen nobody, human or agent, can change it. A change means a new version and a new approval.</p>
+{% for row in rows %}
+<section class="card">
+  <h2>{{ row.set.name }} v{{ row.set.version }} {{ m.status_badge("frozen" if row.set.frozen else "open") }}</h2>
+  <p class="muted small">{{ row.set.id }} · {{ row.leakage['items'] }} questions over {{ row.leakage.relevant_documents }} documents{% if row.set.frozen %} · frozen, approved by {{ row.set.approved_by }}{% endif %}</p>
+  {% if row.leakage.passed %}
+  <p>Leakage check passed: every answer is in the held-out test split.</p>
+  {% else %}
+  <p class="refusal">Leakage check failed: {{ row.leakage.outside_test_split | join(", ") or "no answers found" }}.</p>
+  {% endif %}
+  <details><summary>Questions</summary>
+    <ol>{% for item in row.set['items'][:50] %}<li>{{ item.query or item.question }}</li>{% endfor %}</ol>
+  </details>
+  {% if row.gate %}{{ m.gate_box(row.gate) }}{% endif %}
+  <div class="inline-form">
+    {% if not row.set.frozen and can("create_eval_set") and (not row.gate or row.gate.status == "rejected") %}
+    <form method="post" action="/console/evals/{{ row.set.id }}/request-freeze">{{ m.csrf_field() }}<button type="submit">Request freeze</button></form>
+    {% endif %}
+    {% if not row.set.frozen and row.gate and row.gate.status == "approved" and can("freeze_eval_set") %}
+    <form method="post" action="/console/evals/{{ row.set.id }}/freeze">{{ m.csrf_field() }}<button type="submit" class="primary">Freeze</button></form>
+    {% endif %}
+    <form method="post" action="/console/evals/{{ row.set.id }}/edit">{{ m.csrf_field() }}<button type="submit" class="link">Edit questions</button></form>
+  </div>
+</section>
+{% else %}
+<p class="muted">No eval sets yet. Create one from a split <a href="/console/datasets">dataset</a>.</p>
+{% endfor %}
+{% endblock %}

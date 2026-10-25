@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Ask{% endblock %}
+{% block content %}
+<h1>Ask</h1>
+<p class="muted">Answers come only from records your groups ({{ actor.groups | sort | join(", ") or "none" }}) may read, in a released dataset, and every answer cites its sources.</p>
+<form method="post" action="/console/ask" class="stack card">
+  {{ m.csrf_field() }}
+  {% if datasets %}
+  <label>Dataset <select name="dataset_id">{% for item in datasets %}<option value="{{ item.id }}" {{ 'selected' if item.id == chosen else '' }}>{{ item.name }} v{{ item.version }}</option>{% endfor %}</select></label>
+  <label>Question <input type="text" name="question" value="{{ question }}" required maxlength="500"></label>
+  <button type="submit" class="primary">Ask</button>
+  {% else %}<p class="muted">No released datasets yet.</p>{% endif %}
+</form>
+{% if result %}
+<section class="card">
+  <h2>Answer</h2>
+  <p class="answer">{{ result.answer }}</p>
+  {% if not result.sufficient_evidence %}<p class="callout">The evidence was thin; treat this answer with care.</p>{% endif %}
+  <h3>Sources</h3>
+  <ol>{% for citation in result.citations %}<li><code>{{ citation.document_id or citation.id }}</code> {{ citation.snippet or citation.text or "" }}</li>{% else %}<li class="muted">No citable records you may read.</li>{% endfor %}</ol>
+  <details><summary>How it searched ({{ result.steps_used }} steps)</summary>
+    <ol>{% for step in result.steps %}<li>{{ step.strategy }}: {{ step.query }} → {{ step.decision }}</li>{% endfor %}</ol>
+  </details>
+</section>
+{% endif %}
+{% endblock %}

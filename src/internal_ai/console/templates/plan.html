@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Plan{% endblock %}
+{% block content %}
+<h1>Plan and tasks</h1>
+<p class="muted">The orchestrator turns a goal into tasks for role agents. A lead submits and approves the plan; agents then work it, and every gate still waits for a person.</p>
+{% if can("submit_plan") %}
+<div class="grid">
+  <form method="post" action="/console/plan" class="stack card">
+    {{ m.csrf_field() }}
+    <h2>Submit a goal</h2>
+    <label>Goal <input type="text" name="goal" required maxlength="500" placeholder="Build the support-ticket search model"></label>
+    <label>Milestone (optional) <input type="text" name="milestone"></label>
+    <button type="submit" class="primary">Submit plan</button>
+  </form>
+  <div class="card stack">
+    <h2>Approve and run</h2>
+    <form method="post" action="/console/plan/approve" class="inline-form">{{ m.csrf_field() }}<button type="submit">Approve proposed tasks</button></form>
+    <form method="post" action="/console/plan/run" class="inline-form">{{ m.csrf_field() }}<label>Iterations <input type="number" name="max_iterations" value="20" min="1" max="1000"></label><button type="submit">Run orchestrator</button></form>
+  </div>
+</div>
+{% else %}
+<p class="callout">Submitting and running plans needs program_lead or engineering_manager.</p>
+{% endif %}
+<section class="card">
+  <h2>Status</h2>
+  <p>Spend ${{ "%.2f" % report.spend_total_usd }} of ${{ "%.2f" % report.budget_usd }}. Open gates: {{ report.open_gates | length }}.</p>
+  <p>{% for state, count in report.tasks_by_state | dictsort %}{{ m.status_badge(state) }} {{ count }} {% endfor %}</p>
+</section>
+<table>
+  <thead><tr><th>Task</th><th>Owner</th><th>State</th><th>Cost</th><th>Move</th></tr></thead>
+  <tbody>
+  {% for task in tasks %}
+  <tr><td>{{ task.title }} <span class="muted small">{{ task.id }}</span>
+      {% if history[task.id] %}<details><summary>History</summary><ul class="plain small">{% for event in history[task.id] %}<li>{{ event.created_at }} {{ event.from_state }} → {{ event.to_state }} by {{ event.actor }}{% if event.note %}: {{ event.note }}{% endif %}</li>{% endfor %}</ul></details>{% endif %}
+    </td><td>{{ task.owner_role }}</td><td>{{ m.status_badge(task.state) }}</td><td>${{ "%.2f" % task.actual_cost_usd }}</td>
+    <td>
+      {% if not can("transition_task") %}
+      <button type="button" disabled>{{ why("transition_task") }}</button>
+      {% elif moves[task.id] %}
+      <form method="post" action="/console/tasks/{{ task.id }}/transition" class="inline-form">{{ m.csrf_field() }}
+        <select name="state">{% for state in moves[task.id] %}<option value="{{ state }}">{{ state }}</option>{% endfor %}</select>
+        <input type="text" name="note" placeholder="reason" required size="14">
+        <button type="submit" class="link">Move</button></form>
+      {% else %}<span class="muted">no further moves</span>{% endif %}
+    </td>
+  </tr>
+  {% else %}<tr><td colspan="5" class="muted">No tasks yet.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

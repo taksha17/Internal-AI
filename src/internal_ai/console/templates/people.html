@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}People and accounts{% endblock %}
+{% block content %}
+<h1>People and accounts</h1>
+<p class="tabs"><a href="/console/admin/people" class="active">People</a><a href="/console/admin/policy">Policy</a><a href="/console/admin/budget">Budget</a></p>
+{% if one_time %}
+<div class="callout">
+  <strong>One-time password for {{ one_time.person }}:</strong> <code class="secret">{{ one_time.password }}</code>
+  <p class="small">Give it to them in person or over a trusted channel. It is shown only now, and they must change it when they first sign in.</p>
+</div>
+{% endif %}
+<p class="muted">Roles decide what a person may do and which gates they may approve. Groups decide which records they may read. Placeholder people from the PRD cannot sign in until they are replaced with a real person.</p>
+{% set manage = can("manage_people") %}
+<table>
+  <thead><tr><th>Person</th><th>Roles</th><th>Groups</th><th>Account</th>{% if manage %}<th>Manage</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for person in people %}
+  {% set account = accounts.get(person.id) %}
+  <tr>
+    <td><strong>{{ person.name }}</strong> {% if person.placeholder %}{{ m.status_badge("placeholder") }}{% endif %}<br><span class="muted small">{{ person.id }} · {{ person.title }}</span></td>
+    <td>{{ person.roles | join(", ") }}</td>
+    <td>{{ person.groups | join(", ") }}</td>
+    <td>{% if account %}{{ m.status_badge("disabled" if account.disabled else ("must_change" if account.must_change_password else "active")) }}{% else %}<span class="muted">none</span>{% endif %}</td>
+    {% if manage %}
+    <td class="stack">
+      {% if person.placeholder %}
+      <details><summary>Replace with a real person</summary>
+        <form method="post" action="/console/admin/people/{{ person.id }}/replace" class="stack">{{ m.csrf_field() }}
+          <label>Name <input type="text" name="name" required></label>
+          <label>Title <input type="text" name="title" value="{{ person.title }}"></label>
+          <label>Roles <input type="text" name="roles" value="{{ person.roles | join(',') }}"></label>
+          <label>Groups <input type="text" name="groups" value="{{ person.groups | join(',') }}"></label>
+          <button type="submit">Replace</button>
+        </form></details>
+      {% elif not account %}
+      <form method="post" action="/console/admin/people/{{ person.id }}/account">{{ m.csrf_field() }}<button type="submit" name="step" value="create">Create account</button></form>
+      {% elif person.id != actor.id %}
+      <form method="post" action="/console/admin/people/{{ person.id }}/account" class="inline-form">{{ m.csrf_field() }}
+        <button type="submit" name="step" value="reset" class="link">Reset password</button>
+        <button type="submit" name="step" value="{{ 'enable' if account.disabled else 'disable' }}" class="link">{{ "Enable" if account.disabled else "Disable" }}</button>
+      </form>
+      {% endif %}
+    </td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if manage %}
+<form method="post" action="/console/admin/people" class="stack card">
+  {{ m.csrf_field() }}
+  <h2>Add a person</h2>
+  <label>Name <input type="text" name="name" required></label>
+  <label>Title <input type="text" name="title"></label>
+  <label>Roles (comma separated) <input type="text" name="roles" placeholder="ml_lead" list="role-names"></label>
+  <datalist id="role-names">{% for role in roles %}<option value="{{ role }}">{% endfor %}</datalist>
+  <label>Groups (comma separated) <input type="text" name="groups" value="engineering"></label>
+  <button type="submit">Add person</button>
+</form>
+{% endif %}
+{% endblock %}

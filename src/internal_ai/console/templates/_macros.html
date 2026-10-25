@@ -1,0 +1,28 @@
+{% macro csrf_field() %}<input type="hidden" name="csrf_token" value="{{ csrf }}">{% endmacro %}
+{% macro status_badge(value) %}<span class="badge badge-{{ value }}">{{ value }}</span>{% endmacro %}
+{% macro gate_box(gate) %}
+<div class="gate">
+  <div class="gate-head">
+    <strong>{{ gate.title }}</strong> {{ status_badge(gate.status) }}
+    <span class="muted">{{ gate.gate_type }} · {{ gate.id }} · subject {{ gate.subject }}</span>
+  </div>
+  <p class="muted">Requested by {{ gate.requested_by }} on {{ gate.created_at }}. Needs {{ gate.required_approvers | join(" or ") }}.</p>
+  {% if gate.decisions %}
+  <ul class="decisions">
+    {% for decision in gate.decisions %}
+    <li>{{ decision.approver }} {{ "approved" if decision.approved else "rejected" }}: {{ decision.note }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if gate.can_decide %}
+  <form method="post" action="/console/approvals/{{ gate.id }}" class="inline-form">
+    {{ csrf_field() }}
+    <input type="text" name="note" placeholder="Your reason (required)" required maxlength="500">
+    <button type="submit" name="decision" value="approve" class="ok">Approve</button>
+    <button type="submit" name="decision" value="reject" class="danger">Reject</button>
+  </form>
+  {% elif gate.status == "pending" %}
+  <p class="muted">You cannot decide this gate: {{ gate.why_not }}.</p>
+  {% endif %}
+</div>
+{% endmacro %}

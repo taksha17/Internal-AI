@@ -104,12 +104,27 @@ class GateService:
         the person's roles are resolved and the approval satisfies a gate when
         the person's roles cover the required ones. A raw role name is also
         accepted for programmatic callers.
+
+        The persisted roster wins over the shipped one: a person added or
+        replaced through the console has the roles recorded for them, and a
+        placeholder name that has been replaced no longer carries its roles.
         """
         from internal_ai.people import find_person
 
+        row = self.store.conn.execute(
+            "SELECT roles FROM people WHERE id = ? OR name = ? ORDER BY id LIMIT 1",
+            (approver, approver),
+        ).fetchone()
+        if row is not None:
+            return {role for role in row["roles"].split(",") if role}
         try:
             person = find_person(approver)
         except KeyError:
+            return {approver}
+        replaced = self.store.conn.execute(
+            "SELECT 1 FROM people WHERE id = ?", (person.id,)
+        ).fetchone()
+        if replaced is not None:
             return {approver}
         return set(person.roles)
 

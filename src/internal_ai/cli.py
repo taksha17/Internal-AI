@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
+import os
 import shlex
 import sys
 from pathlib import Path
@@ -14,12 +16,21 @@ from internal_ai.domain import BudgetScope, GateType
 from internal_ai.engine import PlanError
 from internal_ai.gates import GATE_CATALOG, GateError
 from internal_ai.llm import ScriptedAdapter
-from internal_ai.planner import LLMPlanner, TemplatePlanner
+from internal_ai.planner import TemplatePlanner
+from internal_ai.services import governance
+from internal_ai.services.actor import Actor
+from internal_ai.services.identity import AuthenticationError, IdentityService
+from internal_ai.services.permissions import Action, PermissionDenied, require
+from internal_ai.store import TransitionError
 
 DEMO_APPROVER = "program_lead"
 DEMO_ML_LEAD = "ml_lead"
 DEMO_COMPLIANCE = "compliance"
 DEMO_DOMAIN_EXPERT = "domain_expert"
+ASSERTED_NOTE = (
+    "note: this root has no console accounts, so '{name}' is an asserted name, not an "
+    "authenticated identity"
+)
 
 
 def _print(payload: Any) -> None:
@@ -29,12 +40,80 @@ def _print(payload: Any) -> None:
         print(payload)
 
 
+def _actor(
+    platform: Platform, args: argparse.Namespace, asserted: str | None, fallback: str
+) -> Actor:
+    """The person acting on a governance command.
+
+    In a root with accounts the person must prove who they are with a personal
+    token or their password, and a name flag cannot point at someone else. A
+    root without accounts keeps the asserted name, so the first administrator
+    can be set up, and says so.
+    """
+    as_person = getattr(args, "as_person", None)
+    identity = IdentityService(platform)
+    if not identity.has_accounts():
+        name = as_person or asserted or fallback
+        if not name:
+            raise AuthenticationError("say who is acting with --by <person> or --as <person>")
+        print(ASSERTED_NOTE.format(name=name), file=sys.stderr)
+        return Actor.asserted(platform.store, name)
+    if not as_person:
+        raise AuthenticationError(
+            "this root has console accounts; pass --as <person> with INTERNAL_AI_TOKEN or "
+            "INTERNAL_AI_PASSWORD set, or sign in to the console"
+        )
+    person = identity.person(as_person)
+    if person is None:
+        raise AuthenticationError(f"unknown person: {as_person}")
+    if asserted and asserted not in (as_person, person["id"], person["name"]):
+        raise AuthenticationError(
+            f"you are signed in as {person['name']}; a name flag cannot act as {asserted}"
+        )
+    token = os.environ.get("INTERNAL_AI_TOKEN", "")
+    if token:
+        actor = identity.token_actor(token)
+        if actor is None or actor.id != person["id"]:
+            raise AuthenticationError("INTERNAL_AI_TOKEN is not a valid token for this person")
+        return actor
+    password = os.environ.get("INTERNAL_AI_PASSWORD", "")
+    if not password:
+        if not sys.stdin.isatty():
+            raise AuthenticationError("set INTERNAL_AI_TOKEN or INTERNAL_AI_PASSWORD")
+        password = getpass.getpass(f"password for {person['name']}: ")
+    actor = identity.authenticate(person["id"], password, client="cli")
+    account = identity.account(actor.id) or {}
+    if account.get("must_change_password"):
+        raise AuthenticationError(
+            "this account still has its one-time password; change it with "
+            "'internal-ai console change-password --as <person>' or in the console"
+        )
+    return actor
+
+
+def _gate_ok(platform: Platform, gate_id: str | None, gate_type: GateType, subject: str) -> bool:
+    """An approved gate of the right type for this subject, not just any approved gate."""
+    if gate_id is None:
+        return False
+    gate = platform.store.get_gate(gate_id)
+    if gate is None or str(gate.gate_type) != str(gate_type):
+        return False
+    if gate.subject != subject:
+        print(
+            f"error: gate {gate_id} covers {gate.subject}, not {subject}",
+            file=sys.stderr,
+        )
+        return False
+    return platform.gates.is_approved(gate_id)
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
-        platform.budget.set_limit(BudgetScope.GLOBAL, "global", args.budget)
-        platform.budget.set_limit(BudgetScope.PROJECT, "default", args.budget)
+        actor = _actor(platform, args, args.actor, "program_lead")
+        governance.set_budget_limit(platform, actor, BudgetScope.GLOBAL, "global", args.budget)
+        governance.set_budget_limit(platform, actor, BudgetScope.PROJECT, "default", args.budget)
         platform.audit.record(
-            actor=args.actor,
+            actor=actor.id,
             actor_kind="human",
             action="platform.init",
             subject="internal-ai",
@@ -47,13 +126,15 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 def cmd_plan(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
-        planner = (
-            TemplatePlanner()
-            if args.planner == "template"
-            else LLMPlanner(llm=platform.runtime.llm, fallback=TemplatePlanner())
+        actor = _actor(platform, args, args.approve_by, "program_lead")
+        tasks = governance.submit_plan(
+            platform,
+            actor,
+            args.goal,
+            milestone=args.milestone,
+            planner=args.planner,
+            approve=bool(args.approve_by),
         )
-        drafts = planner.plan(args.goal, {"milestone": args.milestone})
-        tasks = platform.orchestrator.submit_plan(drafts, approved_by=args.approve_by)
         _print(
             {
                 "planned": len(tasks),
@@ -76,10 +157,10 @@ def cmd_plan(args: argparse.Namespace) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
-        if args.approve_by:
-            platform.orchestrator.approve_plan(args.approve_by)
-        summary = platform.orchestrator.run(max_iterations=args.max_iterations)
-        summary.pop("outcomes", None)
+        actor = _actor(platform, args, args.approve_by, "program_lead")
+        summary = governance.run_plan(
+            platform, actor, max_iterations=args.max_iterations, approve=bool(args.approve_by)
+        )
         _print(summary)
     return 0
 
@@ -118,76 +199,31 @@ def cmd_gates_list(args: argparse.Namespace) -> int:
 
 def cmd_gates_request(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
-        from internal_ai.domain import GateType
-
+        actor = _actor(platform, args, args.by, "program_lead")
         gate_type = GateType(args.gate_type)
         entry = GATE_CATALOG[gate_type]
         evidence = dict.fromkeys(entry.evidence, args.note or f"evidence for {args.gate_type}")
-        gate = platform.gates.request(
-            gate_type,
-            title=args.title,
-            subject=args.subject,
-            requested_by=args.by,
-            requested_by_kind="human",
-            evidence=evidence,
-        )
-        platform.audit.record(
-            actor=args.by,
-            actor_kind="human",
-            action="gate.requested",
-            subject=gate.id,
-            details={"gate_type": str(gate_type)},
+        gate = governance.request_gate(
+            platform, actor, gate_type, title=args.title, subject=args.subject, evidence=evidence
         )
         print(f"gate {gate.id} opened; approvers: {', '.join(gate.required_approvers)}")
     return 0
 
 
-def cmd_gates_approve(args: argparse.Namespace) -> int:
+def _decide(args: argparse.Namespace, approved: bool) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
-        try:
-            gate = platform.gates.decide(
-                args.gate_id,
-                args.by,
-                approved=True,
-                approver_kind="human",
-                note=args.note,
-            )
-        except GateError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        platform.audit.record(
-            actor=args.by,
-            actor_kind="human",
-            action="gate.approved",
-            subject=gate.id,
-            details={"gate_type": str(gate.gate_type), "note": args.note},
-        )
+        actor = _actor(platform, args, args.by, "")
+        gate = governance.decide_gate(platform, actor, args.gate_id, approved, note=args.note)
         print(f"gate {gate.id} is now {gate.status}")
     return 0
+
+
+def cmd_gates_approve(args: argparse.Namespace) -> int:
+    return _decide(args, approved=True)
 
 
 def cmd_gates_reject(args: argparse.Namespace) -> int:
-    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
-        try:
-            gate = platform.gates.decide(
-                args.gate_id,
-                args.by,
-                approved=False,
-                approver_kind="human",
-                note=args.note,
-            )
-        except GateError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 1
-        platform.audit.record(
-            actor=args.by,
-            actor_kind="human",
-            action="gate.rejected",
-            subject=gate.id,
-            details={"gate_type": str(gate.gate_type), "note": args.note},
-        )
-        print(f"gate {gate.id} is now {gate.status}")
-    return 0
+    return _decide(args, approved=False)
 
 
 def cmd_audit_list(args: argparse.Namespace) -> int:
@@ -214,8 +250,10 @@ def cmd_audit_verify(args: argparse.Namespace) -> int:
 
 def cmd_budget_status(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
-        engaged = platform.budget.kill_switch_engaged()
-        print(f"kill switch: {'engaged' if engaged else 'released'}")
+        state = governance.kill_switch_state(platform)
+        print(f"kill switch: {'engaged' if state['engaged'] else 'released'}")
+        if state["engaged"] and state["reason"]:
+            print(f"reason: {state['reason']}")
         statuses = platform.budget.all_status()
         _print([status.to_dict() for status in statuses])
     return 0
@@ -223,14 +261,10 @@ def cmd_budget_status(args: argparse.Namespace) -> int:
 
 def cmd_budget_set(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        actor = _actor(platform, args, args.actor, "program_lead")
         scope = BudgetScope(args.scope)
-        platform.budget.set_limit(scope, args.key, args.limit)
-        platform.audit.record(
-            actor=args.actor,
-            actor_kind="human",
-            action="budget.limit_set",
-            subject=f"{scope}:{args.key}",
-            details={"limit_usd": args.limit},
+        governance.set_budget_limit(
+            platform, actor, scope, args.key, args.limit, gate_id=args.gate_id
         )
         print(f"{scope}:{args.key} limit set to ${args.limit:.2f}")
     return 0
@@ -238,18 +272,11 @@ def cmd_budget_set(args: argparse.Namespace) -> int:
 
 def cmd_kill(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        actor = _actor(platform, args, args.actor, "program_lead")
         if args.release:
-            platform.budget.release_kill_switch()
-            action = "budget.kill_switch_released"
+            governance.release_kill_switch(platform, actor, reason=args.reason)
         else:
-            platform.budget.engage_kill_switch()
-            action = "budget.kill_switch_engaged"
-        platform.audit.record(
-            actor=args.actor,
-            actor_kind="human",
-            action=action,
-            subject="global",
-        )
+            governance.engage_kill_switch(platform, actor, reason=args.reason)
         print("kill switch released" if args.release else "kill switch engaged")
     return 0
 
@@ -262,15 +289,9 @@ def cmd_policy_list(args: argparse.Namespace) -> int:
 
 def cmd_policy_decide(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
-        _decision, gate_id = platform.policy.propose(
-            args.id, args.value, requested_by=args.by, rationale=args.rationale
-        )
-        platform.audit.record(
-            actor=args.by,
-            actor_kind="human",
-            action="policy.proposed",
-            subject=args.id,
-            details={"value": args.value, "gate_id": gate_id},
+        actor = _actor(platform, args, args.by, "")
+        _decision, gate_id = governance.propose_policy(
+            platform, actor, args.id, args.value, rationale=args.rationale
         )
         print(f"policy {args.id} proposed as '{args.value}'; gate {gate_id} opened")
         print("approve it with: internal_ai gates approve --gate-id <id> --by <approver>")
@@ -279,14 +300,8 @@ def cmd_policy_decide(args: argparse.Namespace) -> int:
 
 def cmd_policy_confirm(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
-        decision = platform.policy.confirm(args.id, decided_by=args.by, gate_id=args.gate_id)
-        platform.audit.record(
-            actor=args.by,
-            actor_kind="human",
-            action="policy.decided",
-            subject=args.id,
-            details={"value": decision.current_value},
-        )
+        actor = _actor(platform, args, args.by, "")
+        decision = governance.confirm_policy(platform, actor, args.id, gate_id=args.gate_id)
         print(f"policy {args.id} decided: {decision.current_value}")
     return 0
 
@@ -311,6 +326,13 @@ def cmd_report(args: argparse.Namespace) -> int:
 
 def cmd_demo(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind="scripted") as platform:
+        if IdentityService(platform).has_accounts():
+            print(
+                "error: the demo simulates human approvals, so it only runs in a root with no "
+                "console accounts; use a fresh --root",
+                file=sys.stderr,
+            )
+            return 1
         platform.runtime.llm = ScriptedAdapter(nominal_cost_usd=args.cost_per_run)
         platform.budget.set_limit(BudgetScope.GLOBAL, "global", args.budget)
         platform.budget.set_limit(BudgetScope.PROJECT, "default", args.budget)
@@ -381,13 +403,83 @@ def cmd_demo(args: argparse.Namespace) -> int:
         return 0
 
 
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
     from internal_ai.api import create_app
 
-    app = create_app(root=args.root, llm_kind=args.llm)
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    tls = bool(args.ssl_certfile and args.ssl_keyfile)
+    if args.host not in LOOPBACK_HOSTS and not (args.allow_remote and tls):
+        print(
+            "error: the control plane and console bind to loopback only; serving on "
+            f"{args.host} needs --allow-remote together with --ssl-certfile and --ssl-keyfile",
+            file=sys.stderr,
+        )
+        return 1
+    app = create_app(root=args.root, llm_kind=args.llm, secure_cookies=tls)
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        log_level="info",
+        ssl_certfile=args.ssl_certfile,
+        ssl_keyfile=args.ssl_keyfile,
+    )
+    return 0
+
+
+def cmd_console_create_account(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        identity = IdentityService(platform)
+        admin = _actor(platform, args, None, "program_lead") if identity.has_accounts() else None
+        person = identity.person(args.person)
+        if person is None:
+            print(f"error: unknown person: {args.person}", file=sys.stderr)
+            return 1
+        one_time = identity.create_account(person["id"], created_by=admin)
+        print(f"account created for {person['name']} ({person['id']})")
+        print(f"one-time password: {one_time}")
+        print("it must be changed at first sign-in; it is not shown again")
+    return 0
+
+
+def cmd_console_reset_password(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        identity = IdentityService(platform)
+        admin = _actor(platform, args, None, "program_lead")
+        person = identity.person(args.person)
+        if person is None:
+            print(f"error: unknown person: {args.person}", file=sys.stderr)
+            return 1
+        one_time = identity.reset_password(person["id"], admin)
+        print(f"one-time password for {person['name']}: {one_time}")
+    return 0
+
+
+def cmd_console_change_password(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        identity = IdentityService(platform)
+        person = identity.person(args.as_person or "")
+        if person is None:
+            print("error: pass --as <person>", file=sys.stderr)
+            return 1
+        current = os.environ.get("INTERNAL_AI_PASSWORD") or getpass.getpass("current password: ")
+        new = os.environ.get("INTERNAL_AI_NEW_PASSWORD") or getpass.getpass("new password: ")
+        identity.change_password(person["id"], current, new)
+        print(f"password changed for {person['name']}")
+    return 0
+
+
+def cmd_console_create_token(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        identity = IdentityService(platform)
+        actor = _actor(platform, args, None, "program_lead")
+        token = identity.create_token(actor, args.label)
+        print(f"personal token for {actor.name}: {token}")
+        print("it acts as you on the API; it is not shown again")
     return 0
 
 
@@ -410,10 +502,8 @@ def cmd_alerts_list(args: argparse.Namespace) -> int:
 
 def cmd_alerts_ack(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
-        from internal_ai.alerts import AlertEngine
-
-        engine = AlertEngine(platform.store, platform.audit, platform.budget)
-        alert = engine.acknowledge(args.id, args.by)
+        actor = _actor(platform, args, args.by, "program_lead")
+        alert = governance.acknowledge_alert(platform, actor, args.id)
         print(f"alert {alert.id} acknowledged")
     return 0
 
@@ -422,11 +512,13 @@ def cmd_data_release(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.data.pipeline import DataPipeline
 
+        actor = _actor(platform, args, args.by, "ml_lead")
+        require(platform.audit, actor, Action.RELEASE_DATASET, args.dataset_id)
         pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
-        gate_approved = args.gate_id is not None and platform.gates.is_approved(args.gate_id)
+        gate_approved = _gate_ok(platform, args.gate_id, GateType.DATASET_RELEASE, args.dataset_id)
         try:
             dataset = pipeline.release(
-                args.dataset_id, args.by, gate_approved, sample_size=args.sample_size
+                args.dataset_id, actor.id, gate_approved, sample_size=args.sample_size
             )
         except PermissionError as exc:
             print(f"error: {exc}", file=sys.stderr)
@@ -455,10 +547,12 @@ def cmd_data_withdraw(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.data.governance import RetentionManager
 
+        actor = _actor(platform, args, args.by, "data_owner")
+        require(platform.audit, actor, Action.WITHDRAW_SOURCE, args.source_id)
         manager = RetentionManager(platform.store, platform.audit)
-        result = manager.withdraw_source(args.source_id, args.reason, args.by)
+        result = manager.withdraw_source(args.source_id, args.reason, actor.id)
         if args.purge:
-            removed = manager.purge_source_records(args.source_id, args.by, args.reason)
+            removed = manager.purge_source_records(args.source_id, actor.id, args.reason)
             result["records_purged"] = removed
         _print(result)
     return 0
@@ -658,16 +752,15 @@ def cmd_people_list(args: argparse.Namespace) -> int:
 
 def cmd_people_replace(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
-        from internal_ai.people import PeopleRegistry
-
-        registry = PeopleRegistry(platform.store)
-        record = registry.replace(args.id, args.name, args.title, args.roles.split(","))
-        platform.audit.record(
-            actor=args.by,
-            actor_kind="human",
-            action="people.replaced",
-            subject=args.id,
-            details={"name": args.name, "roles": args.roles},
+        actor = _actor(platform, args, args.by, "program_lead")
+        record = governance.replace_person(
+            platform,
+            actor,
+            args.id,
+            args.name,
+            args.title,
+            args.roles.split(","),
+            groups=args.groups.split(",") if args.groups is not None else None,
         )
         _print(record)
     return 0
@@ -796,10 +889,12 @@ def cmd_eval_freeze(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.evals.harness import EvalHarness
 
+        actor = _actor(platform, args, args.by, "")
+        require(platform.audit, actor, Action.FREEZE_EVAL_SET, args.id)
         harness = EvalHarness(platform.store, platform.audit)
-        gate_approved = args.gate_id is not None and platform.gates.is_approved(args.gate_id)
+        gate_approved = _gate_ok(platform, args.gate_id, GateType.EVAL_SET_FREEZE, args.id)
         try:
-            eval_set = harness.freeze_eval_set(args.id, args.by, gate_approved)
+            eval_set = harness.freeze_eval_set(args.id, actor.id, gate_approved)
         except PermissionError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
@@ -882,9 +977,11 @@ def cmd_model_promote(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.workflows import promote_model
 
-        gate_approved = args.gate_id is not None and platform.gates.is_approved(args.gate_id)
+        actor = _actor(platform, args, args.by, "ml_lead")
+        require(platform.audit, actor, Action.PROMOTE_MODEL, args.id)
+        gate_approved = _gate_ok(platform, args.gate_id, GateType.MODEL_PROMOTION, args.id)
         try:
-            model = promote_model(platform, args.id, gate_approved, approver=args.by)
+            model = promote_model(platform, args.id, gate_approved, approver=actor.id)
         except (PermissionError, KeyError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
@@ -908,11 +1005,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="internal_ai", description="Internal-AI control plane")
     parser.add_argument("--root", type=Path, default=None, help="project root")
     parser.add_argument("--llm", default="auto", choices=["auto", "scripted", "anthropic"])
+    parser.add_argument(
+        "--as",
+        dest="as_person",
+        default=None,
+        help="act as this person (needs INTERNAL_AI_TOKEN or INTERNAL_AI_PASSWORD)",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     init = sub.add_parser("init", help="initialize the platform state")
     init.add_argument("--budget", type=float, default=500.0)
-    init.add_argument("--actor", default="program_lead")
+    init.add_argument("--actor", default=None)
     init.set_defaults(func=cmd_init)
 
     plan = sub.add_parser("plan", help="decompose a goal into a task graph")
@@ -939,12 +1042,12 @@ def build_parser() -> argparse.ArgumentParser:
     gates_list.set_defaults(func=cmd_gates_list)
     gates_approve = gates_sub.add_parser("approve")
     gates_approve.add_argument("--gate-id", required=True)
-    gates_approve.add_argument("--by", required=True)
+    gates_approve.add_argument("--by", default=None)
     gates_approve.add_argument("--note", default="")
     gates_approve.set_defaults(func=cmd_gates_approve)
     gates_reject = gates_sub.add_parser("reject")
     gates_reject.add_argument("--gate-id", required=True)
-    gates_reject.add_argument("--by", required=True)
+    gates_reject.add_argument("--by", default=None)
     gates_reject.add_argument("--note", default="")
     gates_reject.set_defaults(func=cmd_gates_reject)
     gates_request = gates_sub.add_parser("request")
@@ -953,7 +1056,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     gates_request.add_argument("--title", required=True)
     gates_request.add_argument("--subject", required=True)
-    gates_request.add_argument("--by", default="program_lead")
+    gates_request.add_argument("--by", default=None)
     gates_request.add_argument("--note", default="")
     gates_request.set_defaults(func=cmd_gates_request)
 
@@ -976,11 +1079,13 @@ def build_parser() -> argparse.ArgumentParser:
     budget_set.add_argument("--scope", required=True, choices=[str(item) for item in BudgetScope])
     budget_set.add_argument("--key", required=True)
     budget_set.add_argument("--limit", type=float, required=True)
-    budget_set.add_argument("--actor", default="program_lead")
+    budget_set.add_argument("--actor", default=None)
+    budget_set.add_argument("--gate-id", default=None, help="approved budget_increase gate")
     budget_set.set_defaults(func=cmd_budget_set)
     kill = budget_sub.add_parser("kill")
-    kill.add_argument("--actor", default="program_lead")
+    kill.add_argument("--actor", default=None)
     kill.add_argument("--release", action="store_true")
+    kill.add_argument("--reason", default="")
     kill.set_defaults(func=cmd_kill)
 
     policy = sub.add_parser("policy", help="policy decisions P1-P5")
@@ -990,12 +1095,12 @@ def build_parser() -> argparse.ArgumentParser:
     policy_decide = policy_sub.add_parser("decide")
     policy_decide.add_argument("--id", required=True)
     policy_decide.add_argument("--value", required=True)
-    policy_decide.add_argument("--by", required=True)
+    policy_decide.add_argument("--by", default=None)
     policy_decide.add_argument("--rationale", default="")
     policy_decide.set_defaults(func=cmd_policy_decide)
     policy_confirm = policy_sub.add_parser("confirm")
     policy_confirm.add_argument("--id", required=True)
-    policy_confirm.add_argument("--by", required=True)
+    policy_confirm.add_argument("--by", default=None)
     policy_confirm.add_argument("--gate-id", default=None)
     policy_confirm.set_defaults(func=cmd_policy_confirm)
 
@@ -1007,10 +1112,29 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--cost-per-run", type=float, default=0.25)
     demo.set_defaults(func=cmd_demo)
 
-    serve = sub.add_parser("serve", help="run the control plane API")
+    serve = sub.add_parser("serve", help="run the control plane API and the browser console")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8080)
+    serve.add_argument("--allow-remote", action="store_true")
+    serve.add_argument("--ssl-certfile", default=None)
+    serve.add_argument("--ssl-keyfile", default=None)
     serve.set_defaults(func=cmd_serve)
+
+    console = sub.add_parser("console", help="browser console accounts and personal tokens")
+    console_sub = console.add_subparsers(dest="console_command", required=True)
+    console_create = console_sub.add_parser(
+        "create-account", help="create an account; the first one needs no sign-in"
+    )
+    console_create.add_argument("--person", required=True, help="person id or exact name")
+    console_create.set_defaults(func=cmd_console_create_account)
+    console_reset = console_sub.add_parser("reset-password")
+    console_reset.add_argument("--person", required=True)
+    console_reset.set_defaults(func=cmd_console_reset_password)
+    console_change = console_sub.add_parser("change-password")
+    console_change.set_defaults(func=cmd_console_change_password)
+    console_token = console_sub.add_parser("create-token")
+    console_token.add_argument("--label", default="cli")
+    console_token.set_defaults(func=cmd_console_create_token)
 
     serve_model = sub.add_parser("serve-model", help="run the inference and retrieval API")
     serve_model.add_argument("--host", default="127.0.0.1")
@@ -1079,7 +1203,8 @@ def build_parser() -> argparse.ArgumentParser:
     people_replace.add_argument("--name", required=True)
     people_replace.add_argument("--title", required=True)
     people_replace.add_argument("--roles", required=True)
-    people_replace.add_argument("--by", default="program_lead")
+    people_replace.add_argument("--groups", default=None)
+    people_replace.add_argument("--by", default=None)
     people_replace.set_defaults(func=cmd_people_replace)
     people_approvers = people_sub.add_parser("approvers")
     people_approvers.add_argument("--gate-type", required=True)
@@ -1093,7 +1218,7 @@ def build_parser() -> argparse.ArgumentParser:
     alerts_list.set_defaults(func=cmd_alerts_list)
     alerts_ack = alerts_sub.add_parser("ack")
     alerts_ack.add_argument("--id", required=True)
-    alerts_ack.add_argument("--by", default="program_lead")
+    alerts_ack.add_argument("--by", default=None)
     alerts_ack.set_defaults(func=cmd_alerts_ack)
 
     sample = sub.add_parser("sample", help="generate a synthetic corpus for local runs")
@@ -1118,7 +1243,7 @@ def build_parser() -> argparse.ArgumentParser:
     data_lineage.set_defaults(func=cmd_data_lineage)
     data_release = data_sub.add_parser("release")
     data_release.add_argument("--dataset-id", required=True)
-    data_release.add_argument("--by", default="ml_lead")
+    data_release.add_argument("--by", default=None)
     data_release.add_argument("--gate-id", default=None)
     data_release.add_argument("--sample-size", type=int, default=50)
     data_release.set_defaults(func=cmd_data_release)
@@ -1137,7 +1262,7 @@ def build_parser() -> argparse.ArgumentParser:
     data_withdraw = data_sub.add_parser("withdraw")
     data_withdraw.add_argument("--source-id", required=True)
     data_withdraw.add_argument("--reason", required=True)
-    data_withdraw.add_argument("--by", default="data_owner")
+    data_withdraw.add_argument("--by", default=None)
     data_withdraw.add_argument("--purge", action="store_true")
     data_withdraw.set_defaults(func=cmd_data_withdraw)
 
@@ -1177,7 +1302,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_create.set_defaults(func=cmd_eval_create)
     eval_freeze = evaluate_sub.add_parser("freeze")
     eval_freeze.add_argument("--id", required=True)
-    eval_freeze.add_argument("--by", required=True)
+    eval_freeze.add_argument("--by", default=None)
     eval_freeze.add_argument("--gate-id", default=None)
     eval_freeze.set_defaults(func=cmd_eval_freeze)
     eval_derive = evaluate_sub.add_parser("derive")
@@ -1208,7 +1333,7 @@ def build_parser() -> argparse.ArgumentParser:
     model_register.set_defaults(func=cmd_model_register)
     model_promote = model_sub.add_parser("promote")
     model_promote.add_argument("--id", required=True)
-    model_promote.add_argument("--by", default="ml_lead")
+    model_promote.add_argument("--by", default=None)
     model_promote.add_argument("--gate-id", default=None)
     model_promote.set_defaults(func=cmd_model_promote)
     model_card = model_sub.add_parser("card")
@@ -1226,8 +1351,18 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     try:
         return int(args.func(args))
-    except PlanError as exc:
+    except (
+        PlanError,
+        GateError,
+        PermissionDenied,
+        AuthenticationError,
+        TransitionError,
+        ValueError,
+    ) as exc:
         print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except KeyError as exc:
+        print(f"error: {exc.args[0] if exc.args else exc}", file=sys.stderr)
         return 1
 
 

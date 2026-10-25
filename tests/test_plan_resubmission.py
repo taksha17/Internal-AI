@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from conftest import enroll, token_for
 from fastapi.testclient import TestClient
 
 from internal_ai.api import create_app
@@ -40,15 +41,16 @@ def test_cli_demo_refuses_to_run_twice_in_one_root(tmp_path: Path, capsys) -> No
 
 
 def test_api_refuses_a_duplicate_plan_with_conflict(tmp_path: Path) -> None:
+    setup = Platform.create(root=tmp_path, llm_kind="scripted")
+    lead = enroll(setup, "Lena Lead", ["program_lead"])
+    headers = {"Authorization": f"Bearer {token_for(setup, lead)}"}
+    setup.close()
     app = create_app(root=tmp_path, llm_kind="scripted")
     with TestClient(app) as client:
-        first = client.post(
-            "/plan", json={"goal": "ship the embedding model", "planner": "template"}
-        )
+        body = {"goal": "ship the embedding model", "planner": "template"}
+        first = client.post("/plan", json=body, headers=headers)
         assert first.status_code == 200
-        second = client.post(
-            "/plan", json={"goal": "ship the embedding model", "planner": "template"}
-        )
+        second = client.post("/plan", json=body, headers=headers)
         assert second.status_code == 409
         assert "plan already submitted" in second.json()["detail"]
 

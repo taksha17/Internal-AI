@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Request a gate{% endblock %}
+{% block content %}
+<h1>Request a gate</h1>
+<p class="muted">Most gates are requested for you by the step that needs them. Use this page for budget increases and training runs above the cost threshold.</p>
+<form method="get" action="/console/gates/new" class="inline-form card">
+  <label>Gate type
+    <select name="gate_type">
+      {% for item in catalog %}<option value="{{ item.gate_type }}" {{ 'selected' if entry and entry.gate_type == item.gate_type else '' }}>{{ item.description }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Subject <input type="text" name="subject" value="{{ subject }}"></label>
+  <button type="submit">Choose</button>
+</form>
+{% if entry %}
+<form method="post" action="/console/gates" class="stack card">
+  {{ m.csrf_field() }}
+  <input type="hidden" name="gate_type" value="{{ entry.gate_type }}">
+  <p>A <strong>{{ entry.description }}</strong> gate is decided by {{ entry.approvers | join(" or ") }}.</p>
+  <label>Title <input type="text" name="title" required maxlength="200"></label>
+  <label>Subject <input type="text" name="subject" value="{{ subject }}" required>
+    <span class="muted small">For a budget increase, scope:key such as <code>global:global</code>. For a training run, <code>dataset_id:model_name</code>.</span></label>
+  {% for key in entry.evidence %}
+  <label>{{ key | replace("_", " ") }} <textarea name="evidence_{{ key }}" rows="3" required></textarea></label>
+  {% endfor %}
+  <button type="submit" class="primary">Request</button>
+</form>
+{% endif %}
+{% endblock %}

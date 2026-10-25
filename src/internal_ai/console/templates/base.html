@@ -1,0 +1,54 @@
+{% import "_macros.html" as m with context %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false, "allowScriptTags": false}'>
+  <title>{% block title %}Console{% endblock %} · Internal-AI</title>
+  <link rel="stylesheet" href="/console/static/console.css">
+  <script src="/console/static/htmx.min.js" defer></script>
+</head>
+<body>
+{% if actor %}
+<header class="topbar">
+  <div class="brand">Internal-AI console</div>
+  <nav>
+    {% for label, href in nav %}
+    <a href="{{ href }}" class="{{ 'active' if path.startswith(href) else '' }}">{{ label }}{% if label == "Approvals" and inbox %} <span class="count">{{ inbox }}</span>{% endif %}</a>
+    {% endfor %}
+  </nav>
+  <div class="who">
+    <a href="/console/account">{{ actor.name }}</a>
+    <span class="muted">{{ actor.roles | sort | join(", ") }}</span>
+    <form method="post" action="/console/signout" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="link">Sign out</button></form>
+  </div>
+</header>
+<section class="killbar {{ 'engaged' if kill.engaged else '' }}">
+  {% if kill.engaged %}
+  <strong>Kill switch engaged.</strong> No new jobs or spend.
+  {% if kill.reason %}Reason: {{ kill.reason }}.{% endif %}
+  {% if kill.engaged_by %}Engaged by {{ kill.engaged_by }}; a different person must release it.{% endif %}
+  <form method="post" action="/console/kill-switch" class="inline-form">
+    {{ m.csrf_field() }}<input type="hidden" name="back" value="{{ path }}">
+    <input type="text" name="reason" placeholder="Why it is safe to resume" required maxlength="300">
+    <button type="submit" class="ok">Release</button>
+  </form>
+  {% else %}
+  <span>Something wrong? Stop all jobs and spend now.</span>
+  <form method="post" action="/console/kill-switch" class="inline-form">
+    {{ m.csrf_field() }}<input type="hidden" name="back" value="{{ path }}"><input type="hidden" name="engage" value="1">
+    <input type="text" name="reason" placeholder="Reason (required)" required maxlength="300">
+    <button type="submit" class="danger">Engage kill switch</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+<main>
+  {% for kind, text in flashes %}
+  <div class="flash flash-{{ kind }}" role="status">{{ text }}</div>
+  {% endfor %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

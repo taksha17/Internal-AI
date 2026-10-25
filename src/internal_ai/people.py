@@ -173,6 +173,30 @@ class PeopleRegistry:
             for row in rows
         ]
 
+    def get(self, identifier: str) -> dict[str, Any] | None:
+        """A person by id or exact name, from the persisted roster."""
+        self.seed()
+        row = self.store.conn.execute(
+            "SELECT * FROM people WHERE id = ? OR name = ? ORDER BY id LIMIT 1",
+            (identifier, identifier),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "title": row["title"],
+            "roles": [role for role in row["roles"].split(",") if role],
+            "groups": [group for group in row["groups"].split(",") if group],
+            "placeholder": bool(row["placeholder"]),
+        }
+
+    def set_groups(self, person_id: str, groups: list[str]) -> None:
+        self.seed()
+        self.store.conn.execute(
+            "UPDATE people SET groups = ? WHERE id = ?", (",".join(groups), person_id)
+        )
+
     def approvers_for(self, gate_type: str) -> list[dict[str, Any]]:
         from internal_ai.domain import GateType
         from internal_ai.gates import HUMAN_APPROVER_ROLES

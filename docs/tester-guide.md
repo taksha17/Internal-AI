@@ -40,10 +40,11 @@ INTERNAL_AI_SERVING_KEY=serve-test-key \
   .venv/bin/python scripts/probe.py
 ```
 
-Expected: `18/18 checks passed` and exit code 0. It covers every endpoint
-below plus the three authentication negatives (no key, wrong key, legacy
-header). The rest of this guide explains what each check means and what
-else to exercise by hand.
+Expected: `27/27 checks passed` and exit code 0. It covers every read
+endpoint below, the three authentication negatives (no key, wrong key,
+legacy header), and nine governance writes that must be refused when the
+caller has only the shared key and no personal token. The rest of this
+guide explains what each check means and what else to exercise by hand.
 
 ## 1. Control plane
 
@@ -198,13 +199,29 @@ every audited action.
 
 ## 5. Trust model, stated plainly
 
-The control-plane key is a trusted operator credential. It is one shared
-secret, not a per-human identity, and the approver name in a gate decision is
-asserted by the caller rather than authenticated. The platform still enforces
-the rules that matter inside that trust boundary: agents cannot decide gates
-through the agent paths, the requester cannot approve their own gate, and a
-gate only passes when the required approver roles are covered. Do not expose
-port 8080 beyond the host, and treat the key as a personal credential.
+The control-plane key is a shared operator credential for reads. It cannot
+name the person on a governance write. Plan submission and approval, runs,
+gate requests and decisions, budget limits, the kill switch, policy changes,
+task transitions and alert acknowledgement all return 401 unless the request
+also carries `Authorization: Bearer <personal token>`. The actor is the
+person that token belongs to. Fields such as `approve_by`, `approver` and
+`actor` in the body are ignored.
+
+The command line is the same rule with one exception. On a root that has no
+accounts yet, `--by` and `--actor` are asserted names and the CLI says so on
+stderr. The checks in section 4 use that bootstrap mode. The moment an
+account exists, those commands require `--as <person>` plus
+`INTERNAL_AI_TOKEN` or `INTERNAL_AI_PASSWORD`, and a one-time password must
+be changed before it can act.
+
+The browser console never asserts a name. The session cookie is the person,
+every form carries that session's CSRF token, and the pages bind to loopback
+unless you pass `--allow-remote` together with a TLS certificate and key.
+
+Inside that boundary the older rules still hold: agents cannot decide gates,
+the requester cannot approve their own gate, a gate passes only when the
+approvers' roles cover every required role, and the person who engaged the
+kill switch cannot release it. Do not expose port 8080 beyond the host.
 
 The serving API has a different, per-user model: each key maps to a user and
 a set of groups, and those groups decide which records a search may return.
@@ -221,4 +238,59 @@ a set of groups, and those groups decide which records a search may return.
   in `STATUS.md` section 10 is made.
 - The audit chain covers what ran. `audit verify` checks the hash chain, not
   the completeness of what should have run.
+- Company single sign-on is not wired up. Accounts are local, and a
+  placeholder person from the shipped roster cannot sign in until someone
+  replaces them with a real name.
+
+## 7. The browser console
+
+This is the path for someone who does not want to use the command line after
+the first account exists. Use a fresh root.
+
+```bash
+.venv/bin/python -m internal_ai.cli --root /tmp/console_guide people replace \
+  --id ppl_priya_raghunathan --name "Ada Admin" --title "Program lead" \
+  --roles program_lead,finance --groups platform-admins
+.venv/bin/python -m internal_ai.cli --root /tmp/console_guide console create-account \
+  --person "Ada Admin"
+.venv/bin/python -m internal_ai.cli --root /tmp/console_guide serve \
+  --host 127.0.0.1 --port 8080
+```
+
+The create-account command prints a one-time password once. Open
+`http://127.0.0.1:8080/console`, sign in as Ada Admin, and set a password of
+at least 12 characters. From there:
+
+1. Home names the step you are on, the budget, open alerts and the kill
+   switch. The switch is on every page. Engaging it needs a typed reason.
+   Releasing it needs a different signed-in person.
+2. Data → generate sample data, inspect the path, and register it. That opens
+   a `new_data_source_access` gate. Ada cannot approve her own request.
+   Administration → add a second person who holds `data_owner` and
+   `compliance` (or two people who hold them between them), create their
+   account, and approve from their session. A folder of model weights, a
+   path outside the approved folders, or a folder that contains secrets is
+   refused before the gate is opened.
+3. Build the dataset, then on its page split it, request release (the PII
+   audit runs first), and after the `dataset_release` gate is approved,
+   release it. Train a tokenizer on the same page and create an eval set.
+4. Eval sets shows the leakage check. Freeze only after an `eval_set_freeze`
+   gate. The edit control refuses, and a frozen set stays frozen.
+5. Models trains from random initialisation on the released dataset. A cost
+   cap above $10 needs a `training_run_above_threshold` gate, and a cap
+   larger than the remaining budget is refused. Register the finished run,
+   evaluate it on the frozen set, and read the model next to the baseline.
+   Promotion needs a passing report, red-team notes, and an approved
+   `model_promotion` gate from someone other than the requester.
+6. Ask answers from released datasets only, cites the records, and hides
+   records your groups cannot read.
+7. Audit lists events and says whether the hash chain is intact. Plan is
+   where a program lead submits a goal; task moves offer only the states the
+   board allows.
+
+A personal API token, for scripts, is created under the signed-in person's
+account page and sent as `Authorization: Bearer iai_...` alongside
+`X-Internal-Key` when a key is configured. Revoke it there when the script
+is done. Five wrong passwords lock the account for 15 minutes, and a session
+ends after 30 minutes idle or 8 hours absolute.
 

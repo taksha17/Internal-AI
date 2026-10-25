@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<h1>Welcome, {{ actor.name }}</h1>
+{% if inbox %}<p class="callout">You have <a href="/console/approvals">{{ inbox }} gate{{ "s" if inbox != 1 else "" }} waiting for your decision</a>.</p>{% endif %}
+
+<section class="card">
+  <h2>Build a model, step by step</h2>
+  <p>You are here: <strong>{{ current }}</strong>.</p>
+  <p class="muted">Each step unlocks the next. Steps that need approval wait for someone other than the person who asked.</p>
+  <ol class="steps">
+    {% for label, href, done in steps %}
+    <li class="{{ 'done' if done else '' }}"><a href="{{ href }}">{{ label }}</a> {% if done %}<span class="badge badge-approved">done</span>{% endif %}</li>
+    {% endfor %}
+  </ol>
+</section>
+
+<div class="grid">
+  <section class="card">
+    <h2>Budget</h2>
+    <table>
+      <thead><tr><th>Scope</th><th>Spent</th><th>Limit</th><th>Left</th></tr></thead>
+      <tbody>
+      {% for item in budget %}
+      <tr class="{{ 'warn' if item.exceeded else '' }}"><td>{{ item.scope }}:{{ item.key }}</td><td>${{ "%.2f" % item.spent_usd }}</td><td>${{ "%.2f" % item.limit_usd }}</td><td>${{ "%.2f" % item.remaining_usd }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <section class="card">
+    <h2>Recent jobs</h2>
+    {% if jobs %}
+    <ul class="plain">
+      {% for job in jobs %}<li><a href="/console/jobs/{{ job.id }}">{{ job.title }}</a> {{ m.status_badge(job.state) }}</li>{% endfor %}
+    </ul>
+    {% else %}<p class="muted">No jobs yet.</p>{% endif %}
+  </section>
+</div>
+
+<section class="card">
+  <h2>Alerts</h2>
+  {% if alerts %}
+  <ul class="plain">
+    {% for alert in alerts %}
+    <li>{{ m.status_badge(alert.severity) }} {{ alert.message }}
+      <form method="post" action="/console/alerts/{{ alert.id }}/acknowledge" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="link">Acknowledge</button></form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">No open alerts.</p>{% endif %}
+</section>
+{% endblock %}

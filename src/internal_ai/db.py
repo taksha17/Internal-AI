@@ -270,6 +270,70 @@ CREATE TABLE IF NOT EXISTS source_tombstones (
     requested_by TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS accounts (
+    person_id TEXT PRIMARY KEY REFERENCES people(id),
+    password_hash TEXT NOT NULL,
+    must_change_password INTEGER NOT NULL DEFAULT 1,
+    failed_attempts INTEGER NOT NULL DEFAULT 0,
+    locked_until REAL NOT NULL DEFAULT 0,
+    disabled INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    rotated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    person_id TEXT NOT NULL REFERENCES people(id),
+    csrf_token TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    last_seen REAL NOT NULL,
+    expires_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_person ON sessions(person_id);
+
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id TEXT PRIMARY KEY,
+    token_hash TEXT NOT NULL UNIQUE,
+    person_id TEXT NOT NULL REFERENCES people(id),
+    label TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    last_used_at TEXT,
+    revoked INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS console_jobs (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    state TEXT NOT NULL,
+    params TEXT NOT NULL DEFAULT '{}',
+    result TEXT NOT NULL DEFAULT '{}',
+    error TEXT NOT NULL DEFAULT '',
+    cost_cap_usd REAL NOT NULL DEFAULT 0,
+    scheduler_job_id TEXT,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_console_jobs_state ON console_jobs(state);
+
+CREATE TABLE IF NOT EXISTS data_sources (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    path TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    acl TEXT NOT NULL DEFAULT '[]',
+    sensitivity TEXT NOT NULL,
+    scan TEXT NOT NULL DEFAULT '{}',
+    purpose TEXT NOT NULL DEFAULT '',
+    requested_by TEXT NOT NULL,
+    gate_id TEXT,
+    dataset_id TEXT,
+    created_at TEXT NOT NULL
+);
 """
 
 

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Audit{% endblock %}
+{% block content %}
+<h1>Audit log</h1>
+<p class="{{ 'callout' if verify.ok else 'refusal' }}">
+  {% if verify.ok %}The hash chain is intact across {{ verify.checked }} events.{% else %}The hash chain is broken at event {{ verify.broken_at_seq }}: {{ verify.reason }}.{% endif %}
+</p>
+<form method="get" action="/console/audit" class="inline-form card">
+  <label>Actor <input type="text" name="actor" value="{{ actor_filter }}"></label>
+  <label>Action <input type="text" name="action" value="{{ action_filter }}"></label>
+  <button type="submit">Filter</button>
+</form>
+<table>
+  <thead><tr><th>#</th><th>When</th><th>Actor</th><th>Action</th><th>Subject</th><th>Outcome</th></tr></thead>
+  <tbody>
+  {% for event in events %}
+  <tr class="{{ 'warn' if event.outcome != 'success' else '' }}"><td>{{ event.seq }}</td><td>{{ event.created_at }}</td><td>{{ event.actor }} <span class="muted">{{ event.actor_kind }}</span></td><td>{{ event.action }}</td><td>{{ event.subject }}</td><td>{{ m.status_badge(event.outcome) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}{{ view.dataset.name }}{% endblock %}
+{% block content %}
+{% set dataset = view.dataset %}
+<h1>{{ dataset.name }} v{{ dataset.version }} {{ m.status_badge("released" if dataset.released else "draft") }}</h1>
+<p class="muted small">{{ dataset.id }} · content hash <code>{{ dataset.content_hash[:16] }}</code></p>
+
+<div class="grid">
+  <section class="card">
+    <h2>What is in it</h2>
+    <p>{{ view.records }} records, {{ dataset.token_count }} tokens. You can read {{ view.visible_records }} of them.</p>
+    <p>{% for split, count in view.splits | dictsort %}{{ split }} {{ count }} · {% endfor %}</p>
+    {% if view.steps %}
+    <details><summary>Cleaning steps</summary><pre>{{ view.steps | tojson(indent=2) }}</pre></details>
+    {% endif %}
+    {% if view.pii_audit %}<details><summary>PII audit</summary><pre>{{ view.pii_audit | tojson(indent=2) }}</pre></details>{% endif %}
+  </section>
+  <section class="card">
+    <h2>Sample records</h2>
+    {% for snippet in view.snippets %}<p class="snippet"><span class="muted small">{{ snippet.record_key }}</span><br>{{ snippet.text }}</p>
+    {% else %}<p class="muted">No records you are allowed to read.</p>{% endfor %}
+  </section>
+</div>
+
+<section class="card">
+  <h2>Next steps</h2>
+  <ol class="steps">
+    <li class="{{ 'done' if view.has_splits else '' }}">Split into train, validation and test.
+      {% if not view.has_splits and can("build_dataset") and not dataset.released %}
+      <form method="post" action="/console/datasets/{{ dataset.id }}/split" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="primary">Split</button></form>
+      {% endif %}
+    </li>
+    <li class="{{ 'done' if dataset.released else '' }}">Release, after a PII audit and a dataset_release gate.
+      {% if view.release_gate %}{{ m.gate_box(release_gate) }}{% endif %}
+      {% if view.has_splits and not dataset.released and can("release_dataset") %}
+        {% if not view.release_gate or view.release_gate.status == "rejected" %}
+        <form method="post" action="/console/datasets/{{ dataset.id }}/request-release" class="inline-form">{{ m.csrf_field() }}<button type="submit">Run PII audit and request release</button></form>
+        {% elif view.release_gate.status == "approved" %}
+        <form method="post" action="/console/datasets/{{ dataset.id }}/release" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="primary">Release dataset</button></form>
+        {% endif %}
+      {% endif %}
+    </li>
+    <li class="{{ 'done' if tokenizer else '' }}">Train a tokenizer on the training split.
+      {% if view.has_splits and can("build_dataset") %}
+      <form method="post" action="/console/datasets/{{ dataset.id }}/tokenizer" class="inline-form">{{ m.csrf_field() }}
+        <label>Vocabulary <input type="number" name="vocab_size" value="4000" min="256" max="64000"></label>
+        <button type="submit">{{ "Retrain" if tokenizer else "Train" }} tokenizer</button></form>
+      {% endif %}
+    </li>
+    <li>Create an eval set from the held-out test split.
+      {% if view.has_splits and can("create_eval_set") %}
+      <form method="post" action="/console/datasets/{{ dataset.id }}/eval-set" class="inline-form">{{ m.csrf_field() }}
+        <label>Name <input type="text" name="name" value="{{ dataset.name }}-eval" required></label>
+        <label>Questions <input type="number" name="count" value="24" min="4" max="500"></label>
+        <label>Mode <select name="mode"><option value="paraphrase">paraphrase</option><option value="title">title</option></select></label>
+        <button type="submit">Create eval set</button></form>
+      {% endif %}
+    </li>
+  </ol>
+</section>
+
+{% if jobs %}
+<section class="card">
+  <h2>Jobs for this dataset</h2>
+  <ul class="plain">{% for job in jobs %}<li><a href="/console/jobs/{{ job.id }}">{{ job.title }}</a> {{ m.status_badge(job.state) }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+{% endblock %}

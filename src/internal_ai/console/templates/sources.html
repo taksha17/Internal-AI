@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Data sources{% endblock %}
+{% block content %}
+<h1>Data sources</h1>
+<p class="muted">A model learns only from internal data a data owner has approved. Model weight files, secrets, confidential paths and anything outside the approved folders are refused.</p>
+<p class="muted small">Approved folders: {% for root in roots %}<code>{{ root }}</code> {% endfor %}</p>
+
+<div class="grid">
+  <form method="get" action="/console/sources" class="stack card">
+    <h2>1. Inspect a path</h2>
+    <label>Path to a file or folder <input type="text" name="inspect" value="{{ inspect_path }}" required></label>
+    <button type="submit">Inspect</button>
+  </form>
+  {% if can("register_source") %}
+  <form method="post" action="/console/sources/sample" class="stack card">
+    {{ m.csrf_field() }}
+    <h2>No data yet?</h2>
+    <p class="muted">Generate a synthetic support-ticket corpus to learn the flow.</p>
+    <label>Records <input type="number" name="records" value="120" min="20" max="5000"></label>
+    <button type="submit">Generate sample data</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if inspection %}
+<section class="card">
+  <h2>What the platform sees</h2>
+  <p><code>{{ inspection.path }}</code>: {{ inspection.kind }}, {{ inspection.files }} files, {{ inspection.text_files }} text, classified {{ m.status_badge(inspection.sensitivity) }}</p>
+  {% if inspection.secret_hits and not inspection.problems %}
+  <p class="callout">It contains what look like secrets ({% for name, count in inspection.secret_hits | dictsort %}{{ name }} {{ count }} {% endfor %}). The dataset build redacts them, the PII audit checks nothing survived before release, and the approver sees these counts.</p>
+  {% endif %}
+  {% if inspection.problems %}
+  <div class="refusal"><strong>This source would be refused:</strong>
+    <ul>{% for problem in inspection.problems %}<li>{{ problem }}</li>{% endfor %}</ul></div>
+  {% elif can("register_source") %}
+  <form method="post" action="/console/sources" class="stack">
+    {{ m.csrf_field() }}
+    <h3>2. Register it and ask for approval</h3>
+    <input type="hidden" name="path" value="{{ inspection.path }}">
+    <label>Name <input type="text" name="name" required maxlength="80" placeholder="support-tickets"></label>
+    <label>Purpose <input type="text" name="purpose" required maxlength="300" placeholder="Search over resolved support tickets"></label>
+    <label>Who may read it (groups, comma separated) <input type="text" name="acl" value="engineering"></label>
+    <button type="submit" class="primary">Register and request approval</button>
+  </form>
+  {% else %}
+  <p class="callout">The source looks acceptable. Registering it needs data_owner or ml_lead.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+<h2>Registered sources</h2>
+<table>
+  <thead><tr><th>Source</th><th>Approval</th><th>Readers</th><th>Dataset</th><th>Actions</th></tr></thead>
+  <tbody>
+  {% for source in sources %}
+  <tr>
+    <td><strong>{{ source.name }}</strong> <span class="muted small">{{ source.id }}</span><br><code class="small">{{ source.path }}</code><br><span class="muted small">{{ source.purpose }}</span></td>
+    <td>{% if source.withdrawn %}{{ m.status_badge("withdrawn") }}{% else %}{{ m.status_badge(source.gate_status) }}{% endif %}<br><a class="small" href="/console/approvals?status=all">{{ source.gate_id }}</a></td>
+    <td>{{ source.acl | join(", ") }}</td>
+    <td>{% if source.dataset_id %}<a href="/console/datasets/{{ source.dataset_id }}">{{ source.dataset_id }}</a>{% else %}<span class="muted">none</span>{% endif %}</td>
+    <td class="stack">
+      {% if source.gate_status == "approved" and not source.withdrawn and can("build_dataset") %}
+      <form method="post" action="/console/sources/{{ source.id }}/build">{{ m.csrf_field() }}<button type="submit" class="primary">Build dataset</button></form>
+      {% endif %}
+      {% if can("withdraw_source") and not source.withdrawn %}
+      <form method="post" action="/console/sources/{{ source.id }}/withdraw" class="inline-form">{{ m.csrf_field() }}<input type="text" name="reason" placeholder="reason" required size="12"><button type="submit" class="danger">Withdraw</button></form>
+      {% endif %}
+      {% if can("withdraw_source") %}
+        {% if source.purge_requested_by %}
+        <form method="post" action="/console/sources/{{ source.id }}/purge">{{ m.csrf_field() }}<input type="hidden" name="confirm" value="1"><button type="submit" class="danger">Confirm purge (requested by {{ source.purge_requested_by }})</button></form>
+        {% else %}
+        <form method="post" action="/console/sources/{{ source.id }}/purge" class="inline-form">{{ m.csrf_field() }}<input type="text" name="reason" placeholder="erasure reason" required size="12"><button type="submit" class="link">Request purge</button></form>
+        {% endif %}
+      {% endif %}
+    </td>
+  </tr>
+  {% else %}<tr><td colspan="5" class="muted">No sources yet. Inspect a path above.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

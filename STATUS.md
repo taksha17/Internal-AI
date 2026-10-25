@@ -1,13 +1,16 @@
 # STATUS — hand-off & verification
 
-Updated 2026-10-23 after the rebrand to `internal_ai` (package `internal_ai`,
-distribution `internal-ai`, CLI `internal-ai` / `python -m internal_ai.cli`).
+Updated 2026-10-24. The operator console is in place: a person signs in and
+runs the build path in the browser, and governance writes take their actor
+from that session or from a personal token. The 2026-10-23 rebrand still
+stands (`internal_ai`, distribution `internal-ai`, CLI `internal-ai` /
+`python -m internal_ai.cli`).
 The authoritative PRD is `../PRD Agent-Driven In-House LLM Build Platform.md`
 (v1.0).
 
 ## Verification
 
-- Tests: `.venv/bin/python -m pytest` → **79 passed**, exit 0 (torch 2.14.1+cpu).
+- Tests: `.venv/bin/python -m pytest` → **88 passed**, exit 0 (torch 2.14.1+cpu).
 - Lint and format: `.venv/bin/ruff check .` → clean; `.venv/bin/ruff format --check .`
   → clean.
 - Tester-facing gaps closed on 2026-10-23: the serving API now reports the
@@ -38,6 +41,13 @@ The authoritative PRD is `../PRD Agent-Driven In-House LLM Build Platform.md`
 - The classifier path beats the majority-class baseline but misses the
   accuracy floor, so the evaluation agent refuses to promote it. That refusal
   is the intended behaviour.
+- Browser console, 2026-10-24: sign-in with local accounts, an approvals
+  inbox, a kill switch that a second person must release, and the data →
+  dataset → tokenizer → eval freeze → train → evaluate → promote → ask path.
+  A click-through on the synthetic corpus with separate approvers ends in a
+  verified audit chain. Governance writes on the JSON API refuse a shared
+  key that tries to name the actor; `scripts/probe.py` checks that. The
+  command line keeps asserted names only while a root has no accounts.
 
 ## Real-data pilot (2026-10-22, second pass)
 
@@ -107,6 +117,7 @@ when the query does not match.
 | Compute plane, C4 | `compute/scheduler.py` |
 | Evaluation and promotion, FR-14 to FR-16 | `evals/` |
 | Serving, FR-17 to FR-19 | `serving/` |
+| Operator console | `console/`, `services/` |
 
 See `docs/prd-traceability.md` for the requirement-by-requirement map with the
 test that covers each one.

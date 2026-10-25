@@ -1,0 +1,10 @@
+{% import "_macros.html" as m with context %}
+<section class="card" id="job-status"{% if not job.finished %} hx-get="/console/jobs/{{ job.id }}/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  <h2>Status {{ m.status_badge(job.state) }}</h2>
+  {% if not job.finished %}<p class="muted">Working… this page updates by itself.</p>{% endif %}
+  {% if job.state == "failed" %}<pre class="refusal">{{ job.error }}</pre>{% endif %}
+  {% if job.state == "succeeded" %}
+  <pre>{{ job.result | tojson(indent=2) }}</pre>
+  {% if next_step %}<p><a class="button primary" href="{{ next_step[1] }}">{{ next_step[0] }}</a></p>{% endif %}
+  {% endif %}
+</section>
