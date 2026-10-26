@@ -119,11 +119,26 @@ BINARY_SUFFIXES = frozenset(
 )
 
 SENSITIVITY_RULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
-    ("regulated", "emr", ("emr", "medical", "health", "patient", "clinical", "hipaa", "phi")),
+    (
+        "regulated",
+        "emr",
+        ("emr", "medical", "health", "patient", "clinical", "hipaa", "phi", "fhir", "onco"),
+    ),
     (
         "personal",
         "personal",
-        ("iphone", "photo", "pics", "trip", "movies", "valorant", "resume", "career", "job search"),
+        (
+            "iphone",
+            "photo",
+            "pics",
+            "trip",
+            "movies",
+            "valorant",
+            "resume",
+            "career",
+            "job search",
+            "imessage",
+        ),
     ),
     (
         "confidential",
@@ -143,7 +158,7 @@ SENSITIVITY_RULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "system",
         "system or downloaded content",
-        (".caches", "software ( downloads )", "docker-data"),
+        (".caches", "software ( downloads )", "docker-data", "system volume information"),
     ),
     ("internal", "internal", ()),
 )
@@ -240,7 +255,36 @@ def _is_text_file(path: Path) -> bool:
     return path.name.lower() in ("dockerfile", "makefile", "readme", "license")
 
 
-def _absorb(entry: SourceEntry, file_path: Path, max_bytes_per_file: int) -> None:
+def target_escapes(path: Path, root: Path) -> bool:
+    """A link whose target sits outside the tree being inspected.
+
+    Walking a tree does not follow directory links, but opening a file link
+    would read whatever it points at. The target has to stay inside the tree.
+    """
+    if not path.is_symlink():
+        return False
+    try:
+        target = path.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return True
+    root = root.resolve()
+    return target != root and root not in target.parents
+
+
+def disguised_binary(path: Path) -> bool:
+    """True when a text-looking file is a binary payload, such as renamed weights."""
+    try:
+        with path.open("rb") as handle:
+            sample = handle.read(512)
+    except OSError:
+        return False
+    return b"\x00" in sample or sample.startswith((b"GGUF", b"PK\x03\x04"))
+
+
+def _absorb(entry: SourceEntry, file_path: Path, max_bytes_per_file: int, root: Path) -> None:
+    if target_escapes(file_path, root):
+        entry.file_count += 1
+        return
     try:
         size = file_path.stat().st_size
     except OSError:
@@ -252,7 +296,7 @@ def _absorb(entry: SourceEntry, file_path: Path, max_bytes_per_file: int) -> Non
     if suffix in BINARY_SUFFIXES:
         entry.binary_file_count += 1
         return
-    if not _is_text_file(file_path):
+    if not _is_text_file(file_path) or disguised_binary(file_path):
         entry.binary_file_count += 1
         return
     entry.text_file_count += 1
@@ -294,7 +338,7 @@ def scan_source(
     if progress is not None:
         progress(0, total)
     for done, file_path in enumerate(candidates, start=1):
-        _absorb(entry, file_path, max_bytes_per_file)
+        _absorb(entry, file_path, max_bytes_per_file, path)
         if progress is not None:
             progress(done, total)
     return entry

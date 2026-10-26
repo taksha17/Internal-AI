@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from internal_ai.data.inventory import disguised_binary, target_escapes
 from internal_ai.data.records import Record
 from internal_ai.ids import file_hash, new_id, text_hash
 
@@ -172,7 +173,7 @@ def build_tree_index(
     root = root.resolve()
     index = TreeIndex(root=root, source_id=source_id or root.name)
     for path in iter_tree_files(root):
-        if not is_text_file(path):
+        if not is_text_file(path) or target_escapes(path, root) or disguised_binary(path):
             index.skipped += 1
             continue
         try:

@@ -128,6 +128,28 @@ def test_agent_and_requester_cannot_decide_a_gate(platform: Platform) -> None:
     assert platform.store.get_gate(gate.id).status == "pending"
 
 
+def test_one_person_cannot_cover_every_approver_role(platform: Platform) -> None:
+    requester = enroll(platform, "Mo Builder", ["ml_lead"])
+    both = enroll(platform, "Dana Both", ["data_owner", "compliance"])
+    second = enroll(platform, "Cora Compliance", ["compliance"])
+    gate = governance.request_gate(
+        platform,
+        requester,
+        GateType.NEW_DATA_SOURCE,
+        title="Use the notes",
+        subject="src_notes",
+        evidence={
+            "source_description": "notes",
+            "sensitivity_class": "internal",
+            "purpose": "learn the flow",
+        },
+    )
+    governance.decide_gate(platform, both, gate.id, True, note="I hold both roles")
+    assert platform.store.get_gate(gate.id).status == "pending"
+    governance.decide_gate(platform, second, gate.id, True, note="second person")
+    assert platform.store.get_gate(gate.id).status == "approved"
+
+
 def test_weight_files_outside_paths_frozen_sets_and_spend(
     platform: Platform, tmp_path: Path
 ) -> None:

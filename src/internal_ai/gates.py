@@ -165,15 +165,20 @@ class GateService:
             created_at=now_iso(),
         )
         self.store.add_gate_decision(decision)
+        decisions = [item for item in self.store.gate_decisions(gate_id) if item.approved]
         approved_roles: set[str] = set()
-        for item in self.store.gate_decisions(gate_id):
-            if item.approved:
-                approved_roles |= self.approver_roles(item.approver)
+        for item in decisions:
+            approved_roles |= self.approver_roles(item.approver)
+        # One account can hold every required role. Dual control still needs a
+        # different person for each role, not one person wearing all of them.
+        distinct_approvers = {item.approver for item in decisions}
         if not approved:
             gate.status = GateStatus.REJECTED
             gate.decided_at = now_iso()
             gate.decision_note = note
-        elif set(gate.required_approvers) <= approved_roles:
+        elif set(gate.required_approvers) <= approved_roles and len(distinct_approvers) >= len(
+            gate.required_approvers
+        ):
             gate.status = GateStatus.APPROVED
             gate.decided_at = now_iso()
             gate.decision_note = note

@@ -56,6 +56,78 @@ def test_inspection_reports_files_read_as_it_goes(
     assert any(0 < percent < 90 for percent in percentages)
 
 
+def test_a_path_outside_the_approved_folders_is_refused_before_it_is_read(
+    platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    approved = tmp_path / "approved"
+    approved.mkdir()
+    monkeypatch.setenv("INTERNAL_AI_DATA_ROOTS", str(approved))
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    secret = outside / "note.txt"
+    secret.write_text("api_key: 'sk-live-not-a-real-token'\n")
+    seen: list[tuple[int, str]] = []
+
+    result = build.inspect_source(platform, str(outside), progress=lambda p, d: seen.append((p, d)))
+
+    assert result.files == 0
+    assert result.secret_hits == {}
+    assert result.problems == [
+        "the path is outside the approved data folders: " + str(approved.resolve())
+    ]
+    assert seen == [(100, "done")]
+    assert secret.read_text().startswith("api_key")
+
+
+def test_a_link_inside_an_approved_folder_cannot_read_outside_it(
+    platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    approved = tmp_path / "approved"
+    approved.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    secret = outside / "secret.txt"
+    secret.write_text("api_key: 'sk-live-not-a-real-token'\n")
+    link = approved / "notes.txt"
+    link.symlink_to(secret)
+    monkeypatch.setenv("INTERNAL_AI_DATA_ROOTS", str(approved))
+
+    result = build.inspect_source(platform, str(approved))
+
+    assert result.secret_hits == {}
+    assert any("link points outside" in problem for problem in result.problems)
+    assert not result.acceptable
+
+
+def test_a_weight_file_renamed_as_text_is_refused(
+    platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    approved = tmp_path / "approved"
+    approved.mkdir()
+    (approved / "notes.txt").write_bytes(b"GGUF" + b"\x00" * 32)
+    monkeypatch.setenv("INTERNAL_AI_DATA_ROOTS", str(approved))
+
+    result = build.inspect_source(platform, str(approved))
+
+    assert any("weight" in problem for problem in result.problems)
+    assert not result.acceptable
+
+
+def test_health_and_message_folders_are_excluded(
+    platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    approved = tmp_path / "approved"
+    folder = approved / "fhir notes"
+    folder.mkdir(parents=True)
+    (folder / "note.txt").write_text("ticket 1\n")
+    monkeypatch.setenv("INTERNAL_AI_DATA_ROOTS", str(approved))
+
+    result = build.inspect_source(platform, str(folder))
+
+    assert any("fhir" in problem for problem in result.problems)
+    assert not result.acceptable
+
+
 def test_console_inspects_without_blocking_the_page(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

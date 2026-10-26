@@ -16,7 +16,14 @@ from pathlib import Path
 from typing import Any
 
 from internal_ai.context import Platform
-from internal_ai.data.inventory import SECRET_PATTERNS, classify_path, scan_source
+from internal_ai.data.inventory import (
+    SECRET_PATTERNS,
+    classify_path,
+    disguised_binary,
+    scan_source,
+    target_escapes,
+)
+from internal_ai.data.tree import is_text_file
 from internal_ai.domain import GateRequest, GateStatus, GateType
 from internal_ai.ids import new_id, now_iso
 from internal_ai.services import governance
@@ -149,15 +156,23 @@ def inspect_source(
     roots = data_roots(platform)
     containing = [root for root in roots if resolved == root or root in resolved.parents]
     if not containing:
-        problems.append(
-            "the path is outside the approved data folders: "
-            + ", ".join(str(root) for root in roots)
+        report(100, "done")
+        return SourceInspection(
+            str(resolved),
+            "tree" if resolved.is_dir() else "file",
+            *classify_path(resolved),
+            0,
+            0,
+            [],
+            {},
+            [
+                "the path is outside the approved data folders: "
+                + ", ".join(str(root) for root in roots)
+            ],
         )
-        sensitivity, reason = classify_path(resolved)
-    else:
-        root = max(containing, key=lambda item: len(item.parts))
-        below = resolved.relative_to(root)
-        sensitivity, reason = classify_path(below if below.parts else Path(resolved.name))
+    root = max(containing, key=lambda item: len(item.parts))
+    below = resolved.relative_to(root)
+    sensitivity, reason = classify_path(below if below.parts else Path(resolved.name))
     weight_files: list[str] = []
     secret_hits: dict[str, int] = {}
     if resolved.is_dir():
@@ -172,10 +187,19 @@ def inspect_source(
         files, text_files = entry.file_count, entry.text_file_count
         secret_hits = dict(entry.secret_hits)
         report(94, "checking for weight files")
+        escaped: list[str] = []
         for directory, _dirs, names in os.walk(resolved):
             for name in names:
-                if Path(name).suffix.lower() in WEIGHT_SUFFIXES:
-                    weight_files.append(str(Path(directory, name).relative_to(resolved)))
+                file_path = Path(directory, name)
+                relative = str(file_path.relative_to(resolved))
+                if target_escapes(file_path, resolved):
+                    escaped.append(relative)
+                elif Path(name).suffix.lower() in WEIGHT_SUFFIXES or (
+                    is_text_file(file_path) and disguised_binary(file_path)
+                ):
+                    weight_files.append(relative)
+        if escaped:
+            problems.append("a link points outside the source: " + ", ".join(sorted(escaped)[:5]))
     else:
         kind = "file"
         report(30, "reading file")
@@ -188,6 +212,8 @@ def inspect_source(
                 f"{suffix or 'files without an extension'} is not a supported source format; "
                 f"use one of {', '.join(sorted(SOURCE_FILE_SUFFIXES))}"
             )
+        elif disguised_binary(resolved):
+            weight_files.append(resolved.name)
         else:
             text_files = 1
             content = resolved.read_text(encoding="utf-8", errors="ignore")
