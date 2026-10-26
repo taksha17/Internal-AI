@@ -34,6 +34,8 @@ class Principal:
     api_key: str = ""
 
     def can_read(self, acl: list[str], sensitivity: str = "internal") -> bool:
+        if sensitivity not in ("", "internal"):
+            return False
         if SUPERUSER_GROUP in self.groups:
             return True
         if not acl:

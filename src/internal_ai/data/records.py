@@ -9,7 +9,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-EXCLUDED_SENSITIVITY = ("regulated", "customer_confidential", "pii_source")
+EXCLUDED_SENSITIVITY = (
+    "regulated",
+    "customer_confidential",
+    "confidential",
+    "personal",
+    "pii_source",
+    "pretrained_weights",
+    "system",
+    "recovered",
+)
 
 
 @dataclass(slots=True)
@@ -80,6 +89,19 @@ def _read_text(path: Path) -> list[str]:
     ]
 
 
+def _bounded_acl(row: dict[str, Any], source: Source) -> list[str]:
+    """A row may narrow the source ACL. It may not grant a group the source did not."""
+    source_acl = [str(item) for item in source.acl]
+    raw = row.get("acl", source_acl)
+    if not isinstance(raw, list):
+        return source_acl
+    requested = [str(item) for item in raw if str(item).strip()]
+    if not source_acl:
+        return requested
+    allowed = [item for item in requested if item in set(source_acl)]
+    return allowed or source_acl
+
+
 def ingest_source(source: Source) -> list[Record]:
     """Read a source into records. Unapproved sources yield nothing."""
     if not source.approved:
@@ -99,7 +121,7 @@ def ingest_source(source: Source) -> list[Record]:
                     text=text,
                     source_id=source.source_id,
                     sensitivity=str(row.get("sensitivity", source.sensitivity)),
-                    acl=list(row.get("acl", source.acl)),
+                    acl=_bounded_acl(row, source),
                     meta={"format": "jsonl", "extra_keys": sorted(k for k in row if k != "text")},
                 )
             )
@@ -116,7 +138,7 @@ def ingest_source(source: Source) -> list[Record]:
                     text=text,
                     source_id=source.source_id,
                     sensitivity=str(row.get("sensitivity", source.sensitivity)),
-                    acl=list(row.get("acl", source.acl)),
+                    acl=_bounded_acl(row, source),
                     meta={"format": "csv"},
                 )
             )

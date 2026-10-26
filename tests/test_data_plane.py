@@ -33,6 +33,31 @@ def test_dataset_is_versioned_with_lineage(platform, corpus_path) -> None:
     assert len(dataset.lineage["steps"]) >= 5
 
 
+def test_a_row_cannot_widen_access_or_mark_itself_readable(tmp_path, platform) -> None:
+    from internal_ai.data.records import Source, ingest_source
+    from internal_ai.serving.service import Principal
+
+    path = tmp_path / "notes.jsonl"
+    path.write_text(
+        '{"text": "keep this private", "acl": [], "sensitivity": "confidential"}\n'
+        '{"text": "reset the vpn", "acl": ["public", "engineering"], "sensitivity": "internal"}\n',
+        encoding="utf-8",
+    )
+    records = ingest_source(
+        Source(
+            source_id="src_notes",
+            path=path,
+            sensitivity="internal",
+            acl=["engineering"],
+            approved=True,
+        )
+    )
+    assert [record.acl for record in records] == [["engineering"], ["engineering"]]
+    reader = Principal(user_id="ada", groups=frozenset({"engineering"}))
+    assert reader.can_read(records[0].acl, records[0].sensitivity) is False
+    assert reader.can_read(records[1].acl, records[1].sensitivity) is True
+
+
 def test_unapproved_source_is_not_ingested(platform, corpus_path) -> None:
     result = build_corpus(platform, [corpus_path], name="corpus-test", approved=False)
     assert result.records == 0
