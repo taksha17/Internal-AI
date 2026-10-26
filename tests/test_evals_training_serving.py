@@ -118,6 +118,50 @@ def test_promotion_requires_passing_eval_and_gate(platform) -> None:
         promote_model(platform, model.id, gate_approved=True)
 
 
+def test_a_passing_report_off_a_frozen_set_cannot_promote(platform) -> None:
+    from internal_ai.domain import EvalReport, ModelVersion
+    from internal_ai.evals.harness import EvalHarness
+    from internal_ai.workflows import promote_model
+
+    model = platform.store.add_model(
+        ModelVersion(
+            id="mdl_named_like_a_file",
+            name="embedding-v1",
+            version=1,
+            content_hash="h",
+            created_at="now",
+        )
+    )
+    harness = EvalHarness(platform.store, platform.audit)
+    open_set = harness.create_eval_set("open", [{"query": "q", "relevant_ids": ["d1"]}])
+
+    def report(report_id: str, eval_set_id: str, created_at: str) -> None:
+        platform.store.add_eval_report(
+            EvalReport(
+                id=report_id,
+                model_id=model.id,
+                eval_set_id=eval_set_id,
+                created_at=created_at,
+                metrics={"recall_at_10": 1.0},
+                passed=True,
+                notes="pass",
+            )
+        )
+
+    report("rep_open", open_set.id, "2026-01-01T00:00:01+00:00")
+    with pytest.raises(PermissionError, match="frozen"):
+        promote_model(platform, model.id, gate_approved=True)
+    harness.freeze_eval_set(open_set.id, "ml_lead", gate_approved=True)
+    report("rep_frozen", open_set.id, "2026-01-01T00:00:02+00:00")
+    report("rep_classifier", f"classifier::{model.id}", "2026-01-01T00:00:03+00:00")
+    with pytest.raises(PermissionError, match="frozen"):
+        promote_model(platform, model.id, gate_approved=True)
+    report("rep_frozen_again", open_set.id, "2026-01-01T00:00:04+00:00")
+    promoted = promote_model(platform, model.id, gate_approved=True)
+    assert promoted.status == "promoted"
+    assert promoted.eval_report_id == "rep_frozen_again"
+
+
 def test_serving_reports_the_model_that_is_actually_served(tmp_path) -> None:
     from fastapi.testclient import TestClient
 

@@ -318,26 +318,43 @@ def promote_model(
         raise KeyError(f"unknown model: {model_id}")
     if not gate_approved:
         raise PermissionError("model promotion requires an approved model_promotion gate (FR-15)")
-    reports = platform.store.list_eval_reports(model_id)
-    if not reports or not reports[-1].passed:
+    report = latest_frozen_pass(platform, model_id)
+    if report is None:
         raise PermissionError(
             "model promotion requires a passing eval report on a frozen eval set (FR-15)"
         )
-    model.card["eval_results"] = reports[-1].metrics
-    model.card["baseline_metrics"] = reports[-1].baseline_metrics
-    model.card["eval_report_id"] = reports[-1].id
+    model.card["eval_results"] = report.metrics
+    model.card["baseline_metrics"] = report.baseline_metrics
+    model.card["eval_report_id"] = report.id
     model.card["promoted_by"] = approver
     model.card["promoted_at"] = now_iso()
     platform.store.update_model_card(model_id, model.card)
-    platform.store.set_model_status(model_id, "promoted", reports[-1].id)
+    platform.store.set_model_status(model_id, "promoted", report.id)
     platform.audit.record(
         actor=approver,
         actor_kind="human",
         action="model.promoted",
         subject=model_id,
-        details={"eval_report_id": reports[-1].id},
+        details={"eval_report_id": report.id, "eval_set_id": report.eval_set_id},
     )
     return platform.store.get_model(model_id)
+
+
+def latest_frozen_pass(platform: Platform, model_id: str) -> Any:
+    """The newest report counts only when it passed on a set that is still frozen.
+
+    A classifier run records a report too, and its file name can be chosen to
+    match a registered model. That report has no frozen eval set, so it must
+    not satisfy promotion.
+    """
+    reports = platform.store.list_eval_reports(model_id)
+    if not reports or not reports[-1].passed:
+        return None
+    report = reports[-1]
+    eval_set = platform.store.get_eval_set(report.eval_set_id)
+    if eval_set is None or not eval_set.frozen:
+        return None
+    return report
 
 
 def model_card_markdown(model: ModelVersion) -> str:
@@ -579,15 +596,23 @@ def evaluate_classifier_model(
     baseline_accuracy = baseline_outcome.metrics["accuracy"]
     beat_baseline = model_accuracy > baseline_accuracy
     enough_accuracy = model_accuracy >= min_accuracy
+    decision = beat_baseline and enough_accuracy
+    outcome.passed = decision
+    outcome.baseline_metrics = baseline_outcome.metrics
+    outcome.notes = (
+        "classifier beats the majority-class baseline and clears the accuracy floor"
+        if decision
+        else "classifier does not beat the majority-class baseline or misses the floor"
+    )
     report = harness.record_report(
-        model_path.stem,
+        f"classifier:{model_path.stem}",
         f"classifier::{dataset_id}",
         outcome,
         actor=actor,
     )
     return {
         "report_id": report.id,
-        "passed": beat_baseline and enough_accuracy,
+        "passed": decision,
         "accuracy": model_accuracy,
         "baseline_accuracy": baseline_accuracy,
         "baseline_description": "majority class baseline",
@@ -600,11 +625,7 @@ def evaluate_classifier_model(
         "per_class": per_class,
         "baseline_per_class": baseline_per_class,
         "label_distribution": counts,
-        "notes": (
-            "classifier beats the majority-class baseline and clears the accuracy floor"
-            if beat_baseline and enough_accuracy
-            else "classifier does not beat the majority-class baseline or misses the floor"
-        ),
+        "notes": outcome.notes,
     }
 
 
