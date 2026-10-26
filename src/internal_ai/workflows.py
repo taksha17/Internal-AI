@@ -64,6 +64,11 @@ def build_corpus(
 
 
 def split_corpus(platform: Platform, dataset_id: str, seed: str = "forge-v1") -> SplitResult:
+    dataset = platform.store.get_dataset(dataset_id)
+    if dataset is None:
+        raise KeyError(f"unknown dataset: {dataset_id}")
+    if dataset.released:
+        raise PermissionError("a released dataset is immutable; build a new version to re-split")
     rows = platform.store.dataset_records(dataset_id)
     records = [
         Record(
@@ -84,20 +89,18 @@ def split_corpus(platform: Platform, dataset_id: str, seed: str = "forge-v1") ->
         for record in split_records:
             assignments[record.record_key] = split_name
     platform.store.set_record_splits(dataset_id, assignments)
-    dataset = platform.store.get_dataset(dataset_id)
-    if dataset is not None:
-        lineage = dict(dataset.lineage)
-        lineage["splits"] = result.stats
-        dataset.lineage = lineage
-        dataset.stats = {**dataset.stats, "splits": result.stats}
-        platform.store.conn.execute(
-            "UPDATE datasets SET lineage = ?, stats = ? WHERE id = ?",
-            (
-                json.dumps(lineage, sort_keys=True, default=str),
-                json.dumps(dataset.stats, sort_keys=True, default=str),
-                dataset_id,
-            ),
-        )
+    lineage = dict(dataset.lineage)
+    lineage["splits"] = result.stats
+    dataset.lineage = lineage
+    dataset.stats = {**dataset.stats, "splits": result.stats}
+    platform.store.conn.execute(
+        "UPDATE datasets SET lineage = ?, stats = ? WHERE id = ?",
+        (
+            json.dumps(lineage, sort_keys=True, default=str),
+            json.dumps(dataset.stats, sort_keys=True, default=str),
+            dataset_id,
+        ),
+    )
     platform.audit.record(
         actor="data_engineer",
         action="data.splits_created",

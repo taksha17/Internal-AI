@@ -195,6 +195,30 @@ def test_release_is_blocked_when_pii_survives(platform, corpus_path, monkeypatch
         pipeline.release(result.dataset_id, "ml_lead", gate_approved=True)
 
 
+def test_a_released_dataset_cannot_be_split_again(platform) -> None:
+    from internal_ai.domain import DatasetVersion
+    from internal_ai.workflows import split_corpus
+
+    dataset = platform.store.add_dataset(
+        DatasetVersion(
+            id="ds_released_split",
+            name="released-split",
+            version=1,
+            content_hash="h",
+            record_count=1,
+            token_count=1,
+            created_at="now",
+            released=True,
+        )
+    )
+    platform.store.add_dataset_records(
+        dataset.id, [{"record_key": "a", "payload": "clean ledger note", "split": "test"}]
+    )
+    with pytest.raises(PermissionError, match="immutable"):
+        split_corpus(platform, dataset.id, seed="other-seed")
+    assert platform.store.dataset_records(dataset.id)[0]["split"] == "test"
+
+
 def test_release_reads_a_record_a_one_row_sample_would_miss(platform) -> None:
     from internal_ai.data.pipeline import DataPipeline
     from internal_ai.domain import DatasetVersion
