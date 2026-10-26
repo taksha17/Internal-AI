@@ -11,12 +11,24 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from internal_ai.context import Platform
-from internal_ai.data.inventory import SECRET_PATTERNS, classify_path, scan_source
+from internal_ai.data.filters import (
+    ScanFilters,
+    dump_filters,
+    load_filters,
+    parse_filters,
+)
+from internal_ai.data.inventory import (
+    SECRET_PATTERNS,
+    WEIGHT_SUFFIXES,
+    classify_path,
+    scan_source,
+    walk_files,
+)
 from internal_ai.domain import GateRequest, GateStatus, GateType
 from internal_ai.ids import new_id, now_iso
 from internal_ai.services import governance
@@ -24,12 +36,12 @@ from internal_ai.services.actor import Actor
 from internal_ai.services.jobs import JobRunner
 from internal_ai.services.permissions import Action, PermissionDenied, deny, require
 
-WEIGHT_SUFFIXES = frozenset(
-    {".pt", ".pth", ".bin", ".safetensors", ".gguf", ".onnx", ".ckpt", ".h5", ".pb", ".tflite"}
-)
 SOURCE_FILE_SUFFIXES = frozenset({".jsonl", ".ndjson", ".csv", ".txt", ".md"})
 TRAINING_COST_GATE_USD = 10.0
 DATA_ROOTS_ENV = "INTERNAL_AI_DATA_ROOTS"
+FILTERS_KEY = "data.inspection_filters"
+EXTRA_ROOTS_KEY = "data.extra_roots"
+MAX_EXTRA_ROOTS = 10
 TRAINING_AGENT = "ml_engineer"
 DATA_AGENT = "data_engineer"
 EVAL_AGENT = "evaluation"
@@ -39,11 +51,71 @@ EVAL_AGENT = "evaluation"
 
 
 def data_roots(platform: Platform) -> list[Path]:
-    """Directories a console user may point a data source at."""
+    """Directories a console user may point a data source at.
+
+    Configuration sets the floor; a data owner can add a folder from the Data
+    page, because where the company keeps its documents is an operational fact
+    and not something to redeploy for. Adding a folder still approves no data:
+    every source needs its own new_data_source_access gate.
+    """
     raw = os.environ.get(DATA_ROOTS_ENV, "")
     if raw.strip():
-        return [Path(item).expanduser().resolve() for item in raw.split(os.pathsep) if item]
-    return [(platform.settings.root / "data").resolve(), samples_dir(platform).resolve()]
+        configured = [Path(item).expanduser().resolve() for item in raw.split(os.pathsep) if item]
+    else:
+        configured = [
+            (platform.settings.root / "data").resolve(),
+            samples_dir(platform).resolve(),
+        ]
+    roots: list[Path] = []
+    for root in [*configured, *extra_data_roots(platform)]:
+        if root not in roots:
+            roots.append(root)
+    return roots
+
+
+def extra_data_roots(platform: Platform) -> list[Path]:
+    """The folders data owners added on the Data page."""
+    raw = platform.store.kv_get(EXTRA_ROOTS_KEY, "") or ""
+    return [Path(item) for item in json.loads(raw or "[]")]
+
+
+def set_extra_data_roots(platform: Platform, actor: Actor, raw: str) -> list[Path]:
+    """Replace the folders a console user may inspect and register."""
+    require(platform.audit, actor, Action.EDIT_DATA_ROOTS, "approved data folders")
+    before = [str(item) for item in extra_data_roots(platform)]
+    roots = parse_data_roots(raw)
+    platform.store.kv_set(EXTRA_ROOTS_KEY, json.dumps([str(item) for item in roots]))
+    platform.audit.record(
+        actor=actor.id,
+        actor_kind=actor.kind,
+        action="data.approved_roots_changed",
+        subject="approved data folders",
+        details={"before": before, "after": [str(item) for item in roots]},
+    )
+    return roots
+
+
+def parse_data_roots(raw: str) -> list[Path]:
+    """Validate the folder list typed into the console."""
+    items = [item.strip() for item in raw.replace("\n", ",").split(",") if item.strip()]
+    roots: list[Path] = []
+    for item in items:
+        path = Path(item).expanduser()
+        if not path.is_absolute():
+            raise ValueError(f"give an absolute path, such as /srv/data or ~/docs: {item}")
+        try:
+            resolved = path.resolve(strict=True)
+        except (OSError, RuntimeError):
+            raise ValueError(f"that folder does not exist: {item}") from None
+        if not resolved.is_dir():
+            raise ValueError(f"that is a file, not a folder: {item}")
+        if resolved == Path(resolved.anchor):
+            raise ValueError("a whole filesystem is too broad; name the folder that holds the data")
+        if resolved not in roots:
+            roots.append(resolved)
+    if len(roots) > MAX_EXTRA_ROOTS:
+        raise ValueError(f"at most {MAX_EXTRA_ROOTS} folders; keep the list short")
+    return roots
 
 
 def samples_dir(platform: Platform) -> Path:
@@ -103,6 +175,9 @@ class SourceInspection:
     weight_files: list[str]
     secret_hits: dict[str, int]
     problems: list[str]
+    secret_files: list[str] = field(default_factory=list)
+    ignored_folders: list[str] = field(default_factory=list)
+    ignored_files: int = 0
 
     @property
     def acceptable(self) -> bool:
@@ -118,14 +193,41 @@ class SourceInspection:
             "text_files": self.text_files,
             "weight_files": self.weight_files,
             "secret_hits": self.secret_hits,
+            "secret_files": sorted(self.secret_files),
             "problems": self.problems,
+            "ignored_folders": self.ignored_folders,
+            "ignored_files": self.ignored_files,
         }
+
+
+def inspection_filters(platform: Platform) -> ScanFilters:
+    """The extra folders and file types this platform's inspections skip."""
+    return load_filters(platform.store.kv_get(FILTERS_KEY))
+
+
+def set_inspection_filters(
+    platform: Platform, actor: Actor, folders: str, suffixes: str
+) -> ScanFilters:
+    """Replace the inspection filters, for the people who own the data."""
+    require(platform.audit, actor, Action.EDIT_INSPECTION_FILTERS, "inspection filters")
+    filters = parse_filters(folders, suffixes)
+    before = inspection_filters(platform)
+    platform.store.kv_set(FILTERS_KEY, dump_filters(filters))
+    platform.audit.record(
+        actor=actor.id,
+        actor_kind=actor.kind,
+        action="data.inspection_filters_changed",
+        subject="inspection filters",
+        details={"before": before.to_dict(), "after": filters.to_dict()},
+    )
+    return filters
 
 
 def inspect_source(
     platform: Platform,
     raw_path: str,
     progress: Callable[[int, str], None] | None = None,
+    filters: ScanFilters | None = None,
 ) -> SourceInspection:
     """What the platform sees in a candidate source, and every reason to refuse it.
 
@@ -138,6 +240,7 @@ def inspect_source(
         if progress is not None:
             progress(percent, detail)
 
+    rules = filters if filters is not None else inspection_filters(platform)
     problems: list[str] = []
     path = Path(raw_path).expanduser()
     try:
@@ -160,22 +263,24 @@ def inspect_source(
         sensitivity, reason = classify_path(below if below.parts else Path(resolved.name))
     weight_files: list[str] = []
     secret_hits: dict[str, int] = {}
+    secret_files: list[str] = []
+    ignored_folders: list[str] = []
+    ignored_files = 0
     if resolved.is_dir():
         kind = "tree"
         report(0, "listing files")
+        walk = walk_files(resolved, rules)
+        ignored_folders, ignored_files = walk.ignored_folders, walk.ignored_files
 
         def scanned(done: int, total: int) -> None:
             percent = int(90 * done / total) if total else 90
             report(percent, f"{done:,} of {total:,} files read")
 
-        entry = scan_source(resolved, progress=scanned)
+        entry = scan_source(resolved, progress=scanned, files=walk.files)
         files, text_files = entry.file_count, entry.text_file_count
         secret_hits = dict(entry.secret_hits)
-        report(94, "checking for weight files")
-        for directory, _dirs, names in os.walk(resolved):
-            for name in names:
-                if Path(name).suffix.lower() in WEIGHT_SUFFIXES:
-                    weight_files.append(str(Path(directory, name).relative_to(resolved)))
+        secret_files = sorted(entry.secret_files)
+        weight_files = sorted(entry.weight_files)
     else:
         kind = "file"
         report(30, "reading file")
@@ -183,6 +288,10 @@ def inspect_source(
         suffix = resolved.suffix.lower()
         if suffix in WEIGHT_SUFFIXES:
             weight_files.append(resolved.name)
+            problems.append(
+                "this is a model weight file, and pretrained weights are never used; "
+                f"point at a folder of text or one of {', '.join(sorted(SOURCE_FILE_SUFFIXES))}"
+            )
         elif suffix not in SOURCE_FILE_SUFFIXES:
             problems.append(
                 f"{suffix or 'files without an extension'} is not a supported source format; "
@@ -195,19 +304,8 @@ def inspect_source(
                 hits = len(pattern.findall(content))
                 if hits:
                     secret_hits[name] = hits
-    if weight_files:
-        problems.append(
-            "the source contains model weight files, and pretrained weights are never used: "
-            + ", ".join(sorted(weight_files)[:5])
-        )
     if sensitivity != "internal":
         problems.append(f"the path is classified as {sensitivity} ({reason}) and is excluded")
-    if secret_hits and kind == "tree":
-        problems.append(
-            "the folder contains what look like secrets ("
-            + ", ".join(f"{name}: {count}" for name, count in sorted(secret_hits.items()))
-            + "); folders are indexed without redaction, so remove them first"
-        )
     if kind == "tree" and text_files == 0:
         problems.append("the folder has no text files to learn from")
     report(100, "done")
@@ -221,6 +319,9 @@ def inspect_source(
         sorted(weight_files),
         secret_hits,
         problems,
+        secret_files,
+        ignored_folders,
+        ignored_files,
     )
 
 
@@ -252,7 +353,7 @@ def register_source(
 ) -> dict[str, Any]:
     """Record a candidate source and open its new_data_source_access gate."""
     require(platform.audit, actor, Action.REGISTER_SOURCE, raw_path)
-    inspection = inspect_source(platform, raw_path)
+    inspection = inspect_source(platform, raw_path, filters=ScanFilters())
     if not inspection.acceptable:
         raise deny(
             platform.audit,
@@ -342,7 +443,7 @@ def build_dataset(platform: Platform, actor: Actor, runner: JobRunner, source_id
     if source["withdrawn"]:
         raise deny(platform.audit, actor, "build_dataset", source_id, "the source was withdrawn")
     _require_gate(platform, actor, GateType.NEW_DATA_SOURCE, source_id, "build_dataset")
-    inspection = inspect_source(platform, source["path"])
+    inspection = inspect_source(platform, source["path"], filters=ScanFilters())
     if not inspection.acceptable:
         raise deny(
             platform.audit,

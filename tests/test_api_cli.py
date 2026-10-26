@@ -24,7 +24,7 @@ def lead_token(root: Path) -> dict[str, str]:
 def test_api_exposes_the_control_plane(tmp_path: Path) -> None:
     app = create_app(root=tmp_path, llm_kind="scripted")
     with TestClient(app) as client:
-        assert client.get("/health").json()["status"] == "ok"
+        assert client.get("/health").json() == {"status": "ok"}
         assert client.get("/tasks").json() == []
         assert client.get("/gates").json() == []
         assert client.get("/audit/verify").json()["ok"] is True

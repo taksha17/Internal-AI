@@ -11,9 +11,12 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
 import httpx
+
+from internal_ai.secrets import ANTHROPIC_API_KEY, operator_secret, refuse_secret_in_prompt
 
 DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 
@@ -128,6 +131,7 @@ class AnthropicAdapter:
     ) -> Completion:
         if not self.api_key:
             raise RuntimeError("ANTHROPIC_API_KEY is not set")
+        refuse_secret_in_prompt(self.api_key, prompt, system)
         payload = {
             "model": self.model,
             "max_tokens": max_tokens,
@@ -185,12 +189,13 @@ class FallbackAdapter:
             return self.fallback.complete(prompt, system, max_tokens, temperature)
 
 
-def build_adapter(kind: str = "auto") -> LLMAdapter:
+def build_adapter(kind: str = "auto", home: Path | None = None) -> LLMAdapter:
     if kind == "scripted":
         return ScriptedAdapter()
+    key = operator_secret(home, ANTHROPIC_API_KEY) if home is not None else ""
     if kind == "anthropic":
-        return AnthropicAdapter()
-    anthropic = AnthropicAdapter()
+        return AnthropicAdapter(api_key=key or None)
+    anthropic = AnthropicAdapter(api_key=key or None)
     if anthropic.available:
         return FallbackAdapter(anthropic, ScriptedAdapter())
     return ScriptedAdapter()

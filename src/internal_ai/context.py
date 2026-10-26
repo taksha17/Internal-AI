@@ -45,7 +45,7 @@ class Platform:
         gates = GateService(store)
         budget = BudgetManager(store, project=project)
         tools = ToolRegistry(audit, settings.workspace_dir, settings.artifacts_dir)
-        adapter = llm or build_adapter(llm_kind)
+        adapter = llm or build_adapter(llm_kind, home=settings.home)
         runtime = AgentRuntime(store, audit, tools, budget, adapter)
         orchestrator = Orchestrator(
             store, audit, gates, budget, runtime, config=engine_config or EngineConfig()

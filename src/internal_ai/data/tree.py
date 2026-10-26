@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from internal_ai.data.inventory import WEIGHT_SUFFIXES, secret_hits
 from internal_ai.data.records import Record
 from internal_ai.ids import file_hash, new_id, text_hash
 
@@ -121,6 +122,8 @@ class TreeIndex:
     files: list[TreeFile] = field(default_factory=list)
     skipped: int = 0
     truncated: int = 0
+    secret_files: list[str] = field(default_factory=list)
+    weight_files: list[str] = field(default_factory=list)
 
     def records(self, acl: list[str] | None = None) -> list[Record]:
         access = acl if acl is not None else ["engineering", "support"]
@@ -135,6 +138,8 @@ class TreeIndex:
             "files": len(self.files),
             "skipped": self.skipped,
             "truncated": self.truncated,
+            "secret_files": sorted(self.secret_files),
+            "weight_files": sorted(self.weight_files),
             "bytes": sum(item.size for item in self.files),
             "lines": sum(item.line_count for item in self.files),
             "formats": dict(sorted(suffixes.items(), key=lambda pair: -pair[1])),
@@ -172,6 +177,11 @@ def build_tree_index(
     root = root.resolve()
     index = TreeIndex(root=root, source_id=source_id or root.name)
     for path in iter_tree_files(root):
+        relative = str(path.relative_to(root))
+        if path.suffix.lower() in WEIGHT_SUFFIXES:
+            index.weight_files.append(relative)
+            index.skipped += 1
+            continue
         if not is_text_file(path):
             index.skipped += 1
             continue
@@ -183,7 +193,6 @@ def build_tree_index(
         if size > max_bytes:
             index.truncated += 1
             continue
-        relative = str(path.relative_to(root))
         digest = file_hash(path)
         if previous_hashes is not None and previous_hashes.get(relative) == digest:
             continue
@@ -194,6 +203,9 @@ def build_tree_index(
             continue
         if not text.strip():
             index.skipped += 1
+            continue
+        if secret_hits(text):
+            index.secret_files.append(relative)
             continue
         index.files.append(
             TreeFile(

@@ -4,8 +4,19 @@
 <div class="refusal">The inspection failed: {{ inspect_error }}</div>
 {% elif inspection %}
 <p><code>{{ inspection.path }}</code>: {{ inspection.kind }}, {{ inspection.files }} files, {{ inspection.text_files }} text, classified {{ m.status_badge(inspection.sensitivity) }}</p>
-{% if inspection.secret_hits and not inspection.problems %}
+{% if inspection.ignored_files or inspection.ignored_folders %}
+<p class="muted small">Not examined by your rules: {% if inspection.ignored_files %}{{ inspection.ignored_files }} file{{ "s" if inspection.ignored_files != 1 else "" }}{% endif %}{% if inspection.ignored_files and inspection.ignored_folders %} and {% endif %}{% if inspection.ignored_folders %}the folders {{ inspection.ignored_folders | join(", ") }}{% endif %}.</p>
+{% endif %}
+{% set secret_count = inspection.secret_files | length %}
+{% set many_secrets = secret_count != 1 %}
+{% if secret_count %}
+<p class="callout"><strong>{{ secret_count }} file{{ "s" if many_secrets else "" }} {{ "look" if many_secrets else "looks" }} like {{ "they hold" if many_secrets else "it holds" }} secrets</strong> ({% for name, count in inspection.secret_hits | dictsort %}{{ name }} {{ count }}{% if not loop.last %}, {% endif %}{% endfor %}) and {{ "are" if many_secrets else "is" }} left out of any dataset built from this folder: {% for name in inspection.secret_files[:5] %}<code>{{ name }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% if secret_count > 5 %} and {{ secret_count - 5 }} more{% endif %}. The approver sees this list.</p>
+{% elif inspection.secret_hits %}
 <p class="callout">It contains what look like secrets ({% for name, count in inspection.secret_hits | dictsort %}{{ name }} {{ count }} {% endfor %}). The dataset build redacts them, the PII audit checks nothing survived before release, and the approver sees these counts.</p>
+{% endif %}
+{% set weight_count = inspection.weight_files | length %}
+{% if weight_count %}
+<p class="callout"><strong>{{ weight_count }} file{{ "s" if weight_count != 1 else "" }} look{{ "" if weight_count != 1 else "s" }} like model weights or other binaries</strong> and {{ "are" if weight_count != 1 else "is" }} never read or indexed: {% for name in inspection.weight_files[:5] %}<code>{{ name }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% if weight_count > 5 %} and {{ weight_count - 5 }} more{% endif %}. Pretrained weights never enter a dataset, so nothing here is trained on them.</p>
 {% endif %}
 {% if inspection.problems %}
 <div class="refusal"><strong>This source would be refused:</strong>

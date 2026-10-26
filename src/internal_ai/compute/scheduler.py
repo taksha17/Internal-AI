@@ -21,7 +21,7 @@ from internal_ai.audit import AuditLog
 from internal_ai.budget import BudgetManager
 from internal_ai.domain import AuditOutcome
 from internal_ai.ids import new_id, now_iso
-from internal_ai.sandbox import Sandbox
+from internal_ai.sandbox import Sandbox, SandboxUnavailable
 from internal_ai.training.cost import CostEstimate, estimate_cpu_run, estimate_gpu_run
 
 
@@ -243,9 +243,22 @@ class JobScheduler:
         return None
 
     def run(self, job: Job, actor: str = "infra_engineer") -> Job:
+        try:
+            result = self.backend.submit(job, self.sandbox)
+        except SandboxUnavailable as exc:
+            job.state = JobState.REJECTED
+            job.rejection_reason = str(exc)
+            job.finished_at = now_iso()
+            self.audit.record(
+                actor=actor,
+                action="job.rejected",
+                subject=job.id,
+                outcome=AuditOutcome.DENIED,
+                details={"reason": job.rejection_reason},
+            )
+            return job
         job.state = JobState.RUNNING
         job.started_at = now_iso()
-        result = self.backend.submit(job, self.sandbox)
         job.exit_code = int(result.get("exit_code", 1))
         job.stdout = str(result.get("stdout", ""))
         job.stderr = str(result.get("stderr", ""))

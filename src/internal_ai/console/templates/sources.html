@@ -3,8 +3,7 @@
 {% block title %}Data sources{% endblock %}
 {% block content %}
 <h1>Data sources</h1>
-<p class="muted">A model learns only from internal data a data owner has approved. Model weight files, secrets, confidential paths and anything outside the approved folders are refused.</p>
-<p class="muted small">Approved folders: {% for root in roots %}<code>{{ root }}</code> {% endfor %}</p>
+<p class="muted">A model learns only from internal data a data owner has approved. Weight files and files that look like they hold secrets are never read, and confidential paths are refused.</p>
 
 <div class="grid">
   <section class="card stack">
@@ -28,6 +27,38 @@
 
 <section class="card" id="inspect-result"{% if not inspection and not inspect_error %} hidden{% endif %}>
   {% if inspection or inspect_error %}{% include "_inspection.html" %}{% endif %}
+</section>
+
+<section class="card stack">
+  <h2>Where data may live</h2>
+  <p class="muted">Inspection only looks inside these folders. Adding one approves no data: every source still needs its own gate.</p>
+  <p>{% for root in roots %}<code class="small">{{ root }}</code><br>{% endfor %}</p>
+  {% if can("edit_data_roots") %}
+  <form method="post" action="/console/sources/roots" class="stack">
+    {{ m.csrf_field() }}
+    <label>Extra folders, one per line <input type="text" name="roots" value="{{ extra_roots | join(', ') }}" placeholder="/srv/company-docs"></label>
+    <button type="submit">Save folders</button>
+  </form>
+  {% else %}
+  <p class="muted small">Adding a folder needs data_owner or ml_lead.</p>
+  {% endif %}
+  <p class="muted small">Folders set in the server's configuration stay in this list.</p>
+</section>
+
+<section class="card stack">
+  <h2>What inspection ignores</h2>
+  <p class="muted">A repository is mostly dependencies, caches and build output. Those folders are skipped before a single file is read, and you can add rules of your own.</p>
+  {% if can("edit_inspection_filters") %}
+  <form method="post" action="/console/sources/filters" class="stack">
+    {{ m.csrf_field() }}
+    <label>Extra folders to ignore <input type="text" name="folders" value="{{ filters.folders | sort | join(', ') }}" placeholder=".caches, vendor"></label>
+    <label>Extra file types to ignore <input type="text" name="suffixes" value="{{ filters.suffixes | sort | join(', ') }}" placeholder=".bin, .onnx"></label>
+    <button type="submit" class="primary">Save filters</button>
+  </form>
+  {% else %}
+  <p>Extra folders ignored: <code>{{ filters.folders | sort | join(", ") or "none" }}</code>. Extra file types ignored: <code>{{ filters.suffixes | sort | join(", ") or "none" }}</code>. Changing them needs data_owner or ml_lead.</p>
+  {% endif %}
+  <p class="muted small">Always skipped: {{ builtin_folders | join(", ") }}. These rules change this preview only. Registering a source and building a dataset read every file, so a rule cannot hide anything from an approver; weight files and files that look like secrets are left out of every read whatever the rules say.</p>
 </section>
 
 <h2>Registered sources</h2>

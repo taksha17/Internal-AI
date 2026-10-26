@@ -9,18 +9,21 @@ body or query parameter can name the actor.
 
 from __future__ import annotations
 
-import os
+import sqlite3
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from internal_ai.config import Settings
 from internal_ai.context import Platform
 from internal_ai.engine import PlanError
 from internal_ai.gates import GateError
+from internal_ai.secrets import CONTROL_PLANE_KEY, operator_secret
 from internal_ai.services import governance
 from internal_ai.services.actor import Actor
 from internal_ai.services.identity import AuthenticationError, IdentityService
@@ -136,7 +139,7 @@ def create_app(
         description="Orchestration, gates, budgets, lineage and audit for the in-house LLM build.",
         lifespan=lifespan,
     )
-    key = api_key or os.environ.get("INTERNAL_AI_API_KEY", "")
+    key = api_key or operator_secret(Settings.from_env(root).home, CONTROL_PLANE_KEY)
 
     def get_platform() -> Platform:
         platform: Platform | None = getattr(app.state, "platform", None)
@@ -183,13 +186,13 @@ def create_app(
         return actor
 
     @app.get("/health")
-    def health() -> dict[str, Any]:
+    def health() -> Response:
         platform = get_platform()
-        return {
-            "status": "ok",
-            "kill_switch": platform.budget.kill_switch_engaged(),
-            "budget": [status.to_dict() for status in platform.budget.all_status()],
-        }
+        try:
+            platform.store.conn.execute("SELECT 1").fetchone()
+        except sqlite3.Error:
+            return JSONResponse({"status": "down"}, status_code=503)
+        return JSONResponse({"status": "ok"})
 
     @app.get("/me")
     def me(actor: Actor = Depends(require_person)) -> dict[str, Any]:

@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
+from internal_ai.config import Settings
 from internal_ai.context import Platform
 from internal_ai.data.tokenizer import Tokenizer
 from internal_ai.serving.service import (
@@ -40,7 +41,8 @@ def create_serving_app(
     rate_limit_per_minute: int = 60,
     principals: dict[str, Principal] | None = None,
 ) -> FastAPI:
-    key_table = principals if principals is not None else load_principals()
+    home = Settings.from_env(root).home
+    key_table = principals if principals is not None else load_principals(home)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

@@ -11,6 +11,7 @@ import json
 import sqlite3
 import threading
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
 from internal_ai.db import connect, init_db, transaction
@@ -102,6 +103,19 @@ class Store:
         with self._lock:
             self._connections.append(conn)
         return conn
+
+    def backup_to(self, dest: Path) -> None:
+        """Copy the live database with SQLite's online backup.
+
+        A second connection reads a consistent snapshot while this process
+        keeps the file open.
+        """
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        target = sqlite3.connect(dest)
+        try:
+            self.conn.backup(target)
+        finally:
+            target.close()
 
     def close(self) -> None:
         with self._lock:

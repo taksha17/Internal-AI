@@ -26,6 +26,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
 from internal_ai.context import Platform
+from internal_ai.data.inventory import SKIP_DIRECTORIES
 from internal_ai.domain import GateStatus, GateType, TaskState
 from internal_ai.engine import PlanError
 from internal_ai.gates import GATE_CATALOG, GateError
@@ -742,6 +743,9 @@ def mount_console(
             "sources.html",
             sources=build.list_sources(ctx.platform),
             roots=build.data_roots(ctx.platform),
+            extra_roots=[str(item) for item in build.extra_data_roots(ctx.platform)],
+            filters=build.inspection_filters(ctx.platform),
+            builtin_folders=[*sorted(SKIP_DIRECTORIES), ".cache*"],
             inspection=run.result if run else None,
             inspect_path=inspect,
             inspect_token=run.token if run else "",
@@ -766,6 +770,38 @@ def mount_console(
         if run is None or run.actor_id != ctx.actor.id:
             raise HTTPException(status_code=404, detail="unknown inspection")
         return inspection_panel(ctx, run)
+
+    @app.post("/console/sources/roots", include_in_schema=False)
+    async def source_roots(request: Request) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        return await act(
+            ctx,
+            "/console/sources",
+            lambda: build.set_extra_data_roots(ctx.platform, ctx.actor, form.get("roots", "")),
+            lambda roots: (
+                f"data folders saved: {len(roots)} added; each source still needs its own approval"
+                if roots
+                else "extra data folders cleared"
+            ),
+        )
+
+    @app.post("/console/sources/filters", include_in_schema=False)
+    async def source_filters(request: Request) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        return await act(
+            ctx,
+            "/console/sources",
+            lambda: build.set_inspection_filters(
+                ctx.platform, ctx.actor, form.get("folders", ""), form.get("suffixes", "")
+            ),
+            lambda saved: (
+                "inspection filters saved; registering a source re-reads every file"
+                if saved.folders or saved.suffixes
+                else "inspection filters cleared"
+            ),
+        )
 
     @app.post("/console/sources/sample", include_in_schema=False)
     async def source_sample(request: Request) -> Response:

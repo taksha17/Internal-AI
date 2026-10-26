@@ -26,6 +26,24 @@ SANDBOX_ENV_ALLOWLIST = (
     "MKL_NUM_THREADS",
 )
 
+_SECRET_ENV_MARKERS = ("KEY", "SECRET", "TOKEN", "PASSWORD")
+
+
+class SandboxUnavailable(RuntimeError):
+    """An untrusted command has no offline container to run in.
+
+    Falling back to the host would give that command the machine's network.
+    """
+
+
+def scrub_env(env: dict[str, str]) -> dict[str, str]:
+    """Drop operator secrets before they can ride along in a job environment."""
+    return {
+        key: value
+        for key, value in env.items()
+        if not any(marker in key.upper() for marker in _SECRET_ENV_MARKERS)
+    }
+
 
 @dataclass(slots=True)
 class SandboxResult:
@@ -83,7 +101,7 @@ class Sandbox:
         child_env["PYTHONHASHSEED"] = "0"
         child_env["INTERNAL_AI_NETWORK"] = "deny"
         if env:
-            child_env.update(env)
+            child_env.update(scrub_env(env))
         started = time.monotonic()
         timed_out = False
         try:
@@ -139,6 +157,11 @@ class ContainerSandbox(Sandbox):
         self.image = image
         self.network = network
 
+    def docker_binary(self) -> str | None:
+        import shutil
+
+        return shutil.which("docker")
+
     def run(
         self,
         command: list[str],
@@ -146,13 +169,13 @@ class ContainerSandbox(Sandbox):
         env: dict[str, str] | None = None,
         timeout: float | None = None,
     ) -> SandboxResult:
-        import shutil
         import time
 
         workdir.mkdir(parents=True, exist_ok=True)
-        if not shutil.which("docker"):
-            # Fallback to subprocess sandbox
-            return super().run(command, workdir, env, timeout)
+        if self.docker_binary() is None:
+            raise SandboxUnavailable(
+                "docker is not available; refusing to run an untrusted command on the host"
+            )
 
         child_env = {
             key: value for key, value in os.environ.items() if key in SANDBOX_ENV_ALLOWLIST
@@ -162,7 +185,7 @@ class ContainerSandbox(Sandbox):
         child_env["PYTHONHASHSEED"] = "0"
         child_env["INTERNAL_AI_NETWORK"] = "deny"
         if env:
-            child_env.update(env)
+            child_env.update(scrub_env(env))
 
         env_flags: list[str] = []
         for k, v in child_env.items():

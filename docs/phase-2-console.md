@@ -126,17 +126,32 @@ Agent capabilities in `roles.py` are unchanged.
 Each item has a denial test.
 
 - No pretrained weights. The console has no model upload. Training always
-  starts from random initialisation. Source registration refuses paths
-  containing weight files (`.pt`, `.pth`, `.bin`, `.safetensors`, `.gguf`,
-  `.onnx`, `.ckpt`) and any path the inventory scanner does not classify as
-  `internal`.
+  starts from random initialisation. Weight files (`.pt`, `.pth`, `.bin`,
+  `.safetensors`, `.gguf`, `.onnx`, `.ckpt`) are never read: the scan names
+  them, the tree build skips them, the approver sees the list in the gate
+  evidence, and the lineage records them. A path the inventory scanner does not
+  classify as `internal` is still refused, and so is a single file that is
+  itself a weight file.
 - No distillation. Sources are internal files or directories inside the
-  configured data roots (`INTERNAL_AI_DATA_ROOTS`, default `<root>/data` and the
-  sample directory) and need an approved `new_data_source_access` gate. There is
-  no option to import from an AI provider.
+  approved data roots and need an approved `new_data_source_access` gate. The
+  roots are `INTERNAL_AI_DATA_ROOTS` when set, otherwise `<root>/data` and the
+  sample directory; a data owner or ml lead may add folders on the Data page,
+  which is audited and approves no data. There is no option to import from an AI
+  provider.
 - No raw records off the machine. The console calls no external API. Dataset
   pages show statistics and a few scrubbed snippets, and only to groups the
-  dataset ACL allows. Sources with detected secrets are refused.
+  dataset ACL allows. Files that look like they hold secrets are not indexed
+  into a tree build: the scan names them, the approver sees the list, and the
+  lineage records them. A single-file source has its secrets redacted by the
+  pipeline and checked by the PII audit before release.
+- Inspection filters are a reading aid, not a gate. Dependency, cache, VCS and
+  build folders are skipped before anything is read, and a data owner may add
+  folder or file-type rules on the Data page. Those rules change the preview
+  only: `register_source` and `build_dataset` re-read every file with no extra
+  rules, so a rule cannot hide anything from an approver. What both always skip
+  is weight files and files that look like secrets, because those are enforced
+  in the scan and in the tree build rather than by a rule. Changing the rules
+  needs `data_owner` or `ml_lead` and is audited.
 - Frozen eval sets have no edit control. A change is a new eval set behind a new
   `eval_set_freeze` gate.
 - Humans decide gates. Decisions come only from authenticated people who hold a
@@ -193,8 +208,8 @@ Web security:
   permission map.
 - Denial tests through FastAPI's `TestClient`, one per guarded action: not
   signed in, wrong role, requester approving their own gate, placeholder
-  sign-in, agent deciding a gate, weight files in a source, a path outside the
-  data roots, editing a frozen eval set, promotion without the gate, spend over
+  sign-in, agent deciding a gate, a weight file as a source, a path outside the
+  data roots, adding a data folder by the wrong role, editing a frozen eval set, promotion without the gate, spend over
   the cap, another group's records, a missing CSRF token, a kill-switch release
   by the person who engaged it, and the old asserted-identity API writes.
 - End-to-end: the full build path on the synthetic corpus, clicked through with

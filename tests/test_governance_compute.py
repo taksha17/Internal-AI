@@ -228,7 +228,30 @@ def test_job_scheduler_rejects_over_cap_jobs(platform) -> None:
     assert denied
 
 
-def test_job_scheduler_runs_a_job(platform) -> None:
+def test_missing_docker_refuses_an_untrusted_job(platform, tmp_path: Path, monkeypatch) -> None:
+    from internal_ai.sandbox import ContainerSandbox
+
+    marker = tmp_path / "ran"
+    sandbox = ContainerSandbox(platform.settings.sandbox_dir)
+    monkeypatch.setattr(sandbox, "docker_binary", lambda: None)
+    scheduler = JobScheduler(platform.audit, platform.budget, sandbox)
+    job = scheduler.submit(
+        JobSpec(
+            name="untrusted",
+            command=["/bin/sh", "-c", f"touch {marker}"],
+            agent="infra_engineer",
+            tokens=1000,
+            parameters=1000,
+            cost_cap_usd=1.0,
+        )
+    )
+    job = scheduler.run(job)
+    assert job.state == JobState.REJECTED
+    assert "docker" in job.rejection_reason
+    assert not marker.exists()
+    denied = [event for event in platform.audit.recent(limit=20) if event.action == "job.rejected"]
+    assert denied
+    assert denied[-1].outcome == "denied"
     scheduler = JobScheduler(
         platform.audit, platform.budget, Sandbox(platform.settings.sandbox_dir)
     )

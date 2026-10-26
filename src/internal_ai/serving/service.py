@@ -16,6 +16,7 @@ import os
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -102,8 +103,13 @@ def parse_api_keys(raw: str) -> dict[str, Principal]:
     return principals
 
 
-def load_principals() -> dict[str, Principal]:
-    return parse_api_keys(os.environ.get("INTERNAL_AI_SERVING_KEYS", ""))
+def load_principals(home: Path | None = None) -> dict[str, Principal]:
+    from internal_ai.secrets import SERVING_KEYS, operator_secret
+
+    raw = operator_secret(home, SERVING_KEYS) if home is not None else ""
+    if not raw:
+        raw = os.environ.get("INTERNAL_AI_SERVING_KEYS", "")
+    return parse_api_keys(raw)
 
 
 @dataclass(slots=True)

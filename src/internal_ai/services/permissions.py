@@ -27,6 +27,8 @@ class Action(StrEnum):
     TRANSITION_TASK = "transition_task"
     SET_BUDGET = "set_budget"
     REGISTER_SOURCE = "register_source"
+    EDIT_INSPECTION_FILTERS = "edit_inspection_filters"
+    EDIT_DATA_ROOTS = "edit_data_roots"
     BUILD_DATASET = "build_dataset"
     RELEASE_DATASET = "release_dataset"
     WITHDRAW_SOURCE = "withdraw_source"
@@ -54,6 +56,8 @@ ACTION_ROLES: dict[Action, frozenset[str]] = {
     Action.TRANSITION_TASK: frozenset({"program_lead", "engineering_manager"}),
     Action.SET_BUDGET: frozenset({"program_lead", "finance"}),
     Action.REGISTER_SOURCE: frozenset({"data_owner", "ml_lead"}),
+    Action.EDIT_INSPECTION_FILTERS: frozenset({"data_owner", "ml_lead"}),
+    Action.EDIT_DATA_ROOTS: frozenset({"data_owner", "ml_lead"}),
     Action.BUILD_DATASET: frozenset({"data_owner", "ml_lead"}),
     Action.RELEASE_DATASET: frozenset({"ml_lead", "data_owner"}),
     Action.WITHDRAW_SOURCE: frozenset({"data_owner", "compliance"}),

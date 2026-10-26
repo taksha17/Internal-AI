@@ -591,10 +591,10 @@ def cmd_classifier_eval(args: argparse.Namespace) -> int:
 def cmd_job_submit(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.compute.scheduler import JobScheduler, JobSpec
-        from internal_ai.sandbox import Sandbox
+        from internal_ai.sandbox import ContainerSandbox
 
         scheduler = JobScheduler(
-            platform.audit, platform.budget, Sandbox(platform.settings.sandbox_dir)
+            platform.audit, platform.budget, ContainerSandbox(platform.settings.sandbox_dir)
         )
         job = scheduler.submit(
             JobSpec(
@@ -615,10 +615,10 @@ def cmd_job_submit(args: argparse.Namespace) -> int:
 def cmd_job_run(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.compute.scheduler import JobScheduler, JobSpec
-        from internal_ai.sandbox import Sandbox
+        from internal_ai.sandbox import ContainerSandbox
 
         scheduler = JobScheduler(
-            platform.audit, platform.budget, Sandbox(platform.settings.sandbox_dir)
+            platform.audit, platform.budget, ContainerSandbox(platform.settings.sandbox_dir)
         )
         job = scheduler.submit(
             JobSpec(
@@ -1001,6 +1001,35 @@ def cmd_model_card(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_db_backup(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        platform.store.backup_to(args.out)
+    _print({"backup": str(args.out)})
+    return 0
+
+
+def cmd_db_restore(args: argparse.Namespace) -> int:
+    """Check a backup in a temporary copy. The live database is left alone."""
+    import tempfile
+
+    from internal_ai.audit import AuditLog
+    from internal_ai.store import Store
+
+    if not args.check:
+        print("restore requires --check; it does not replace the live database", file=sys.stderr)
+        return 2
+    with tempfile.TemporaryDirectory() as tmp:
+        copy = Path(tmp) / "internal_ai.db"
+        copy.write_bytes(Path(args.src).read_bytes())
+        store = Store(copy)
+        try:
+            result = AuditLog(store).verify()
+        finally:
+            store.close()
+    _print(result.to_dict())
+    return 0 if result.ok else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="internal_ai", description="Internal-AI control plane")
     parser.add_argument("--root", type=Path, default=None, help="project root")
@@ -1339,6 +1368,16 @@ def build_parser() -> argparse.ArgumentParser:
     model_card = model_sub.add_parser("card")
     model_card.add_argument("--id", required=True)
     model_card.set_defaults(func=cmd_model_card)
+
+    database = sub.add_parser("db", help="backup the platform database and check a restore")
+    database_sub = database.add_subparsers(dest="db_command", required=True)
+    database_backup = database_sub.add_parser("backup")
+    database_backup.add_argument("--out", type=Path, required=True)
+    database_backup.set_defaults(func=cmd_db_backup)
+    database_restore = database_sub.add_parser("restore")
+    database_restore.add_argument("--from", dest="src", type=Path, required=True)
+    database_restore.add_argument("--check", action="store_true")
+    database_restore.set_defaults(func=cmd_db_restore)
 
     return parser
 

@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from internal_ai.data.filters import ScanFilters
+
 TEXT_SUFFIXES = frozenset(
     {
         ".py",
@@ -118,6 +120,10 @@ BINARY_SUFFIXES = frozenset(
     }
 )
 
+WEIGHT_SUFFIXES = frozenset(
+    {".pt", ".pth", ".bin", ".safetensors", ".gguf", ".onnx", ".ckpt", ".h5", ".pb", ".tflite"}
+)
+
 SENSITIVITY_RULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("regulated", "emr", ("emr", "medical", "health", "patient", "clinical", "hipaa", "phi")),
     (
@@ -172,6 +178,8 @@ class SourceEntry:
     sensitivity: str = "internal"
     sensitivity_reason: str = "no sensitive markers in the path"
     secret_hits: dict[str, int] = field(default_factory=dict)
+    secret_files: list[str] = field(default_factory=list)
+    weight_files: list[str] = field(default_factory=list)
     owner: str = ""
     status: str = "candidate"
     notes: str = ""
@@ -188,6 +196,8 @@ class SourceEntry:
             "sensitivity": self.sensitivity,
             "sensitivity_reason": self.sensitivity_reason,
             "secret_hits": dict(sorted(self.secret_hits.items())),
+            "secret_files": sorted(self.secret_files),
+            "weight_files": sorted(self.weight_files),
             "owner": self.owner,
             "status": self.status,
             "notes": self.notes,
@@ -240,7 +250,56 @@ def _is_text_file(path: Path) -> bool:
     return path.name.lower() in ("dockerfile", "makefile", "readme", "license")
 
 
-def _absorb(entry: SourceEntry, file_path: Path, max_bytes_per_file: int) -> None:
+@dataclass(slots=True)
+class Walk:
+    files: list[Path]
+    ignored_folders: list[str]
+    ignored_files: int
+
+
+def walk_files(path: Path, filters: ScanFilters | None = None) -> Walk:
+    """Every file worth reading under a path, and what the rules kept out.
+
+    One walk feeds the scan, the weight check and the counts shown to the
+    person, so a dependency folder can never be skipped for one and counted
+    against the source by the other.
+    """
+    files: list[Path] = []
+    ignored_folders: set[str] = set()
+    ignored_files = 0
+    for root, directories, names in os.walk(path, topdown=True):
+        kept: list[str] = []
+        for name in directories:
+            skipped = (
+                name in SKIP_DIRECTORIES
+                or name.startswith(".cache")
+                or (filters is not None and filters.skips_folder(name))
+            )
+            if skipped:
+                ignored_folders.add(name)
+            else:
+                kept.append(name)
+        directories[:] = kept
+        for filename in names:
+            candidate = Path(root) / filename
+            if filters is not None and filters.skips_file(candidate):
+                ignored_files += 1
+                continue
+            files.append(candidate)
+    return Walk(files, sorted(ignored_folders), ignored_files)
+
+
+def secret_hits(text: str) -> dict[str, int]:
+    """How many secret-shaped strings the text holds, by kind."""
+    found: dict[str, int] = {}
+    for kind, pattern in SECRET_PATTERNS.items():
+        hits = len(pattern.findall(text))
+        if hits:
+            found[kind] = hits
+    return found
+
+
+def _absorb(entry: SourceEntry, file_path: Path, max_bytes_per_file: int, root: Path) -> None:
     try:
         size = file_path.stat().st_size
     except OSError:
@@ -249,52 +308,51 @@ def _absorb(entry: SourceEntry, file_path: Path, max_bytes_per_file: int) -> Non
     entry.total_bytes += size
     suffix = file_path.suffix.lower() or "<none>"
     entry.formats[suffix] = entry.formats.get(suffix, 0) + 1
-    if suffix in BINARY_SUFFIXES:
+    if file_path.suffix.lower() in WEIGHT_SUFFIXES:
+        entry.weight_files.append(str(file_path.relative_to(root)))
+    if suffix in BINARY_SUFFIXES or not _is_text_file(file_path):
         entry.binary_file_count += 1
         return
-    if not _is_text_file(file_path):
-        entry.binary_file_count += 1
-        return
-    entry.text_file_count += 1
     if size > max_bytes_per_file:
+        entry.text_file_count += 1
         return
     try:
         content = file_path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
+        entry.text_file_count += 1
         return
-    for kind, pattern in SECRET_PATTERNS.items():
-        hits = len(pattern.findall(content))
-        if hits:
+    found = secret_hits(content)
+    if found:
+        for kind, hits in found.items():
             entry.secret_hits[kind] = entry.secret_hits.get(kind, 0) + hits
+        entry.secret_files.append(str(file_path.relative_to(root)))
+        return
+    entry.text_file_count += 1
 
 
 def scan_source(
     path: Path,
     max_bytes_per_file: int = 2_000_000,
     progress: Callable[[int, int], None] | None = None,
+    filters: ScanFilters | None = None,
+    files: list[Path] | None = None,
 ) -> SourceEntry:
     """Catalogue one tree, reporting how many files of the total it has read.
 
     The listing pass runs first so a caller can report an honest percentage
-    instead of an animation that guesses at the work left.
+    instead of an animation that guesses at the work left. A caller that has
+    already walked the tree can hand the file list in.
     """
     sensitivity, reason = classify_path(path)
     entry = SourceEntry(
         path=str(path), name=path.name, sensitivity=sensitivity, sensitivity_reason=reason
     )
-    candidates: list[Path] = []
-    for root, directories, files in os.walk(path, topdown=True):
-        directories[:] = [
-            name
-            for name in directories
-            if name not in SKIP_DIRECTORIES and not name.startswith(".cache")
-        ]
-        candidates.extend(Path(root) / filename for filename in files)
+    candidates = files if files is not None else walk_files(path, filters).files
     total = len(candidates)
     if progress is not None:
         progress(0, total)
     for done, file_path in enumerate(candidates, start=1):
-        _absorb(entry, file_path, max_bytes_per_file)
+        _absorb(entry, file_path, max_bytes_per_file, path)
         if progress is not None:
             progress(done, total)
     return entry
