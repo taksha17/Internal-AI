@@ -517,9 +517,7 @@ def cmd_data_release(args: argparse.Namespace) -> int:
         pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
         gate_approved = _gate_ok(platform, args.gate_id, GateType.DATASET_RELEASE, args.dataset_id)
         try:
-            dataset = pipeline.release(
-                args.dataset_id, actor.id, gate_approved, sample_size=args.sample_size
-            )
+            dataset = pipeline.release(args.dataset_id, actor.id, gate_approved)
         except PermissionError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
@@ -1245,7 +1243,6 @@ def build_parser() -> argparse.ArgumentParser:
     data_release.add_argument("--dataset-id", required=True)
     data_release.add_argument("--by", default=None)
     data_release.add_argument("--gate-id", default=None)
-    data_release.add_argument("--sample-size", type=int, default=50)
     data_release.set_defaults(func=cmd_data_release)
     data_audit = data_sub.add_parser("pii-audit")
     data_audit.add_argument("--dataset-id", required=True)

@@ -218,8 +218,12 @@ class DataPipeline:
             dataset=dataset, records=records, stats={"steps": steps}, lineage=lineage
         )
 
-    def run_pii_audit(self, dataset_id: str, sample_size: int = 50) -> dict[str, Any]:
-        """Sampled check that no PII survived scrubbing (NFR: Privacy)."""
+    def run_pii_audit(self, dataset_id: str, sample_size: int | None = 50) -> dict[str, Any]:
+        """Sampled check that no PII survived scrubbing (NFR: Privacy).
+
+        ``sample_size=None`` reads every record. Release uses that. A caller-chosen
+        sample stays available for the informational audit command.
+        """
         from internal_ai.data.governance import pii_spot_check
 
         rows = self.store.dataset_records(dataset_id)
@@ -236,7 +240,9 @@ class DataPipeline:
             )
             for row in rows
         ]
-        result = pii_spot_check(records, sample_size=sample_size)
+        result = pii_spot_check(
+            records, sample_size=len(records) if sample_size is None else sample_size
+        )
         dataset = self.store.get_dataset(dataset_id)
         if dataset is not None:
             stats = dict(dataset.stats)
@@ -255,9 +261,7 @@ class DataPipeline:
         )
         return result.to_dict()
 
-    def release(
-        self, dataset_id: str, actor: str, gate_approved: bool, sample_size: int = 50
-    ) -> DatasetVersion:
+    def release(self, dataset_id: str, actor: str, gate_approved: bool) -> DatasetVersion:
         if not gate_approved:
             raise PermissionError(
                 "dataset release requires an approved dataset_release gate (FR-15, PRD section 14)"
@@ -265,7 +269,7 @@ class DataPipeline:
         dataset = self.store.get_dataset(dataset_id)
         if dataset is None:
             raise KeyError(f"unknown dataset: {dataset_id}")
-        audit_result = self.run_pii_audit(dataset_id, sample_size=sample_size)
+        audit_result = self.run_pii_audit(dataset_id, sample_size=None)
         if not audit_result["passed"]:
             raise PermissionError(
                 f"PII audit found {audit_result['critical_findings']} critical findings; "

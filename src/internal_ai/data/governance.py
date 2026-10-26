@@ -59,9 +59,13 @@ def pii_spot_check(
     seed: str = "pii-audit",
     detectors: list[str] | None = None,
 ) -> PiiAuditResult:
-    """Sample released records and look for surviving PII."""
+    """Sample released records and look for surviving PII.
+
+    A non-positive size would approve the dataset without reading it, so that
+    request scans every record instead.
+    """
     selected = list(records)
-    if sample_size < len(selected):
+    if sample_size > 0 and sample_size < len(selected):
         generator = random.Random(seed)
         selected = generator.sample(selected, sample_size)
     findings: dict[str, int] = {}

@@ -493,7 +493,7 @@ def request_release(platform: Platform, actor: Actor, dataset_id: str) -> GateRe
         raise ValueError("split the dataset before asking for its release")
     _no_open_gate(platform, GateType.DATASET_RELEASE, dataset_id)
     pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
-    audit_result = pipeline.run_pii_audit(dataset_id)
+    audit_result = pipeline.run_pii_audit(dataset_id, sample_size=None)
     if not audit_result["passed"]:
         raise ValueError(
             f"the PII audit found {audit_result['critical_findings']} critical findings; "

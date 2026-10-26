@@ -139,6 +139,26 @@ def test_pii_audit_passes_on_scrubbed_records() -> None:
     assert result.critical_findings == 0
 
 
+def test_a_zero_sample_still_reads_every_record() -> None:
+    from internal_ai.data.records import Record
+
+    records = [
+        Record(id=str(index), record_key=f"r{index}", text="clean ledger note", source_id="s")
+        for index in range(5)
+    ]
+    records.append(
+        Record(
+            id="dirty",
+            record_key="dirty",
+            text="contact person@example.com about the invoice",
+            source_id="s",
+        )
+    )
+    result = pii_spot_check(records, sample_size=0)
+    assert not result.passed
+    assert result.sampled == len(records)
+
+
 def test_pii_audit_catches_surviving_pii() -> None:
     from internal_ai.data.records import Record
 
@@ -172,7 +192,35 @@ def test_release_is_blocked_when_pii_survives(platform, corpus_path, monkeypatch
         ),
     )
     with pytest.raises(PermissionError, match="PII audit"):
-        pipeline.release(result.dataset_id, "ml_lead", gate_approved=True, sample_size=1000)
+        pipeline.release(result.dataset_id, "ml_lead", gate_approved=True)
+
+
+def test_release_reads_a_record_a_one_row_sample_would_miss(platform) -> None:
+    from internal_ai.data.pipeline import DataPipeline
+    from internal_ai.domain import DatasetVersion
+
+    dataset = platform.store.add_dataset(
+        DatasetVersion(
+            id="ds_hidden_pii",
+            name="hidden-pii",
+            version=1,
+            content_hash="h",
+            record_count=3,
+            token_count=3,
+            created_at="now",
+        )
+    )
+    platform.store.add_dataset_records(
+        dataset.id,
+        [
+            {"record_key": "a", "payload": "clean ledger note"},
+            {"record_key": "b", "payload": "another clean ledger note"},
+            {"record_key": "c", "payload": "contact person@example.com about the invoice"},
+        ],
+    )
+    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+    with pytest.raises(PermissionError, match="PII audit"):
+        pipeline.release(dataset.id, "ml_lead", gate_approved=True)
 
 
 def test_release_requires_the_gate(platform, corpus_path) -> None:
