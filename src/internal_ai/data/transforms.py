@@ -13,6 +13,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
+from internal_ai.data.inventory import SECRET_PATTERNS
 from internal_ai.data.records import Record
 
 # --------------------------------------------------------------------- normalize
@@ -172,6 +173,8 @@ PII_PATTERNS: dict[str, re.Pattern[str]] = {
     "jwt": re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
     "url_credentials": re.compile(r"\b[a-zA-Z][a-zA-Z0-9+.-]*://[^\s/:@]+:[^\s/@]+@"),
     "mac_address": re.compile(r"\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b"),
+    "password_assignment": SECRET_PATTERNS["password_assignment"],
+    "connection_string": SECRET_PATTERNS["connection_string"],
 }
 
 REDACTION_TEMPLATE = "[REDACTED:{kind}]"

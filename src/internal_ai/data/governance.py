@@ -29,6 +29,9 @@ CRITICAL_DETECTORS = (
     "aws_access_key",
     "private_key",
     "api_token",
+    "password_assignment",
+    "connection_string",
+    "jwt",
 )
 
 

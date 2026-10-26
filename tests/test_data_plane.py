@@ -58,6 +58,22 @@ def test_a_row_cannot_widen_access_or_mark_itself_readable(tmp_path, platform) -
     assert reader.can_read(records[1].acl, records[1].sensitivity) is True
 
 
+def test_a_password_assignment_is_scrubbed_and_blocks_release_if_it_remains() -> None:
+    from internal_ai.data.governance import pii_spot_check
+    from internal_ai.data.records import Record
+    from internal_ai.data.transforms import scrub_pii
+
+    secret = "password: 'hunter2hunter2'"
+    record = Record(id="1", record_key="1", text=f"reset the vpn\n{secret}\n", source_id="s")
+    scrubbed, stats = scrub_pii([record])
+    assert "hunter2hunter2" not in scrubbed[0].text
+    assert stats["total_redactions"] >= 1
+    leaked = Record(id="2", record_key="2", text=secret, source_id="s")
+    audit = pii_spot_check([leaked])
+    assert audit.passed is False
+    assert audit.findings.get("password_assignment", 0) >= 1
+
+
 def test_unapproved_source_is_not_ingested(platform, corpus_path) -> None:
     result = build_corpus(platform, [corpus_path], name="corpus-test", approved=False)
     assert result.records == 0
