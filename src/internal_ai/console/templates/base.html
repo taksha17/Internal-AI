@@ -11,7 +11,9 @@
   <script src="/console/static/htmx.min.js" defer></script>
 </head>
 <body{% if actor %} class="signed-in"{% else %} class="signed-out"{% endif %}>
+{{ m.sprite() }}
 {% if actor %}
+{% set nav_icons = {"Home": "home", "Approvals": "check-circle", "Data": "database", "Datasets": "layers", "Eval sets": "clipboard", "Models": "cube", "Jobs": "activity", "Ask": "chat", "Plan": "map", "Audit": "list", "Admin": "users"} %}
 <aside class="rail">
   <a class="brand" href="/console/home">
     <img class="brand-mark" src="/console/static/brand/internal-ai-icon.svg" alt="" width="28" height="28">
@@ -19,12 +21,16 @@
   </a>
   <nav class="rail-nav" aria-label="Console">
     {% for label, href in nav %}
-    <a href="{{ href }}" class="{{ 'active' if path.startswith(href) else '' }}">{{ label }}{% if label == "Approvals" and inbox %} <span class="count">{{ inbox }}</span>{% endif %}</a>
+    {% set here = path.startswith(href) %}
+    <a href="{{ href }}" class="{{ 'active' if here else '' }}"{% if here %} aria-current="page"{% endif %}>{{ m.icon(nav_icons.get(label, "home")) }}<span class="nav-label">{{ label }}</span>{% if label == "Approvals" and inbox %}<span class="count">{{ inbox }}</span>{% endif %}</a>
     {% endfor %}
   </nav>
   <div class="who">
-    <a href="/console/account">{{ actor.name }}</a>
-    <span class="roles">{{ actor.roles | sort | join(", ") }}</span>
+    <span class="avatar" aria-hidden="true">{{ actor.name.split()[:2] | map("first") | join("") | upper }}</span>
+    <span class="who-text">
+      <a href="/console/account">{{ actor.name }}</a>
+      <span class="roles">{{ actor.roles | sort | join(", ") }}</span>
+    </span>
     <form method="post" action="/console/signout" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="link">Sign out</button></form>
   </div>
 </aside>
@@ -42,7 +48,7 @@
     <button type="submit" class="ok">Release</button>
   </form>
   {% else %}
-  <span>Something wrong? Stop all jobs and spend now.</span>
+  <span class="kill-note">{{ m.icon("shield") }} Something wrong? Stop all jobs and spend now.</span>
   <form method="post" action="/console/kill-switch" class="inline-form">
     {{ m.csrf_field() }}<input type="hidden" name="back" value="{{ path }}"><input type="hidden" name="engage" value="1">
     <input type="text" name="reason" placeholder="Reason (required)" required maxlength="300">

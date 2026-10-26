@@ -67,19 +67,31 @@ Brand marks:
   folder. The three SVGs that the app serves are copied to
   `src/internal_ai/console/static/brand/`.
 - Favicon on every page: `internal-ai-icon.svg`.
-- Signed-in header: the icon at about 28px, then the wordmark in HTML
-  (`internal` in ink, `-ai` in sage). Do not put the lockup SVG in the bar.
-  Its solid card does not fit there.
+- Signed-in header: the icon at about 28px on a pale sage chip, then the
+  wordmark in HTML (`internal` in rail ink, `-ai` in rail sage). The chip is
+  there because the mark's own ink is dark and the rail is charcoal. Do not put
+  the lockup SVG in the bar. Its solid card does not fit there.
 - Sign-in: the full lockup. Light and dark are two images. The dark one is
   hidden until `prefers-color-scheme: dark`. The tagline stays inside the
   artwork. No theme toggle and no extra script.
 
-Color comes from those marks. Light paper is `#F7F8F6`, ink `#202A31`. Dark
-field is `#171D22`, ink `#F0F3F1`. Sage is the accent: button fill with ink
-text. The lockup's lighter sage fails as text on paper, so light-mode text
-and links use `#3F5C4E`. Body text stays at or above roughly 4.5:1. Ok,
-danger, and pending stay distinct from sage. The gate stripe is a 1px line.
-Type names Inter first, then the system UI face. Do not download a font.
+Color comes from those marks, warmed. Light paper is `#F4F3ED`, ink `#252B27`,
+cards white. The rail is one warm charcoal `#202522` carrying `#F1F4EF` text in
+both schemes: only the workspace follows `prefers-color-scheme`, where the field
+is `#141917` and ink `#ECF0EC`.
+
+Sage is the accent but not as text in every place. `#3D5A48` carries light-mode
+text, links and focus; `#A9C3B0` does it in dark mode and on the rail. The
+lighter `#829A87` is a fill only, under `#222B25` ink, because it measures 2.73
+as text on paper. The primary button is deep forest `#315B40` with ivory text.
+Approve is `#2F6B45`, reject and the kill switch `#9C3A3A`, pending `#F6E7C4`
+under `#6B4A0E`; those three never become sage.
+
+Body text stays at or above 4.5:1 and a test holds it:
+`tests/test_console_palette.py`. Colours live only in the token block at the top
+of `console.css`, so a rule carrying its own hex is a bug, and a new state picks
+a tone rather than inventing a green. The gate stripe is a 1px line. Type names
+Inter first, then the system UI face. Do not download a font.
 
 The kill switch stays on every signed-in page, with a typed reason. Engaging
 is immediate. Releasing needs a different person.

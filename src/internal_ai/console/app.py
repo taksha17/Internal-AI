@@ -471,13 +471,17 @@ def mount_console(
             unacknowledged_only=True
         )
         current = next((label for label, _href, done in steps if not done), "every step is done")
+        jobs = get_jobs().list(limit=50)
         return render(
             ctx,
             "home.html",
             steps=steps,
             current=current,
+            steps_done=sum(1 for _label, _href, done in steps if done),
+            step_total=len(steps),
+            active_jobs=sum(1 for job in jobs if job["state"] in {"running", "queued"}),
             budget=platform.budget.all_status(),
-            jobs=get_jobs().list(limit=8),
+            jobs=jobs,
             alerts=alerts,
         )
 

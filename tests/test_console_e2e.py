@@ -104,6 +104,8 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
         assert "succeeded" in page
         dataset_id = build.get_source(platform, source["id"])["dataset_id"]
         assert dataset_id
+        overview = mo.get("/console/home")
+        assert "Active jobs" in overview and "queue is clear" in overview
 
         mo.post(f"/console/datasets/{dataset_id}/split")
         dana.post(f"/console/datasets/{dataset_id}/request-release")
