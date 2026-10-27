@@ -1,19 +1,44 @@
 """LLM adapters for role agents.
 
 Policy P2 governs this layer: agents may use third-party LLM APIs for code and
-configuration work, but never for raw internal data. Adapters therefore receive
-prompts that are scrubbed of record content by the caller, and every call is
-audited with its token cost.
+configuration work, but never for raw internal data. The external adapter
+therefore redacts anything that looks like a secret or personal data before a
+prompt leaves the process, and every call is audited with its token cost.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import httpx
+
+from internal_ai.data.inventory import SECRET_PATTERNS
+
+OUTBOUND_PATTERNS: dict[str, re.Pattern[str]] = {
+    **SECRET_PATTERNS,
+    "email": re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),
+    "phone": re.compile(r"(?<!\d)(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})(?!\d)"),
+}
+
+
+def redact_for_external(text: str) -> tuple[str, int]:
+    """Replace secret- and PII-shaped spans with a labelled placeholder.
+
+        The external adapter applies this to every prompt and system message, so
+    a task description that pastes in a record cannot exfiltrate it. Redaction
+    is structural, not a promise about content: callers must still keep raw
+    records out of prompts.
+    """
+    redacted = 0
+    for name, pattern in OUTBOUND_PATTERNS.items():
+        text, hits = pattern.subn(f"[redacted:{name}]", text)
+        redacted += hits
+    return text, redacted
+
 
 DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 
@@ -128,6 +153,8 @@ class AnthropicAdapter:
     ) -> Completion:
         if not self.api_key:
             raise RuntimeError("ANTHROPIC_API_KEY is not set")
+        prompt, redacted_prompt = redact_for_external(prompt)
+        system, redacted_system = redact_for_external(system)
         payload = {
             "model": self.model,
             "max_tokens": max_tokens,
@@ -154,6 +181,7 @@ class AnthropicAdapter:
         input_tokens = int(usage.get("input_tokens", 0))
         output_tokens = int(usage.get("output_tokens", 0))
         in_price, out_price = MODEL_PRICING.get(self.model, (0.0, 0.0))
+        data["redacted_spans"] = redacted_prompt + redacted_system
         return Completion(
             text=text,
             model=self.model,

@@ -12,12 +12,12 @@
   <div class="callout"><strong>Your new token:</strong> <code class="secret">{{ new_token }}</code><p class="small">Copy it now; it is not shown again. Send it as <code>Authorization: Bearer &lt;token&gt;</code>.</p></div>
   {% endif %}
   <table>
-    <thead><tr><th>Label</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+    <thead><tr><th>Label</th><th>Created</th><th>Expires</th><th>Last used</th><th></th></tr></thead>
     <tbody>
     {% for token in tokens %}
-    <tr><td>{{ token.label }} <span class="muted small">{{ token.id }}</span></td><td>{{ token.created_at }}</td><td>{{ token.last_used_at or "never" }}</td>
+    <tr><td>{{ token.label }} <span class="muted small">{{ token.id }}</span></td><td>{{ token.created_at }}</td><td>{{ token.expires_at or "never" }}</td><td>{{ token.last_used_at or "never" }}</td>
       <td>{% if token.revoked %}{{ m.status_badge("revoked") }}{% else %}<form method="post" action="/console/account/tokens/{{ token.id }}/revoke">{{ m.csrf_field() }}<button type="submit" class="link">Revoke</button></form>{% endif %}</td></tr>
-    {% else %}<tr><td colspan="4" class="muted">No tokens.</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="5" class="muted">No tokens.</td></tr>{% endfor %}
     </tbody>
   </table>
   <form method="post" action="/console/account/tokens" class="inline-form">{{ m.csrf_field() }}<label>Label <input type="text" name="label" required maxlength="80"></label><button type="submit">Create token</button></form>

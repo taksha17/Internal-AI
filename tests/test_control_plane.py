@@ -97,6 +97,27 @@ def test_gate_rejects_agents_and_missing_evidence(platform) -> None:
         platform.gates.decide(gate.id, "ml_lead", approved=True, approver_kind="human")
 
 
+def test_a_live_gate_blocks_a_second_request_but_a_rejection_reopens(platform) -> None:
+    from internal_ai.services import build
+
+    build._no_open_gate(platform, GateType.MODEL_PROMOTION, "mdl_9")
+    gate = platform.gates.request(
+        GateType.MODEL_PROMOTION,
+        title="Promote model",
+        subject="mdl_9",
+        requested_by="evaluation",
+        evidence={
+            "eval_results_vs_baseline": "report",
+            "model_card": "card",
+            "red_team_results": "none",
+        },
+    )
+    with pytest.raises(ValueError, match="already pending"):
+        build._no_open_gate(platform, GateType.MODEL_PROMOTION, "mdl_9")
+    platform.gates.decide(gate.id, "ml_lead", approved=False, approver_kind="human")
+    build._no_open_gate(platform, GateType.MODEL_PROMOTION, "mdl_9")
+
+
 def test_audit_chain_verifies_and_rejects_tampering(platform) -> None:
     for index in range(5):
         platform.audit.record(

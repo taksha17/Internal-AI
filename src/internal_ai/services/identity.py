@@ -15,6 +15,7 @@ import secrets
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any
 
 from internal_ai.context import Platform
@@ -29,6 +30,7 @@ MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_SECONDS = 15 * 60
 SESSION_IDLE_SECONDS = 30 * 60
 SESSION_ABSOLUTE_SECONDS = 8 * 60 * 60
+TOKEN_LIFETIME_DAYS = 90
 SCRYPT_N = 2**14
 SCRYPT_R = 8
 SCRYPT_P = 1
@@ -339,10 +341,14 @@ class IdentityService:
             raise AuthenticationError("only a signed-in person can create a personal token")
         token = "iai_" + secrets.token_urlsafe(32)
         token_id = new_id("tok")
+        created = now_iso()
+        expires = (datetime.fromisoformat(created) + timedelta(days=TOKEN_LIFETIME_DAYS)).isoformat(
+            timespec="seconds"
+        )
         self.store.conn.execute(
-            "INSERT INTO api_tokens (id, token_hash, person_id, label, created_at)"
-            " VALUES (?,?,?,?,?)",
-            (token_id, token_hash(token), actor.id, label.strip() or "unnamed", now_iso()),
+            "INSERT INTO api_tokens (id, token_hash, person_id, label, created_at, expires_at)"
+            " VALUES (?,?,?,?,?,?)",
+            (token_id, token_hash(token), actor.id, label.strip() or "unnamed", created, expires),
         )
         self.audit.record(
             actor=actor.id,
@@ -355,7 +361,7 @@ class IdentityService:
 
     def list_tokens(self, person_id: str) -> list[dict[str, Any]]:
         rows = self.store.conn.execute(
-            "SELECT id, label, created_at, last_used_at, revoked FROM api_tokens"
+            "SELECT id, label, created_at, expires_at, last_used_at, revoked FROM api_tokens"
             " WHERE person_id = ? ORDER BY created_at, id",
             (person_id,),
         ).fetchall()
@@ -378,10 +384,12 @@ class IdentityService:
         if not token:
             return None
         row = self.store.conn.execute(
-            "SELECT id, person_id, revoked FROM api_tokens WHERE token_hash = ?",
+            "SELECT id, person_id, revoked, expires_at FROM api_tokens WHERE token_hash = ?",
             (token_hash(token),),
         ).fetchone()
         if row is None or row["revoked"]:
+            return None
+        if row["expires_at"] and row["expires_at"] <= now_iso():
             return None
         actor = self.actor_for(row["person_id"])
         if actor is None:

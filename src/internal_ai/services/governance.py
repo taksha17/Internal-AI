@@ -132,10 +132,9 @@ def decide_gate(
         raise GateError(
             f"dual control violation: {actor.id} requested gate {gate_id} and cannot approve it"
         )
-    if actor.authenticated:
-        ok, why = can_decide(platform, actor, gate)
-        if not ok:
-            raise deny(platform.audit, actor, "decide_gate", gate_id, why)
+    ok, why = can_decide(platform, actor, gate)
+    if not ok:
+        raise deny(platform.audit, actor, "decide_gate", gate_id, why)
     _note_required(actor, note, "a gate decision")
     decided = platform.gates.decide(
         gate_id, actor.id, approved=approved, approver_kind=actor.kind, note=note

@@ -91,6 +91,13 @@ def _require_gate(
 
 
 def _no_open_gate(platform: Platform, gate_type: GateType, subject: str) -> None:
+    """Refuse a second gate while the first is still live.
+
+    Release, freeze and promotion are one-way transitions: once the gate is
+    approved the subject is consumed (released, frozen, promoted), and while
+    it is pending there is already something to decide. A rejection closes
+    the gate, so asking again after a rejection is allowed.
+    """
     gate = gate_for(platform, gate_type, subject)
     if gate is not None and gate.status in (GateStatus.PENDING, GateStatus.APPROVED):
         raise ValueError(f"a {gate_type} gate for {subject} is already {gate.status} ({gate.id})")

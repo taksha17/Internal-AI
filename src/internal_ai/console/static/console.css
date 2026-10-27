@@ -393,7 +393,6 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .is-bad { color: var(--tone-bad-ink); }
 .is-idle { color: var(--tone-idle-ink); }
 .is-live { color: var(--sage); }
-.tile-foot .dot, .dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: currentColor; }
 
 /* ---------- work in progress ---------- */
 .meter { display: block; width: 100%; height: 6px; margin: 0 0 0.7rem; appearance: none; border: 0; border-radius: 999px; background: var(--line); overflow: hidden; }
@@ -441,19 +440,15 @@ details.evidence summary { cursor: pointer; color: var(--sage); font-weight: 650
 .auth-brand { display: flex; align-items: center; gap: 0.72rem; font-size: 1.1rem; font-weight: 700; letter-spacing: -0.035em; text-decoration: none; color: var(--rail-ink); }
 .auth-brand .thin { color: var(--rail-sage); }
 .signin-tagline, .auth-brand-block h2 { margin: 1.5rem 0 0; color: var(--rail-sage); font-size: 1.35rem; font-weight: 600; letter-spacing: -0.02em; max-width: 16ch; line-height: 1.25; }
-.signin-points, .auth-points { display: flex; flex-direction: column; gap: 0.75rem; max-width: none; margin: auto 0 0; padding: 0; list-style: none; }
-.signin-points li, .auth-points li { display: flex; align-items: flex-start; gap: 0.55rem; margin: 0; color: var(--rail-item); font-size: 0.83rem; line-height: 1.45; }
-.signin-points .icon, .auth-points .icon { width: 1rem; height: 1rem; margin-top: 0.1rem; color: var(--rail-sage); }
+.auth-points { display: flex; flex-direction: column; gap: 0.75rem; max-width: none; margin: auto 0 0; padding: 0; list-style: none; }
+.auth-points li { display: flex; align-items: flex-start; gap: 0.55rem; margin: 0; color: var(--rail-item); font-size: 0.83rem; line-height: 1.45; }
+.auth-points .icon { width: 1rem; height: 1rem; margin-top: 0.1rem; color: var(--rail-sage); }
 .auth-copy h2 { margin: 1rem 0 0.6rem; color: var(--rail-ink); font-size: 1.9rem; }
 .auth-copy p { color: var(--rail-item); }
 .signin-panel { display: flex; align-items: center; justify-content: center; padding: 3rem 1.5rem; }
-.signin-card, .auth-form { width: 100%; max-width: 22.5rem; display: flex; flex-direction: column; gap: 0.9rem; }
+.auth-form { width: 100%; max-width: 22.5rem; display: flex; flex-direction: column; gap: 0.9rem; }
 .lockup { display: block; width: min(22rem, 100%); height: auto; }
 .mark-dark { display: none; }
-.signin-card h1 { font-size: 1.45rem; }
-.signin-card .stack { gap: 0.85rem; }
-.signin-card .stack > button { align-self: stretch; }
-.signin-card .small { margin-top: 1.4rem; line-height: 1.5; }
 @media (prefers-color-scheme: dark) {
   .mark-light { display: none; }
   .mark-dark { display: block; }

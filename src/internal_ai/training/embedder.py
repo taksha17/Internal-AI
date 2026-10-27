@@ -29,7 +29,7 @@ class TorchEmbedder:
         self.name = name
         self.tokenizer = tokenizer
         self.max_seq_len = max_seq_len
-        payload = torch.load(model_path, weights_only=False, map_location="cpu")
+        payload = torch.load(model_path, weights_only=True, map_location="cpu")
         self.model_config = TransformerConfig.from_dict(payload["model_config"])
         self.model = TinyTransformer(self.model_config)
         self.model.load_state_dict(payload["model_state"])

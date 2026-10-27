@@ -135,7 +135,7 @@ class ClassifierTrainer:
         if len(labels) < 2:
             raise ValueError("a classifier needs at least two classes")
 
-        payload = torch.load(encoder_path, weights_only=False, map_location="cpu")
+        payload = torch.load(encoder_path, weights_only=True, map_location="cpu")
         encoder_config = TransformerConfig.from_dict(payload["model_config"])
         encoder = TinyTransformer(encoder_config)
         encoder.load_state_dict(payload["model_state"])
@@ -258,7 +258,7 @@ class ClassifierTrainer:
 
 def predict_classifier(model_path: Path, tokenizer: Tokenizer, texts: list[str]) -> list[str]:
     """Load a trained classifier and score texts."""
-    payload = torch.load(model_path, weights_only=False, map_location="cpu")
+    payload = torch.load(model_path, weights_only=True, map_location="cpu")
     encoder_config = TransformerConfig.from_dict(payload["encoder_config"])
     encoder = TinyTransformer(encoder_config)
     encoder.load_state_dict(payload["encoder_state"])
@@ -283,7 +283,7 @@ def predict_classifier(model_path: Path, tokenizer: Tokenizer, texts: list[str])
 
 
 def classifier_metadata(model_path: Path) -> dict[str, Any]:
-    payload = torch.load(model_path, weights_only=False, map_location="cpu")
+    payload = torch.load(model_path, weights_only=True, map_location="cpu")
     return {
         "labels": payload["labels"],
         "config": payload["config"],

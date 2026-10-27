@@ -352,6 +352,11 @@ def init_db(conn: sqlite3.Connection) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(dataset_records)").fetchall()}
     if "split" not in columns:
         conn.execute("ALTER TABLE dataset_records ADD COLUMN split TEXT NOT NULL DEFAULT ''")
+    token_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(api_tokens)").fetchall()
+    }
+    if "expires_at" not in token_columns:
+        conn.execute("ALTER TABLE api_tokens ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''")
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('version', ?) "
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",

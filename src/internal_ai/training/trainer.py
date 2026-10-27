@@ -324,7 +324,7 @@ class Trainer:
         start_step = 0
         last_checkpoint = checkpoint_dir / "latest.pt"
         if resume and last_checkpoint.exists():
-            state = torch.load(last_checkpoint, weights_only=False)
+            state = torch.load(last_checkpoint, weights_only=True)
             model.load_state_dict(state["model_state"])
             optimizer.load_state_dict(state["optimizer_state"])
             start_step = int(state["step"])
