@@ -295,6 +295,26 @@ def inspect_source(
     )
 
 
+def guided_register(platform: Platform, actor: Actor, raw_path: str) -> dict[str, Any]:
+    """Register a pasted folder as guided search with safe defaults.
+
+    The novice supplies only a path. The name comes from the folder, the
+    purpose is fixed so the gate evidence reads clearly, and readers stay on
+    the default group. Permission and refusal rules are unchanged: this calls
+    register_source and inherits its checks.
+    """
+    stem = Path(raw_path).expanduser().stem.strip() or "guided-search"
+    clean = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in stem)[:60]
+    return register_source(
+        platform,
+        actor,
+        raw_path,
+        clean or "guided-search",
+        "guided search over this folder",
+        ["engineering"],
+    )
+
+
 def generate_sample(platform: Platform, actor: Actor, records: int = 120) -> str:
     """Write a synthetic support-ticket corpus into the samples folder."""
     from internal_ai.data.samples import generate_corpus

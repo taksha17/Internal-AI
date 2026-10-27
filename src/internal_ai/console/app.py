@@ -737,10 +737,39 @@ def mount_console(
             },
         )
 
+    def guided_steps(platform: Platform, source_id: str) -> list[dict[str, Any]] | None:
+        """Six guided states read from gates and dataset flags, never a new machine."""
+        source = build.get_source(platform, source_id)
+        if source is None:
+            return None
+        dataset = None
+        if source.get("dataset_id"):
+            dataset = platform.store.get_dataset(source["dataset_id"])
+        released = bool(dataset and dataset.released)
+        has_splits = bool(dataset and "splits" in dataset.stats)
+        steps = [
+            {"label": "Inspected", "done": True},
+            {
+                "label": "Source approved",
+                "done": source["gate_status"] == "approved",
+                "href": "/console/approvals?status=all",
+            },
+            {"label": "Dataset built", "done": dataset is not None},
+            {"label": "Split", "done": has_splits},
+            {"label": "Released", "done": released},
+            {
+                "label": "Askable",
+                "done": released,
+                "href": "/console/ask" if released else "",
+            },
+        ]
+        return steps
+
     @app.get("/console/sources", include_in_schema=False)
-    def sources_page(request: Request, inspect: str = "") -> Response:
+    def sources_page(request: Request, inspect: str = "", guided: str = "") -> Response:
         ctx = context(request)
         run = start_inspection(ctx, inspect) if inspect.strip() else None
+        steps = guided_steps(ctx.platform, guided) if guided.strip() else None
         return render(
             ctx,
             "sources.html",
@@ -753,6 +782,8 @@ def mount_console(
             inspect_percent=run.percent if run else 0,
             inspect_detail=run.detail if run else "",
             inspect_error=run.error if run else "",
+            guided_source=guided.strip() or "",
+            guided_steps=steps,
         )
 
     @app.get("/console/sources/inspect", include_in_schema=False)
@@ -782,6 +813,22 @@ def mount_console(
             lambda: build.generate_sample(ctx.platform, ctx.actor, max(20, min(records, 5000))),
             lambda path: f"synthetic corpus written to {path}; inspect it below",
             lambda path: f"/console/sources?inspect={path}",
+        )
+
+    @app.post("/console/guided", include_in_schema=False)
+    async def guided_register(request: Request) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        path = form.get("path", "")
+        return await act(
+            ctx,
+            "/console/sources",
+            lambda: build.guided_register(ctx.platform, ctx.actor, path),
+            lambda source: (
+                f"guided search started for {source['name']}; "
+                f"gate {source['gate_id']} needs approval before the build"
+            ),
+            lambda source: f"/console/sources?guided={source['id']}&inspect={source['path']}",
         )
 
     @app.post("/console/sources", include_in_schema=False)

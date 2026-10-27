@@ -10,6 +10,9 @@
   <section class="card">
     <h2>What is in it</h2>
     <p>{{ view.records }} records, {{ dataset.token_count }} tokens. You can read {{ view.visible_records }} of them.</p>
+    {% if view.records < 500 %}
+    <p class="callout">Small corpora answer best with keyword search. Training a model is optional here and only helps once the data grows past a few hundred records.</p>
+    {% endif %}
     <p>{% for split, count in view.splits | dictsort %}{{ split }} {{ count }} · {% endfor %}</p>
     {% if view.steps %}
     <details><summary>Cleaning steps</summary><pre>{{ view.steps | tojson(indent=2) }}</pre></details>

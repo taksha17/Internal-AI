@@ -30,6 +30,19 @@
     </form>
   </section>
   {% if can("register_source") %}
+  <section class="card stack">
+    <div>
+      <h2>Guided search</h2>
+      <p class="card-sub">New to building AI? Paste a folder and get working search with cited answers. No settings, no tuning.</p>
+    </div>
+    <form method="post" action="/console/guided" class="stack">
+      {{ m.csrf_field() }}
+      <label>Folder with your data <input type="text" name="path" value="{{ inspect_path }}" required maxlength="500" placeholder="/path/to/your/docs"></label>
+      <button type="submit" class="primary">Build guided search</button>
+    </form>
+  </section>
+  {% endif %}
+  {% if can("register_source") %}
   <form method="post" action="/console/sources/sample" class="stack card">
     {{ m.csrf_field() }}
     <div>
@@ -41,6 +54,23 @@
   </form>
   {% endif %}
 </div>
+
+{% if guided_steps %}
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>Guided progress</h2>
+      <p class="card-sub">Each step unlocks the next. Approval needs a data owner or compliance; you cannot approve your own gate.</p>
+    </div>
+    <span class="badge {{ 'badge-approved' if guided_steps[5].done else 'badge-pending' }}">{{ guided_steps | selectattr("done") | list | length }} of 6</span>
+  </div>
+  <ol class="steps">
+    {% for step in guided_steps %}
+    <li class="{{ 'done' if step.done else '' }}">{% if step.href and step.done %}<a href="{{ step.href }}">{{ step.label }}</a>{% else %}{{ step.label }}{% endif %}</li>
+    {% endfor %}
+  </ol>
+</section>
+{% endif %}
 
 <section class="card" id="inspect-result"{% if not inspection and not inspect_error %} hidden{% endif %}>
   {% if inspection or inspect_error %}{% include "_inspection.html" %}{% endif %}
