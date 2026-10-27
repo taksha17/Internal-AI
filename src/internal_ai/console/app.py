@@ -29,6 +29,7 @@ from internal_ai.context import Platform
 from internal_ai.data.suggest import suggest_model_types
 from internal_ai.domain import GateStatus, GateType, TaskState
 from internal_ai.engine import PlanError
+from internal_ai.evals import advice
 from internal_ai.gates import GATE_CATALOG, GateError
 from internal_ai.people import PeopleRegistry
 from internal_ai.roles import all_roles
@@ -1093,10 +1094,18 @@ def mount_console(
         models = []
         for model in platform.store.list_models():
             gate = build.gate_for(platform, GateType.MODEL_PROMOTION, model.id)
+            report = build.latest_report(platform, model.id)
+            first_dataset = model.dataset_ids[0] if model.dataset_ids else ""
+            dataset = platform.store.get_dataset(first_dataset) if first_dataset else None
             models.append(
                 {
                     "model": model,
-                    "report": build.latest_report(platform, model.id),
+                    "report": report,
+                    "advice": advice.retrieval_advice(
+                        report,
+                        dataset.record_count if dataset else 0,
+                        dataset.token_count if dataset else 0,
+                    ),
                     "gate": gate_view(platform, ctx.actor, gate) if gate else None,
                 }
             )
@@ -1106,10 +1115,12 @@ def mount_console(
             for job in get_jobs().list(limit=50, kind="evaluate_classifier")
             if job["state"] == "succeeded" and job["params"].get("run_id")
         }
-        classifiers = [
-            {"run": job, "report": evaluated.get(job["result"].get("run_id"))}
-            for job in get_jobs().list(limit=50, kind="train_classifier")
-        ]
+        classifiers = []
+        for job in get_jobs().list(limit=50, kind="train_classifier"):
+            report = evaluated.get(job["result"].get("run_id"))
+            classifiers.append(
+                {"run": job, "report": report, "advice": advice.classifier_advice(report)}
+            )
         return render(
             ctx,
             "models.html",
