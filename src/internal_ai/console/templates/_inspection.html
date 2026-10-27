@@ -16,8 +16,8 @@
 {% if suggestions %}
 <div class="suggest">
   <h3>What to build from this</h3>
-  <p class="card-sub">Ranked from what the scan measured. This reads the data; it builds nothing, and whichever path you take still needs its approval.</p>
-  {{ m.suggest_list(suggestions) }}
+  <p class="card-sub">Ranked from what the scan measured. It builds nothing on its own: starting a path registers the folder with that aim, and the build still needs its approval first.</p>
+  {{ m.suggest_list(suggestions, path=inspection.path) }}
 </div>
 {% endif %}
 {% if inspection.problems %}

@@ -360,22 +360,46 @@ def inspect_source(
     )
 
 
-def guided_register(platform: Platform, actor: Actor, raw_path: str) -> dict[str, Any]:
-    """Register a pasted folder as guided search with safe defaults.
+# What a guided run is aiming at, in the words shown on the form.
+GUIDED_INTENTS: tuple[tuple[str, str], ...] = (
+    ("search", "Search over it"),
+    ("decide", "Sort it into labels"),
+    ("generate", "Train a model on it"),
+)
 
-    The novice supplies only a path. The name comes from the folder, the
-    purpose is fixed so the gate evidence reads clearly, and readers stay on
-    the default group. Permission and refusal rules are unchanged: this calls
+# The same three, in the words an approver reads on the gate evidence.
+GUIDED_PURPOSES: dict[str, str] = {
+    "search": "guided search over this folder",
+    "decide": "guided classifier over this folder, sorting its rows by the answers it carries",
+    "generate": "guided model trained from scratch on this folder",
+}
+
+
+def guided_intent(raw: str) -> str:
+    """The kind of model a guided run aims at, defaulting to search."""
+    return raw if raw in GUIDED_PURPOSES else "search"
+
+
+def guided_register(
+    platform: Platform, actor: Actor, raw_path: str, intent: str = "search"
+) -> dict[str, Any]:
+    """Register a pasted folder on the guided path with safe defaults.
+
+    The novice supplies a path and, at most, which kind of model they are aiming
+    at. The name comes from the folder, readers stay on the default group, and
+    the purpose names the intent so the gate evidence says what is really being
+    built. Permission and refusal rules are unchanged: this calls
     register_source and inherits its checks.
     """
-    stem = Path(raw_path).expanduser().stem.strip() or "guided-search"
+    chosen = guided_intent(intent)
+    stem = Path(raw_path).expanduser().stem.strip() or "guided"
     clean = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in stem)[:60]
     return register_source(
         platform,
         actor,
         raw_path,
-        clean or "guided-search",
-        "guided search over this folder",
+        clean or "guided",
+        GUIDED_PURPOSES[chosen],
         ["engineering"],
     )
 

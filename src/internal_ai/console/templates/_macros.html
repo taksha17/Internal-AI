@@ -29,16 +29,24 @@
 
 {% macro status_badge(value) %}<span class="badge badge-{{ value }}">{{ value }}</span>{% endmacro %}
 
-{# The model types one source can carry, best first. Advisory: it names a path
-   and what that path would need. It starts nothing, and whatever a person
-   picks still goes through its usual gate and approval. #}
-{% macro suggest_list(items) %}
+{# The model types one source can carry, best first. With a path it is also the
+   way to pick one: the button hands the folder to the guided path with that
+   intent, and the choice still goes through its usual gate and approval. #}
+{% macro suggest_list(items, path="") %}
 <ol class="suggest-list">
   {% for option in items %}
   <li class="suggest-item{{ ' suggest-item-ready' if option.ready else '' }}">
     <span class="suggest-kind">{{ option.kind }}{% if option.ready and option.rank == 1 %} <span class="badge badge-approved">best fit</span>{% endif %}</span>
     <span class="suggest-why">{{ option.why }}</span>
     {% if option.needs %}<span class="muted small">Needs {{ option.needs }}.</span>{% endif %}
+    {% if option.ready and path and can("register_source") %}
+    <form method="post" action="/console/guided" class="suggest-pick">
+      {{ csrf_field() }}
+      <input type="hidden" name="path" value="{{ path }}">
+      <input type="hidden" name="intent" value="{{ option.kind }}">
+      <button type="submit" class="{{ 'primary' if option.rank == 1 else '' }}">Start this path</button>
+    </form>
+    {% endif %}
   </li>
   {% endfor %}
 </ol>

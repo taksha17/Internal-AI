@@ -32,13 +32,19 @@
   {% if can("register_source") %}
   <section class="card stack">
     <div>
-      <h2>Guided search</h2>
-      <p class="card-sub">New to building AI? Paste a folder and get working search with cited answers. No settings, no tuning.</p>
+      <h2>New to building AI?</h2>
+      <p class="card-sub">Paste a folder and say what you want out of it. Search works at any size. The other two need the data to carry them, and the tracker says what each step needs. No settings, no tuning.</p>
     </div>
     <form method="post" action="/console/guided" class="stack">
       {{ m.csrf_field() }}
       <label>Folder with your data <input type="text" name="path" value="{{ inspect_path }}" required maxlength="500" placeholder="/path/to/your/docs"></label>
-      <button type="submit" class="primary">Build guided search</button>
+      <fieldset class="intent-pick">
+        <legend>Aim for</legend>
+        {% for kind, label in guided_kinds %}
+        <label><input type="radio" name="intent" value="{{ kind }}"{% if kind == "search" %} checked{% endif %}> {{ label }}</label>
+        {% endfor %}
+      </fieldset>
+      <button type="submit" class="primary">Start the guided path</button>
     </form>
   </section>
   {% endif %}
@@ -60,15 +66,26 @@
   <div class="card-head">
     <div>
       <h2>Guided progress</h2>
-      <p class="card-sub">Each step unlocks the next. Approval needs a data owner or compliance; you cannot approve your own gate.</p>
+      <p class="card-sub">Aiming at: <strong>{{ guided_intent_label }}</strong>. Each step unlocks the next, and a step your role cannot take says who it needs. Approval needs a data owner or compliance; you cannot approve your own gate.</p>
     </div>
-    <span class="badge {{ 'badge-approved' if guided_steps[5].done else 'badge-pending' }}">{{ guided_steps | selectattr("done") | list | length }} of 6</span>
+    <span class="badge {{ 'badge-approved' if guided_done == guided_steps | length else 'badge-pending' }}">{{ guided_done }} of {{ guided_steps | length }}</span>
   </div>
   <ol class="steps">
     {% for step in guided_steps %}
-    <li class="{{ 'done' if step.done else '' }}">{% if step.href and step.done %}<a href="{{ step.href }}">{{ step.label }}</a>{% else %}{{ step.label }}{% endif %}</li>
+    <li class="{{ 'done' if step.done else '' }}{{ ' locked' if not step.done and not step.you_can else '' }}">
+      {% if step.done and step.href %}<a href="{{ step.href }}">{{ step.label }}</a>{% else %}{{ step.label }}{% endif %}
+      {% if not step.done %}{% if step.you_can %}{% if step.href %} <a class="small" href="{{ step.href }}">open</a>{% endif %}{% else %} <span class="muted small">{{ step.needs }}</span>{% endif %}{% endif %}
+    </li>
     {% endfor %}
   </ol>
+  {% if guided_intent != guided_recommended %}
+  <p class="muted small">The scan's best fit for this data is {{ guided_recommended_label }}. Aim at: {% for alt in guided_alternatives %}<a href="/console/sources?guided={{ guided_source }}&intent={{ alt.kind }}">{{ alt.label }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
+  {% elif guided_alternatives %}
+  <p class="muted small">Aim at: {% for alt in guided_alternatives %}<a href="/console/sources?guided={{ guided_source }}&intent={{ alt.kind }}">{{ alt.label }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
+  {% endif %}
+  {% if guided_intent == "decide" %}
+  <p class="muted small">A classifier sorts rows by the answers they carry. It is scored on a held-out split, and it is not promoted as a retrieval model.</p>
+  {% endif %}
   {% if guided_suggestions %}
   <div class="suggest">
     <h3>What this data can carry</h3>

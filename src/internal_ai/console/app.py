@@ -766,16 +766,130 @@ def mount_console(
             },
         )
 
-    def guided_steps(platform: Platform, source_id: str) -> list[dict[str, Any]] | None:
-        """Six guided states read from gates and dataset flags, never a new machine."""
+    def intent_tail(
+        platform: Platform, intent: str, dataset: Any, released: bool
+    ) -> list[dict[str, Any]]:
+        """Where each intent goes after release, read from rows that already exist.
+
+        Search ends at a question anyone may ask. Decide ends at a scored
+        classifier and names the encoder it sits on, because a person told only
+        "train a classifier" would think the tool had broken when it asked for
+        one. Generate ends at promotion behind the gate it already has.
+        """
+        if intent == "search":
+            return [
+                {
+                    "label": "Askable",
+                    "done": released,
+                    "href": "/console/ask" if released else "",
+                    "action": Action.ASK,
+                }
+            ]
+        dataset_id = dataset.id if dataset is not None else ""
+        tokenised = bool(dataset and build.tokenizer_path(platform, dataset_id) is not None)
+        steps = [
+            {
+                "label": "Tokenizer trained",
+                "done": tokenised,
+                "href": f"/console/datasets/{dataset_id}" if dataset else "",
+                "action": Action.BUILD_DATASET,
+            }
+        ]
+        if intent == "decide":
+            runs = [
+                job
+                for job in get_jobs().list(kind="train_classifier", limit=200)
+                if dataset_id
+                and job["state"] == "succeeded"
+                and job["result"].get("dataset_id") == dataset_id
+            ]
+            run_ids = {job["result"].get("run_id") for job in runs}
+            scored = [
+                job
+                for job in get_jobs().list(kind="evaluate_classifier", limit=200)
+                if run_ids
+                and job["state"] == "succeeded"
+                and job["result"].get("run_id") in run_ids
+            ]
+            encoders = [
+                model
+                for model in build.classifier_encoders(platform)
+                if not dataset_id or dataset_id in model.dataset_ids
+            ]
+            steps.extend(
+                [
+                    {
+                        "label": "Encoder trained on this data",
+                        "done": bool(encoders),
+                        "href": "/console/models",
+                        "action": Action.TRAIN_MODEL,
+                    },
+                    {
+                        "label": "Classifier trained",
+                        "done": bool(runs),
+                        "href": "/console/models",
+                        "action": Action.TRAIN_MODEL,
+                    },
+                    {
+                        "label": "Scored on a held-out split",
+                        "done": bool(scored),
+                        "href": "/console/models",
+                        "action": Action.EVALUATE_MODEL,
+                    },
+                ]
+            )
+            return steps
+        models = [
+            model
+            for model in platform.store.list_models()
+            if not dataset_id or dataset_id in model.dataset_ids
+        ]
+        report = build.latest_report(platform, models[-1].id) if models else None
+        steps.extend(
+            [
+                {
+                    "label": "Model trained and registered",
+                    "done": bool(models),
+                    "href": "/console/models",
+                    "action": Action.TRAIN_MODEL,
+                },
+                {
+                    "label": "Evaluated on a frozen set",
+                    "done": report is not None,
+                    "href": "/console/evals",
+                    "action": Action.EVALUATE_MODEL,
+                },
+                {
+                    "label": "Promoted behind a gate",
+                    "done": any(model.status == "promoted" for model in models),
+                    "href": "/console/models",
+                    "action": Action.PROMOTE_MODEL,
+                },
+            ]
+        )
+        return steps
+
+    def guided_steps(
+        platform: Platform, actor: Actor, source_id: str, intent: str = ""
+    ) -> dict[str, Any] | None:
+        """The chain this intent needs, read from gates, jobs and models.
+
+        Steps are a view over rows that already exist, never a new machine. The
+        intent is not stored either: it picks which chain is shown, and the one
+        thing written down is the purpose at registration, so an approver reads
+        what is really being built. Each step carries the action it takes, so a
+        person without that role sees who has it instead of a dead end.
+        """
         source = build.get_source(platform, source_id)
         if source is None:
             return None
+        ranking = guided_suggestions(platform, source_id)
+        recommended = ranking[0]["kind"] if ranking else "search"
+        chosen = build.guided_intent(intent or recommended)
         dataset = None
         if source.get("dataset_id"):
             dataset = platform.store.get_dataset(source["dataset_id"])
         released = bool(dataset and dataset.released)
-        has_splits = bool(dataset and "splits" in dataset.stats)
         steps = [
             {"label": "Inspected", "done": True},
             {
@@ -783,22 +897,50 @@ def mount_console(
                 "done": source["gate_status"] == "approved",
                 "href": "/console/approvals?status=all",
             },
-            {"label": "Dataset built", "done": dataset is not None},
-            {"label": "Split", "done": has_splits},
-            {"label": "Released", "done": released},
             {
-                "label": "Askable",
+                "label": "Dataset built",
+                "done": dataset is not None,
+                "action": Action.BUILD_DATASET,
+            },
+            {
+                "label": "Split",
+                "done": bool(dataset and "splits" in dataset.stats),
+                "action": Action.BUILD_DATASET,
+            },
+            {
+                "label": "Released",
                 "done": released,
-                "href": "/console/ask" if released else "",
+                "action": Action.RELEASE_DATASET,
             },
         ]
-        return steps
+        steps.extend(intent_tail(platform, chosen, dataset, released))
+        for step in steps:
+            action = step.get("action")
+            step["needs"] = reason(action) if action else ""
+            step["you_can"] = allowed(actor, action) if action else True
+        labels = dict(build.GUIDED_INTENTS)
+        return {
+            "intent": chosen,
+            "intent_label": labels.get(chosen, chosen),
+            "recommended": recommended,
+            "recommended_label": labels.get(recommended, recommended),
+            "alternatives": [
+                {"kind": kind, "label": label}
+                for kind, label in build.GUIDED_INTENTS
+                if kind != chosen
+            ],
+            "options": ranking,
+            "steps": steps,
+            "done": sum(1 for step in steps if step["done"]),
+        }
 
     @app.get("/console/sources", include_in_schema=False)
-    def sources_page(request: Request, inspect: str = "", guided: str = "") -> Response:
+    def sources_page(
+        request: Request, inspect: str = "", guided: str = "", intent: str = ""
+    ) -> Response:
         ctx = context(request)
         run = start_inspection(ctx, inspect) if inspect.strip() else None
-        steps = guided_steps(ctx.platform, guided) if guided.strip() else None
+        plan = guided_steps(ctx.platform, ctx.actor, guided, intent) if guided.strip() else None
         return render(
             ctx,
             "sources.html",
@@ -806,7 +948,7 @@ def mount_console(
             roots=build.data_roots(ctx.platform),
             inspection=run.result if run else None,
             suggestions=suggestions_for(run.result) if run else [],
-            guided_suggestions=guided_suggestions(ctx.platform, guided) if guided.strip() else [],
+            guided_suggestions=plan["options"] if plan else [],
             inspect_path=inspect,
             inspect_token=run.token if run else "",
             inspect_running=bool(run and not run.done),
@@ -814,7 +956,14 @@ def mount_console(
             inspect_detail=run.detail if run else "",
             inspect_error=run.error if run else "",
             guided_source=guided.strip() or "",
-            guided_steps=steps,
+            guided_steps=plan["steps"] if plan else None,
+            guided_intent=plan["intent"] if plan else "",
+            guided_intent_label=plan["intent_label"] if plan else "",
+            guided_recommended=plan["recommended"] if plan else "",
+            guided_recommended_label=plan["recommended_label"] if plan else "",
+            guided_alternatives=plan["alternatives"] if plan else [],
+            guided_done=plan["done"] if plan else 0,
+            guided_kinds=build.GUIDED_INTENTS,
         )
 
     @app.get("/console/sources/inspect", include_in_schema=False)
@@ -851,15 +1000,18 @@ def mount_console(
         ctx = context(request)
         form = await posted(ctx)
         path = form.get("path", "")
+        intent = build.guided_intent(form.get("intent", ""))
         return await act(
             ctx,
             "/console/sources",
-            lambda: build.guided_register(ctx.platform, ctx.actor, path),
+            lambda: build.guided_register(ctx.platform, ctx.actor, path, intent),
             lambda source: (
-                f"guided search started for {source['name']}; "
+                f"guided run started for {source['name']}; "
                 f"gate {source['gate_id']} needs approval before the build"
             ),
-            lambda source: f"/console/sources?guided={source['id']}&inspect={source['path']}",
+            lambda source: (
+                f"/console/sources?guided={source['id']}&inspect={source['path']}&intent={intent}"
+            ),
         )
 
     @app.post("/console/sources", include_in_schema=False)

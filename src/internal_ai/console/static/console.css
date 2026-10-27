@@ -299,6 +299,11 @@ textarea { min-height: 5.5rem; resize: vertical; }
 .stack input, .stack select, .stack textarea { width: 100%; }
 .inline-form input:not([type="hidden"]), .inline-form select { flex: 1 1 11rem; min-width: 7rem; width: auto; }
 input[type="checkbox"], input[type="radio"] { min-height: auto; width: auto; accent-color: var(--sage); }
+/* A radio group is one control, so it reads as a list of choices, not fields. */
+.intent-pick { margin: 0; padding: 0; border: 0; }
+.intent-pick legend { margin: 0 0 0.35rem; padding: 0; color: var(--ink); font-size: 0.86rem; font-weight: 550; }
+.intent-pick label { flex-direction: row; align-items: center; gap: 0.45rem; font-weight: 400; }
+.intent-pick label + label { margin-top: 0.3rem; }
 
 button, .button, .btn {
   display: inline-flex;
@@ -382,6 +387,9 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .steps li > a:hover { text-decoration: underline; }
 .steps li.done > a { color: var(--sage); font-weight: 550; }
 .steps li.done::before { content: "\2713"; border-color: var(--sage-fill); background: var(--sage-fill); color: var(--on-sage); font-size: 0.8rem; }
+/* A step this person cannot take stays visible and names the role it needs. */
+.steps li.locked::before { border-style: dashed; }
+.steps li > .small { margin-left: 0.4rem; }
 
 /* ---------- what the data can carry ---------- */
 .suggest { max-width: none; margin: 1.15rem 0 0; }
@@ -391,6 +399,8 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .suggest-item-ready { border-left-color: var(--sage-fill); background: var(--card); }
 .suggest-kind { display: flex; align-items: center; gap: 0.45rem; font-weight: 600; text-transform: capitalize; }
 .suggest-why { color: var(--muted); font-size: 0.88rem; max-width: 78ch; }
+.suggest-pick { display: flex; margin: 0.5rem 0 0; }
+.suggest-pick button { min-height: 2rem; padding: 0 0.85rem; font-size: 0.82rem; }
 
 /* What would change a failed result. It explains, so it reads quiet. */
 .advice-list { max-width: 78ch; margin: 0.6rem 0 0; padding-left: 1.15rem; color: var(--muted); font-size: 0.88rem; }
