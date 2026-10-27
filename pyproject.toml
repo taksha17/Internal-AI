@@ -11,6 +11,7 @@ dependencies = [
     "numpy>=2.0",
     "jinja2>=3.1",
     "python-multipart>=0.0.9",
+    "pypdf>=5.0",
 ]
 
 [project.scripts]
@@ -23,6 +24,7 @@ dev = [
     "ruff>=0.7",
 ]
 train = ["torch>=2.4"]
+alpha = ["torch>=2.4", "safetensors>=0.4"]
 
 [build-system]
 requires = ["hatchling"]

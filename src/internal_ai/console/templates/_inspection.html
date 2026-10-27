@@ -10,6 +10,9 @@
 {% if inspection.weight_files and not inspection.problems %}
 <p class="callout">Weight files were left out and are never trained on: {% for name in inspection.weight_files[:5] %}<code>{{ name }}</code> {% endfor %}</p>
 {% endif %}
+{% if inspection.unreadable and not inspection.problems %}
+<p class="callout">{{ inspection.unreadable | length }} document(s) hold no readable text and were left out, so this corpus is not the whole folder: {% for name in inspection.unreadable[:3] %}<code>{{ name }}</code> {% endfor %}</p>
+{% endif %}
 {% if suggestions %}
 <div class="suggest">
   <h3>What to build from this</h3>

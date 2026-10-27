@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from internal_ai.data.extract import DOCUMENT_SUFFIXES, document_text
+
 # Row-oriented files: one record per row, so a row can carry its own answer.
 ROW_SUFFIXES = frozenset({".csv", ".tsv", ".jsonl", ".ndjson"})
 
@@ -107,10 +109,13 @@ def _read_csv(path: Path) -> list[dict[str, Any]]:
         return list(csv.DictReader(handle))
 
 
+def _paragraphs(text: str) -> list[str]:
+    """A document or a note as the chunks a person would call paragraphs."""
+    return [chunk.strip() for chunk in text.split("\n\n") if chunk.strip()]
+
+
 def _read_text(path: Path) -> list[str]:
-    return [
-        chunk.strip() for chunk in path.read_text(encoding="utf-8").split("\n\n") if chunk.strip()
-    ]
+    return _paragraphs(path.read_text(encoding="utf-8"))
 
 
 def _sample_rows(suffix: str, content: str) -> list[dict[str, Any]]:
@@ -231,6 +236,22 @@ def ingest_source(source: Source) -> list[Record]:
                     sensitivity=str(row.get("sensitivity", source.sensitivity)),
                     acl=_bounded_acl(row, source),
                     meta={"format": "csv", **_label_meta(row, source)},
+                )
+            )
+    elif suffix in DOCUMENT_SUFFIXES:
+        extracted = document_text(source.path)
+        if not extracted.usable:
+            return []
+        for index, chunk in enumerate(_paragraphs(extracted.text)):
+            records.append(
+                Record(
+                    id=f"{source.source_id}:{index}",
+                    record_key=str(index),
+                    text=chunk,
+                    source_id=source.source_id,
+                    sensitivity=source.sensitivity,
+                    acl=list(source.acl),
+                    meta={"format": suffix.lstrip(".")},
                 )
             )
     else:

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from internal_ai.context import Platform
+from internal_ai.data.extract import DOCUMENT_SUFFIXES, document_text
 from internal_ai.data.inventory import (
     SECRET_PATTERNS,
     classify_path,
@@ -36,7 +37,18 @@ from internal_ai.services.permissions import Action, PermissionDenied, deny, req
 WEIGHT_SUFFIXES = frozenset(
     {".pt", ".pth", ".bin", ".safetensors", ".gguf", ".onnx", ".ckpt", ".h5", ".pb", ".tflite"}
 )
-SOURCE_FILE_SUFFIXES = frozenset({".jsonl", ".ndjson", ".csv", ".txt", ".md"})
+SOURCE_FILE_SUFFIXES = frozenset({".jsonl", ".ndjson", ".csv", ".txt", ".md"}) | DOCUMENT_SUFFIXES
+
+
+def _secret_hits(text: str) -> dict[str, int]:
+    """Which secrets appear in a piece of text, and how many times."""
+    return {
+        name: len(pattern.findall(text))
+        for name, pattern in SECRET_PATTERNS.items()
+        if pattern.findall(text)
+    }
+
+
 TRAINING_COST_GATE_USD = 10.0
 DATA_ROOTS_ENV = "INTERNAL_AI_DATA_ROOTS"
 TRAINING_AGENT = "ml_engineer"
@@ -123,6 +135,7 @@ class SourceInspection:
     label_columns: list[str] = field(default_factory=list)
     text_field: str = ""
     label_field: str = ""
+    unreadable: list[str] = field(default_factory=list)
 
     @property
     def acceptable(self) -> bool:
@@ -143,6 +156,7 @@ class SourceInspection:
             "label_columns": self.label_columns,
             "text_field": self.text_field,
             "label_field": self.label_field,
+            "unreadable": self.unreadable,
         }
 
 
@@ -208,6 +222,7 @@ def inspect_source(
     escaped: list[str] = []
     formats: dict[str, int] = {}
     labels: list[str] = []
+    unreadable: list[str] = []
     text_field = ""
     label_field = ""
     if resolved.is_dir():
@@ -238,20 +253,29 @@ def inspect_source(
                     escaped.append(relative)
                 scanned(done, total)
                 continue
-            if file_path.suffix.lower() in WEIGHT_SUFFIXES or (
+            suffix = file_path.suffix.lower()
+            if suffix in WEIGHT_SUFFIXES or (
                 is_text_file(file_path) and disguised_binary(file_path)
             ):
                 weight_files.append(relative)
+            elif suffix in DOCUMENT_SUFFIXES:
+                extracted = document_text(file_path)
+                if not extracted.usable:
+                    unreadable.append(f"{relative}: {extracted.reason}")
+                else:
+                    hits = _secret_hits(extracted.text)
+                    if hits:
+                        for name, count in hits.items():
+                            secret_hits[name] = secret_hits.get(name, 0) + count
+                    else:
+                        text_files += 1
+                        formats[suffix] = formats.get(suffix, 0) + 1
             elif is_text_file(file_path):
                 try:
                     content = file_path.read_text(encoding="utf-8", errors="ignore")
                 except OSError:
                     content = ""
-                hits = {
-                    name: len(pattern.findall(content))
-                    for name, pattern in SECRET_PATTERNS.items()
-                    if pattern.findall(content)
-                }
+                hits = _secret_hits(content)
                 if hits:
                     for name, count in hits.items():
                         secret_hits[name] = secret_hits.get(name, 0) + count
@@ -275,6 +299,15 @@ def inspect_source(
                 f"{suffix or 'files without an extension'} is not a supported source format; "
                 f"use one of {', '.join(sorted(SOURCE_FILE_SUFFIXES))}"
             )
+        elif suffix in DOCUMENT_SUFFIXES:
+            extracted = document_text(resolved)
+            if not extracted.usable:
+                problems.append(f"the file could not be read: {extracted.reason}")
+            else:
+                text_files = 1
+                formats[suffix] = 1
+                for name, count in _secret_hits(extracted.text).items():
+                    secret_hits[name] = count
         elif disguised_binary(resolved):
             weight_files.append(resolved.name)
         else:
@@ -302,6 +335,10 @@ def inspect_source(
             + ", ".join(f"{name}: {count}" for name, count in sorted(secret_hits.items()))
             + "); those files were left out, and nothing usable remains"
         )
+    if nothing_left and unreadable:
+        problems.append(
+            f"{len(unreadable)} documents hold no readable text: " + "; ".join(unreadable[:3])
+        )
     if nothing_left:
         problems.append("the folder has no text files to learn from")
     report(100, "done")
@@ -319,6 +356,7 @@ def inspect_source(
         sorted(labels),
         text_field,
         label_field,
+        unreadable,
     )
 
 

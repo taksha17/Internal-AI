@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from internal_ai.data.extract import DOCUMENT_SUFFIXES, document_text
+
 TEXT_SUFFIXES = frozenset(
     {
         ".py",
@@ -311,6 +313,17 @@ def _absorb(entry: SourceEntry, file_path: Path, max_bytes_per_file: int, root: 
     entry.formats[suffix] = entry.formats.get(suffix, 0) + 1
     if suffix in BINARY_SUFFIXES:
         entry.binary_file_count += 1
+        return
+    if suffix in DOCUMENT_SUFFIXES:
+        extracted = document_text(file_path)
+        if not extracted.usable:
+            entry.binary_file_count += 1
+            return
+        entry.text_file_count += 1
+        for kind, pattern in SECRET_PATTERNS.items():
+            hits = len(pattern.findall(extracted.text))
+            if hits:
+                entry.secret_hits[kind] = entry.secret_hits.get(kind, 0) + hits
         return
     if not _is_text_file(file_path) or disguised_binary(file_path):
         entry.binary_file_count += 1

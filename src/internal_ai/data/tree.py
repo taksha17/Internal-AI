@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from internal_ai.data.extract import document_text, is_document
 from internal_ai.data.inventory import SECRET_PATTERNS, disguised_binary, leave_out, target_escapes
 from internal_ai.data.records import Record
 from internal_ai.ids import file_hash, new_id, text_hash
@@ -174,7 +175,13 @@ def build_tree_index(
     root = root.resolve()
     index = TreeIndex(root=root, source_id=source_id or root.name)
     for path in iter_tree_files(root):
-        if not is_text_file(path) or target_escapes(path, root) or disguised_binary(path):
+        if target_escapes(path, root):
+            index.skipped += 1
+            continue
+        # A document is held as binary and yields text, so the text-shaped
+        # guard does not apply to it; its own container check does.
+        document = is_document(path)
+        if not document and (not is_text_file(path) or disguised_binary(path)):
             index.skipped += 1
             continue
         try:
@@ -182,18 +189,25 @@ def build_tree_index(
         except OSError:
             index.skipped += 1
             continue
-        if size > max_bytes:
+        if not document and size > max_bytes:
             index.truncated += 1
             continue
         relative = str(path.relative_to(root))
         digest = file_hash(path)
         if previous_hashes is not None and previous_hashes.get(relative) == digest:
             continue
-        try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
-            index.skipped += 1
-            continue
+        if document:
+            extracted = document_text(path)
+            if not extracted.usable:
+                index.skipped += 1
+                continue
+            text = extracted.text
+        else:
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                index.skipped += 1
+                continue
         if not text.strip():
             index.skipped += 1
             continue
