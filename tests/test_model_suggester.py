@@ -48,6 +48,19 @@ def prose(**over: object) -> dict:
     return summary
 
 
+def rows_file(**over: object) -> dict:
+    """One table file, the shape whose rows can keep their own label."""
+    summary = {
+        "kind": "file",
+        "files": 1,
+        "text_files": 1,
+        "formats": {".csv": 1},
+        "label_columns": ["label"],
+    }
+    summary.update(over)
+    return summary
+
+
 def test_a_folder_of_prose_recommends_search_and_never_generate() -> None:
     options = suggest_model_types(prose())
 
@@ -60,12 +73,21 @@ def test_a_folder_of_prose_recommends_search_and_never_generate() -> None:
 
 
 def test_a_label_column_is_what_makes_decide_the_best_fit() -> None:
-    options = suggest_model_types(prose(formats={".csv": 40}, label_columns=["label"]))
+    options = suggest_model_types(rows_file())
 
     assert kinds(options)[0] == DECIDE
     assert entry(options, DECIDE)["ready"] is True
     assert "label" in entry(options, DECIDE)["why"]
     assert entry(options, DECIDE)["needs"] == ""
+
+
+def test_a_folder_with_a_label_column_is_not_promised_a_classifier() -> None:
+    options = suggest_model_types(prose(formats={".csv": 40}, label_columns=["label"]))
+
+    assert kinds(options)[0] == SEARCH
+    assert entry(options, DECIDE)["ready"] is False
+    assert "one record per file" in entry(options, DECIDE)["why"]
+    assert entry(options, DECIDE)["needs"]
 
 
 def test_a_table_without_a_label_column_does_not_outrank_search() -> None:
@@ -134,6 +156,27 @@ def test_the_scan_reports_the_formats_and_the_label_columns_it_saw(
 
     assert result.formats == {".csv": 1, ".md": 1}
     assert result.label_columns == ["label"]
+    # A folder is one record per file, so the label column cannot be honoured.
+    assert kinds(suggest_model_types(result.to_dict()))[0] == SEARCH
+    assert result.text_field == ""
+
+
+def test_a_table_file_reports_which_column_is_the_text_and_which_the_answer(
+    platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "data"
+    root.mkdir()
+    table = root / "tickets.csv"
+    table.write_text(
+        "ticket,description,label\n1,my vpn will not connect,billing\n"
+        "2,the invoice is wrong,billing\n"
+    )
+    monkeypatch.setenv("INTERNAL_AI_DATA_ROOTS", str(root))
+
+    result = build.inspect_source(platform, str(table))
+
+    assert result.text_field == "description"
+    assert result.label_field == "label"
     assert kinds(suggest_model_types(result.to_dict()))[0] == DECIDE
 
 

@@ -110,8 +110,14 @@ def _search(usable: int) -> dict[str, Any]:
     }
 
 
-def _decide(tabular: int, labels: list[str]) -> dict[str, Any]:
-    if labels:
+def _decide(tabular: int, labels: list[str], rows: bool) -> dict[str, Any]:
+    """Whether a classifier is really within reach.
+
+    ``rows`` is true only when the source is read a row at a time. A folder is
+    read as one record per file, so a label column inside it has nowhere to
+    live: promising a classifier there would promise what the build cannot do.
+    """
+    if labels and rows:
         return {
             "kind": DECIDE,
             "score": _SCORES[DECIDE],
@@ -121,6 +127,17 @@ def _decide(tabular: int, labels: list[str]) -> dict[str, Any]:
                 "classifier can learn to sort them."
             ),
             "needs": "",
+        }
+    if labels:
+        return {
+            "kind": DECIDE,
+            "score": _DECIDE_UNLABELLED,
+            "ready": False,
+            "why": (
+                f"The answer column is here ({', '.join(sorted(labels))}), but a folder "
+                "is read one record per file, so a row cannot keep its own label."
+            ),
+            "needs": "a single table file, or a folder read row by row",
         }
     return {
         "kind": DECIDE,
@@ -168,8 +185,13 @@ def suggest_model_types(summary: dict[str, Any]) -> list[dict[str, Any]]:
     labels = [str(name) for name in summary.get("label_columns") or []]
     usable = records or text_files
     unit = "records" if records else "text files"
+    rows = str(summary.get("kind") or "") == "file"
 
-    ranked = [_search(usable), _decide(_tabular(formats), labels), _generate(usable, unit)]
+    ranked = [
+        _search(usable),
+        _decide(_tabular(formats), labels, rows),
+        _generate(usable, unit),
+    ]
     ranked.sort(key=lambda option: (-option["score"], KINDS.index(option["kind"])))
     return [
         {

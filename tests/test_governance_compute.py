@@ -394,7 +394,7 @@ def test_classifier_trains_and_reports_per_class(platform, corpus_path, tmp_path
     )
     labelled = build_labeled_dataset(
         [
-            type("R", (), {"record_key": str(i), "text": text, "source_id": "s"})()
+            type("R", (), {"record_key": str(i), "text": text, "source_id": "s", "meta": {}})()
             for i, text in enumerate(texts)
         ]
     )

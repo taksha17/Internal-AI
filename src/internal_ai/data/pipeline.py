@@ -90,6 +90,7 @@ class DataPipeline:
         sources: list[Source],
         config: PipelineConfig,
         actor: str = "data_engineer",
+        label_field: str = "",
     ) -> PipelineResult:
         steps: list[dict[str, Any]] = []
         lineage_sources: list[dict[str, Any]] = []
@@ -175,7 +176,15 @@ class DataPipeline:
             record.tokens = max(1, len(record.text) // 4)
         token_count = sum(record.tokens for record in records)
         record_hashes = sorted(record.fingerprint() for record in records)
-        dataset_hash = content_hash({"records": record_hashes, "config": config.hash})
+        # Labels define the artifact as much as the text does, but only when the
+        # data brought them: a dataset built without any keeps the hash it had.
+        given_labels = sorted(
+            str(record.meta["label"]) for record in records if record.meta.get("label")
+        )
+        hash_input: dict[str, Any] = {"records": record_hashes, "config": config.hash}
+        if given_labels:
+            hash_input["labels"] = given_labels
+        dataset_hash = content_hash(hash_input)
 
         lineage = {
             "sources": lineage_sources,
@@ -185,6 +194,14 @@ class DataPipeline:
             "code_commit": _git_commit(self.root),
             "created_at": now_iso(),
         }
+        if given_labels:
+            lineage["labels"] = {
+                "column": label_field,
+                "count": len(given_labels),
+                "distribution": {
+                    label: given_labels.count(label) for label in sorted(set(given_labels))
+                },
+            }
         dataset = DatasetVersion(
             id=new_id("ds"),
             name=config.name,

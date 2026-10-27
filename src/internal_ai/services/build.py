@@ -23,6 +23,7 @@ from internal_ai.data.inventory import (
     leave_out,
     target_escapes,
 )
+from internal_ai.data.records import ROW_SUFFIXES, choose_columns
 from internal_ai.data.suggest import label_columns
 from internal_ai.data.tree import is_text_file
 from internal_ai.domain import GateRequest, GateStatus, GateType
@@ -120,6 +121,8 @@ class SourceInspection:
     problems: list[str]
     formats: dict[str, int] = field(default_factory=dict)
     label_columns: list[str] = field(default_factory=list)
+    text_field: str = ""
+    label_field: str = ""
 
     @property
     def acceptable(self) -> bool:
@@ -138,6 +141,8 @@ class SourceInspection:
             "problems": self.problems,
             "formats": dict(sorted(self.formats.items())),
             "label_columns": self.label_columns,
+            "text_field": self.text_field,
+            "label_field": self.label_field,
         }
 
 
@@ -203,6 +208,8 @@ def inspect_source(
     escaped: list[str] = []
     formats: dict[str, int] = {}
     labels: list[str] = []
+    text_field = ""
+    label_field = ""
     if resolved.is_dir():
         kind = "tree"
         report(0, "listing files")
@@ -275,6 +282,8 @@ def inspect_source(
             formats[suffix or "<none>"] = 1
             content = resolved.read_text(encoding="utf-8", errors="ignore")
             labels = label_columns(suffix, content)
+            if suffix in ROW_SUFFIXES:
+                text_field, label_field = choose_columns(suffix, content)
             for name, pattern in SECRET_PATTERNS.items():
                 hits = len(pattern.findall(content))
                 if hits:
@@ -308,6 +317,8 @@ def inspect_source(
         problems,
         dict(sorted(formats.items())),
         sorted(labels),
+        text_field,
+        label_field,
     )
 
 
@@ -485,10 +496,13 @@ def build_dataset(platform: Platform, actor: Actor, runner: JobRunner, source_id
                         acl=source["acl"],
                         approved=True,
                         owner=source["requested_by"],
+                        text_field=inspection.text_field or None,
+                        label_field=inspection.label_field or None,
                     )
                 ],
                 PipelineConfig(name=source["name"], version=version),
                 actor=DATA_AGENT,
+                label_field=inspection.label_field,
             )
             built = result.dataset
         dataset_id = built.dataset_id if hasattr(built, "dataset_id") else built.id
@@ -975,6 +989,158 @@ def evaluate_model(
         "evaluate_model",
         f"Evaluate {model.name} v{model.version} on {eval_set.name} v{eval_set.version}",
         {"model_id": model_id, "eval_set_id": eval_set_id, "margin": margin},
+        work,
+        agent=EVAL_AGENT,
+    )
+
+
+def classifier_encoders(platform: Platform) -> list[Any]:
+    """Registered models that can be the frozen encoder a classifier sits on."""
+    ready = []
+    for model in platform.store.list_models():
+        token_file = Path(str(model.card.get("tokenizer_path") or ""))
+        if Path(model.path).exists() and token_file.name and token_file.exists():
+            ready.append(model)
+    return ready
+
+
+def label_summary(platform: Platform, dataset_id: str) -> dict[str, int]:
+    """Where the answers came from: the data's own column, or the shipped rules."""
+    rows = platform.store.dataset_records(dataset_id)
+    from_data = sum(1 for row in rows if (row.get("meta") or {}).get("label"))
+    return {"rows": len(rows), "from_data": from_data, "from_rules": len(rows) - from_data}
+
+
+def train_classifier(
+    platform: Platform,
+    actor: Actor,
+    runner: JobRunner,
+    dataset_id: str,
+    encoder_model_id: str,
+    name: str = "router-v1",
+    epochs: int = 40,
+    cost_cap_usd: float = 2.0,
+) -> dict[str, Any]:
+    """Train a task classifier: a linear head over a frozen from-scratch encoder.
+
+    The answers come from the data when the source had an answer column, and
+    from the shipped keyword rules otherwise. The run is deliberately not
+    promotable: promotion looks for an eval report on a frozen retrieval set,
+    and a classifier's held-out split is not one.
+    """
+    from internal_ai.training.classifier import ClassifierConfig
+
+    require(platform.audit, actor, Action.TRAIN_MODEL, dataset_id)
+    dataset = platform.store.get_dataset(dataset_id)
+    if dataset is None:
+        raise KeyError(f"unknown dataset: {dataset_id}")
+    if not dataset.released:
+        raise deny(
+            platform.audit,
+            actor,
+            "train_classifier",
+            dataset_id,
+            "training uses released datasets only; release this dataset first",
+        )
+    token_file = tokenizer_path(platform, dataset_id)
+    if token_file is None:
+        raise ValueError("train a tokenizer for this dataset first")
+    encoder = platform.store.get_model(encoder_model_id)
+    if encoder is None:
+        raise KeyError(f"unknown model: {encoder_model_id}")
+    encoder_path = Path(encoder.path)
+    if not encoder_path.exists():
+        raise ValueError("the encoder this classifier sits on is missing")
+    if not 1 <= epochs <= 500:
+        raise ValueError("choose between 1 and 500 training epochs")
+    if cost_cap_usd <= 0:
+        raise ValueError("a training run needs a positive cost cap")
+    subject = f"{dataset_id}:{name}"
+    if cost_cap_usd > TRAINING_COST_GATE_USD:
+        _require_gate(platform, actor, GateType.TRAINING_RUN_COST, subject, "train_classifier")
+    config = ClassifierConfig(name=name, epochs=epochs, cost_cap_usd=cost_cap_usd)
+
+    def work() -> dict[str, Any]:
+        from internal_ai.data.tokenizer import Tokenizer
+        from internal_ai.workflows import train_classifier_model
+
+        outcome = train_classifier_model(
+            platform,
+            dataset_id,
+            encoder_path,
+            Tokenizer.load(token_file),
+            config,
+            actor=TRAINING_AGENT,
+        )
+        result = outcome.to_dict()
+        result.update(
+            {
+                "dataset_id": dataset_id,
+                "name": name,
+                "encoder_model_id": encoder_model_id,
+                "tokenizer_path": str(token_file),
+                "label_summary": label_summary(platform, dataset_id),
+            }
+        )
+        return result
+
+    return runner.submit(
+        actor,
+        "train_classifier",
+        f"Train classifier {name} on {dataset.name} v{dataset.version}",
+        {
+            "dataset_id": dataset_id,
+            "encoder_model_id": encoder_model_id,
+            "name": name,
+            "epochs": epochs,
+        },
+        work,
+        agent=TRAINING_AGENT,
+        cost_cap_usd=cost_cap_usd,
+    )
+
+
+def evaluate_classifier(
+    platform: Platform, actor: Actor, runner: JobRunner, job_id: str, split: str = "test"
+) -> dict[str, Any]:
+    """Score a classifier on a held-out split against the majority class."""
+    require(platform.audit, actor, Action.EVALUATE_MODEL, job_id)
+    job = runner.get(job_id)
+    if job is None or job["kind"] != "train_classifier":
+        raise KeyError(f"unknown classifier run: {job_id}")
+    if job["state"] != "succeeded":
+        raise ValueError("only a completed classifier run can be evaluated")
+    if split not in ("train", "validation", "test"):
+        raise ValueError("the split is train, validation or test")
+    result = job["result"]
+    model_path = Path(result["model_path"])
+    token_file = Path(result["tokenizer_path"])
+    dataset_id = result["dataset_id"]
+
+    def work() -> dict[str, Any]:
+        from internal_ai.data.tokenizer import Tokenizer
+        from internal_ai.workflows import evaluate_classifier_model
+
+        report = evaluate_classifier_model(
+            platform,
+            model_path,
+            Tokenizer.load(token_file),
+            dataset_id,
+            split=split,
+            actor=EVAL_AGENT,
+        )
+        return {"run_id": result["run_id"], "name": result["name"], **report}
+
+    return runner.submit(
+        actor,
+        "evaluate_classifier",
+        f"Evaluate classifier {result['name']} on the {split} split",
+        {
+            "job_id": job_id,
+            "run_id": result["run_id"],
+            "dataset_id": dataset_id,
+            "split": split,
+        },
         work,
         agent=EVAL_AGENT,
     )

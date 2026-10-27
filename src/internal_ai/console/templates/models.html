@@ -27,6 +27,64 @@
 </form>
 {% endif %}
 
+{% if can('train_model') %}
+<form method="post" action="/console/models/classifier" class="stack card">
+  {{ m.csrf_field() }}
+  <h2>Train a classifier</h2>
+  <p class="card-sub">A task classifier is a small head over an encoder you already trained. It learns the answers your data carries when the source had an answer column, and falls back to the built-in routing rules otherwise. It is not promotable: promotion asks for an evaluation on a frozen retrieval set, and a classifier's held-out split is not one.</p>
+  {% if datasets and encoders %}
+  <label>Released dataset
+    <select name="dataset_id" required>
+      {% for row in datasets %}<option value="{{ row.dataset.id }}" {{ '' if row.tokenizer else 'disabled' }}>{{ row.dataset.name }} v{{ row.dataset.version }} · {{ 'you supplied the answers' if row.labels else 'built-in routing rules' }}{{ '' if row.tokenizer else ' (train a tokenizer first)' }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Encoder it sits on
+    <select name="encoder_model_id" required>
+      {% for model in encoders %}<option value="{{ model.id }}">{{ model.name }} v{{ model.version }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Classifier name <input type="text" name="name" value="router-v1" required pattern="[A-Za-z0-9_.-]+"></label>
+  <label>Training epochs <input type="number" name="epochs" value="40" min="1" max="500"></label>
+  <label>Cost cap (USD) <input type="number" name="cost_cap_usd" value="2" min="0.01" step="0.01"></label>
+  <button type="submit" class="primary">Start classifier</button>
+  {% elif not datasets %}
+  <p class="muted">Release a dataset first.</p>
+  {% else %}
+  <p class="muted">A classifier sits on a trained encoder. Train an embedding model above, then come back.</p>
+  {% endif %}
+</form>
+{% endif %}
+
+<section class="card">
+  <h2>Classifier runs</h2>
+  <table>
+    <thead><tr><th>Run</th><th>State</th><th>Result</th><th></th></tr></thead>
+    <tbody>
+    {% for row in classifiers %}
+    {% set run = row.run %}
+    <tr>
+      <td><a href="/console/jobs/{{ run.id }}">{{ run.title }}</a></td>
+      <td>{{ m.status_badge(run.state) }}</td>
+      <td>
+        {% if run.result.status %}{{ run.result.status }}, accuracy {{ "%.3f" % (run.result.accuracy or 0) }} vs majority {{ "%.3f" % (run.result.baseline_accuracy or 0) }}
+        {% if run.result.label_summary %}<br><span class="muted small">answers: {{ run.result.label_summary.from_data }} from your data, {{ run.result.label_summary.from_rules }} from the built-in rules</span>{% endif %}
+        {% endif %}
+        {% if row.report %}<br>{{ m.status_badge("passed" if row.report.passed else "failed") }} accuracy {{ "%.3f" % row.report.accuracy }} vs majority {{ "%.3f" % row.report.baseline_accuracy }}<br><span class="muted small">{{ row.report.notes }}</span>{% endif %}
+      </td>
+      <td>
+        {% if run.state == "succeeded" and can('evaluate_model') %}
+        <form method="post" action="/console/models/classifier/{{ run.id }}/evaluate" class="inline-form">{{ m.csrf_field() }}
+          <select name="split"><option value="test">test split</option><option value="validation">validation split</option></select>
+          <button type="submit">Evaluate</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}<tr><td colspan="4" class="muted">No classifier runs yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+
 <section class="card">
   <h2>Training runs</h2>
   <table>

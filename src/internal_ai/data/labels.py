@@ -44,13 +44,20 @@ class LabelSet:
         return matches[0][1]
 
     def apply(self, records: list[Record]) -> list[dict[str, Any]]:
+        """Label each record, preferring the answer the record itself carries.
+
+        A row read from a table with an answer column already has its label. The
+        rules stay the fallback for everything else, and stay the baseline the
+        learned model has to beat.
+        """
         labelled: list[dict[str, Any]] = []
         for record in records:
+            given = str(record.meta.get("label") or "").strip()
             labelled.append(
                 {
                     "record_key": record.record_key,
                     "text": record.text,
-                    "label": self.label_for(record.text),
+                    "label": given or self.label_for(record.text),
                     "source_id": record.source_id,
                 }
             )

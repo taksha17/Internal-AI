@@ -4,10 +4,33 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+# Row-oriented files: one record per row, so a row can carry its own answer.
+ROW_SUFFIXES = frozenset({".csv", ".tsv", ".jsonl", ".ndjson"})
+
+# Which column holds the writing, in order of preference. A real export rarely
+# has one called "text", so what it did pick is reported back to the person.
+TEXT_HINTS = (
+    "text",
+    "body",
+    "content",
+    "message",
+    "description",
+    "detail",
+    "summary",
+    "subject",
+    "note",
+    "question",
+    "answer",
+    "title",
+)
+
+SAMPLE_ROWS = 50
 
 EXCLUDED_SENSITIVITY = (
     "regulated",
@@ -58,6 +81,7 @@ class Source:
     approved: bool = False
     owner: str = ""
     text_field: str | None = None
+    label_field: str | None = None
 
     def content_hash(self) -> str:
         digest = hashlib.sha256()
@@ -89,6 +113,58 @@ def _read_text(path: Path) -> list[str]:
     ]
 
 
+def _sample_rows(suffix: str, content: str) -> list[dict[str, Any]]:
+    """The first rows of a table, enough to see its columns without reading it all."""
+    if suffix in (".jsonl", ".ndjson"):
+        rows: list[dict[str, Any]] = []
+        for line in content.splitlines():
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(item, dict):
+                rows.append(item)
+            if len(rows) >= SAMPLE_ROWS:
+                break
+        return rows
+    if suffix in (".csv", ".tsv"):
+        reader = csv.DictReader(io.StringIO(content), delimiter="\t" if suffix == ".tsv" else ",")
+        return [row for _, row in zip(range(SAMPLE_ROWS), reader, strict=False)]
+    return []
+
+
+def _longest_column(rows: list[dict[str, Any]], exclude: str) -> str:
+    """The column carrying the most writing, when no name says which one it is."""
+    names = [name for name in rows[0] if name and name != exclude]
+    if not names:
+        return ""
+    totals = {name: sum(len(str(row.get(name) or "")) for row in rows) for name in names}
+    best = max(sorted(names), key=lambda name: totals[name])
+    return best if totals[best] else ""
+
+
+def choose_columns(suffix: str, content: str) -> tuple[str, str]:
+    """Which column is the text and which one holds the answer.
+
+    Guessing wrong either drops every row or teaches the model the wrong field,
+    so the choice is returned for the caller to show rather than kept quiet. The
+    answer column is only claimed when its name says it is one.
+    """
+    from internal_ai.data.suggest import LABEL_HINTS
+
+    rows = _sample_rows(suffix, content)
+    if not rows:
+        return "", ""
+    actual = {str(name).lower(): str(name) for name in rows[0] if name}
+    label = next((actual[hint] for hint in sorted(LABEL_HINTS) if hint in actual), "")
+    text = next(
+        (actual[hint] for hint in TEXT_HINTS if hint in actual and actual[hint] != label), ""
+    )
+    return (text or _longest_column(rows, exclude=label), label)
+
+
 def _bounded_acl(row: dict[str, Any], source: Source) -> list[str]:
     """A row may narrow the source ACL. It may not grant a group the source did not."""
     source_acl = [str(item) for item in source.acl]
@@ -102,16 +178,25 @@ def _bounded_acl(row: dict[str, Any], source: Source) -> list[str]:
     return allowed or source_acl
 
 
+def _label_meta(row: dict[str, Any], source: Source) -> dict[str, str]:
+    """The answer this row carries, when the source names the column holding it."""
+    if not source.label_field:
+        return {}
+    value = str(row.get(source.label_field) or "").strip()
+    return {"label": value} if value else {}
+
+
 def ingest_source(source: Source) -> list[Record]:
     """Read a source into records. Unapproved sources yield nothing."""
     if not source.approved:
         return []
     suffix = source.path.suffix.lower()
+    text_field = source.text_field or "text"
     records: list[Record] = []
     if suffix in (".jsonl", ".ndjson"):
         rows = _read_jsonl(source.path)
         for index, row in enumerate(rows):
-            text = str(row.get(source.text_field or "text", "")).strip()
+            text = str(row.get(text_field, "")).strip()
             if not text:
                 continue
             records.append(
@@ -122,13 +207,19 @@ def ingest_source(source: Source) -> list[Record]:
                     source_id=source.source_id,
                     sensitivity=str(row.get("sensitivity", source.sensitivity)),
                     acl=_bounded_acl(row, source),
-                    meta={"format": "jsonl", "extra_keys": sorted(k for k in row if k != "text")},
+                    meta={
+                        "format": "jsonl",
+                        "extra_keys": sorted(
+                            k for k in row if k not in (text_field, source.label_field)
+                        ),
+                        **_label_meta(row, source),
+                    },
                 )
             )
     elif suffix == ".csv":
         rows = _read_csv(source.path)
         for index, row in enumerate(rows):
-            text = str(row.get(source.text_field or "text", "")).strip()
+            text = str(row.get(text_field, "")).strip()
             if not text:
                 continue
             records.append(
@@ -139,7 +230,7 @@ def ingest_source(source: Source) -> list[Record]:
                     source_id=source.source_id,
                     sensitivity=str(row.get("sensitivity", source.sensitivity)),
                     acl=_bounded_acl(row, source),
-                    meta={"format": "csv"},
+                    meta={"format": "csv", **_label_meta(row, source)},
                 )
             )
     else:

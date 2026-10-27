@@ -1101,13 +1101,28 @@ def mount_console(
                 }
             )
         datasets = [item for item in platform.store.list_datasets() if item.released]
+        evaluated = {
+            job["params"].get("run_id"): job["result"]
+            for job in get_jobs().list(limit=50, kind="evaluate_classifier")
+            if job["state"] == "succeeded" and job["params"].get("run_id")
+        }
+        classifiers = [
+            {"run": job, "report": evaluated.get(job["result"].get("run_id"))}
+            for job in get_jobs().list(limit=50, kind="train_classifier")
+        ]
         return render(
             ctx,
             "models.html",
             datasets=[
-                {"dataset": item, "tokenizer": build.tokenizer_path(platform, item.id) is not None}
+                {
+                    "dataset": item,
+                    "tokenizer": build.tokenizer_path(platform, item.id) is not None,
+                    "labels": (item.lineage or {}).get("labels") or {},
+                }
                 for item in datasets
             ],
+            classifiers=classifiers,
+            encoders=build.classifier_encoders(platform),
             runs=runs,
             models=models,
             frozen_sets=[item for item in platform.store.list_eval_sets() if item.frozen],
@@ -1132,6 +1147,45 @@ def mount_console(
                 pair_mode=form.get("pair_mode", "paraphrase"),
             ),
             "training started",
+            job_link,
+        )
+
+    @app.post("/console/models/classifier", include_in_schema=False)
+    async def classifier_train(request: Request) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        return await act(
+            ctx,
+            "/console/models",
+            lambda: build.train_classifier(
+                ctx.platform,
+                ctx.actor,
+                get_jobs(),
+                form.get("dataset_id", ""),
+                form.get("encoder_model_id", ""),
+                name=form.get("name", "") or "router-v1",
+                epochs=_number(form.get("epochs", ""), int, 40),
+                cost_cap_usd=_number(form.get("cost_cap_usd", ""), float, 2.0),
+            ),
+            "classifier training started",
+            job_link,
+        )
+
+    @app.post("/console/models/classifier/{job_id}/evaluate", include_in_schema=False)
+    async def classifier_evaluate(request: Request, job_id: str) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        return await act(
+            ctx,
+            "/console/models",
+            lambda: build.evaluate_classifier(
+                ctx.platform,
+                ctx.actor,
+                get_jobs(),
+                job_id,
+                split=form.get("split", "") or "test",
+            ),
+            "classifier evaluation started",
             job_link,
         )
 
@@ -1461,6 +1515,6 @@ def _next_step(job: dict[str, Any]) -> tuple[str, str] | None:
         )
     if kind == "train_tokenizer":
         return ("Back to the dataset", f"/console/datasets/{job['params'].get('dataset_id', '')}")
-    if kind in ("train_model", "evaluate_model"):
+    if kind in ("train_model", "evaluate_model", "train_classifier", "evaluate_classifier"):
         return ("Go to models", "/console/models")
     return None
