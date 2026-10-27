@@ -31,3 +31,6 @@ var_*/
 # OS
 .DS_Store
 Thumbs.db
+
+# Visual brainstorm mockups (local preview server state)
+.superpowers/

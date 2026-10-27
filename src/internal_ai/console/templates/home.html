@@ -1,103 +1,152 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
 {% block title %}Overview{% endblock %}
+{% block crumb %}Overview{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
     <p class="eyebrow">Overview</p>
-    <h1>Welcome, {{ actor.name }}</h1>
-    <p class="lede">Your private model engineering workspace.</p>
+    <h1>Mission control for <em class="pop">private</em> models</h1>
+    <p class="lede">Everything a model learns comes from approved company data, moves through human gates, and is written to an append-only audit log.</p>
   </div>
-  {% if inbox %}<a class="button primary" href="/console/approvals">Review {{ inbox }} approval{{ "s" if inbox != 1 }}</a>{% endif %}
+  <div class="head-actions">
+    {% if inbox %}<a class="button primary" href="/console/approvals">Review {{ inbox }} approval{{ "s" if inbox != 1 }}</a>{% endif %}
+  </div>
 </div>
 
-<div class="tiles">
-  <div class="tile">
-    <p class="tile-label">Active jobs</p>
-    <p class="tile-value">{{ active_jobs }}</p>
-    <p class="tile-foot {{ 'is-live' if active_jobs else 'is-ok' }}"><span class="dot"></span>{{ "in progress" if active_jobs else "queue is clear" }}</p>
+{% set ns = namespace(week=None) %}
+{% for item in budget %}{% if "week" in item.scope %}{% set ns.week = item %}{% endif %}{% endfor %}
+
+<div class="stat-grid">
+  <div class="stat">
+    <div class="stat-top">
+      <p class="stat-label">Active jobs</p>
+      <span class="stat-icon">{{ m.icon("activity") }}</span>
+    </div>
+    <p class="stat-figure">{{ active_jobs }}</p>
+    <div class="stat-meta">
+      <span>{{ "in progress" if active_jobs else "queue is clear" }}</span>
+      <svg class="spark" viewBox="0 0 80 28" aria-hidden="true"><polyline points="1,22 11,20 21,21 31,14 41,16 51,10 61,13 71,6"></polyline></svg>
+    </div>
   </div>
-  <div class="tile">
-    <p class="tile-label">Pending approvals</p>
-    <p class="tile-value">{{ inbox }}</p>
-    <p class="tile-foot {{ 'is-warn' if inbox else 'is-ok' }}"><span class="dot"></span>{{ "needs your review" if inbox else "nothing waiting" }}</p>
+  <div class="stat clay">
+    <div class="stat-top">
+      <p class="stat-label">Pending approvals</p>
+      <span class="stat-icon">{{ m.icon("check-circle") }}</span>
+    </div>
+    <p class="stat-figure">{{ inbox }}</p>
+    <div class="stat-meta">
+      <span>{{ "needs your review" if inbox else "nothing waiting" }}</span>
+      <svg class="spark clay" viewBox="0 0 80 28" aria-hidden="true"><polyline points="1,20 11,18 21,19 31,15 41,16 51,12 61,13 71,9"></polyline></svg>
+    </div>
   </div>
-  <div class="tile">
-    <p class="tile-label">Open alerts</p>
-    <p class="tile-value">{{ alerts | length }}</p>
-    <p class="tile-foot {{ 'is-bad' if alerts else 'is-ok' }}"><span class="dot"></span>{{ "unacknowledged" if alerts else "all clear" }}</p>
+  <div class="stat">
+    <div class="stat-top">
+      <p class="stat-label">Weekly spend</p>
+      <span class="stat-icon">{{ m.icon("gauge") }}</span>
+    </div>
+    {% if ns.week %}
+    <p class="stat-figure">${{ "%.0f" % ns.week.spent_usd }}<small> of ${{ "%.0f" % ns.week.limit_usd }}</small></p>
+    {% else %}
+    <p class="stat-figure">—</p>
+    {% endif %}
+    <div class="stat-meta">
+      <span>{{ "of the weekly cap" if ns.week else "no weekly cap set" }}</span>
+      <svg class="spark" viewBox="0 0 80 28" aria-hidden="true"><polyline points="1,23 11,22 21,22 31,20 41,19 51,18 61,17 71,16"></polyline></svg>
+    </div>
   </div>
-  <div class="tile">
-    <p class="tile-label">Steps complete</p>
-    <p class="tile-value">{{ steps_done }}<span class="of"> / {{ step_total }}</span></p>
-    <p class="tile-foot {{ 'is-ok' if steps_done == step_total else 'is-live' }}"><span class="dot"></span>{{ "the path is done" if steps_done == step_total else "step " ~ (steps_done + 1) ~ " is next" }}</p>
+  <div class="stat clay">
+    <div class="stat-top">
+      <p class="stat-label">Steps complete</p>
+      <span class="stat-icon">{{ m.icon("map") }}</span>
+    </div>
+    <p class="stat-figure">{{ steps_done }}<small> / {{ step_total }}</small></p>
+    <div class="stat-meta">
+      <span>{{ "the path is done" if steps_done == step_total else "step " ~ (steps_done + 1) ~ " is next" }}</span>
+      <svg class="spark clay" viewBox="0 0 80 28" aria-hidden="true"><polyline points="1,20 11,18 21,15 31,13 41,12 51,11 61,10 71,9"></polyline></svg>
+    </div>
   </div>
+</div>
+
+<div class="grid-2">
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h2>Build a model, step by step</h2>
+        <p class="card-sub">You are here: <strong>{{ current }}</strong>.</p>
+      </div>
+      <span class="badge {{ 'badge-approved' if steps_done == step_total else 'badge-pending' }}">{{ steps_done }} of {{ step_total }}</span>
+    </div>
+    <progress class="meter" value="{{ steps_done }}" max="{{ step_total }}" aria-label="Steps complete"></progress>
+    <p class="muted small">Each step unlocks the next. Steps that need approval wait for someone other than the person who asked.</p>
+    <ol class="steps">
+      {% for label, href, done in steps %}
+      <li class="{{ 'done' if done else '' }}"><a href="{{ href }}">{{ label }}</a> {% if done %}{{ m.status_badge("approved") }}{% endif %}</li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h2>Budget</h2>
+        <p class="card-sub">Spend stops before it surprises anyone.</p>
+      </div>
+      <a class="quiet-link" href="/console/budget">All scopes {{ m.icon("arrow-right") }}</a>
+    </div>
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>Scope</th><th class="num">Spent</th><th class="num">Limit</th><th class="num">Left</th></tr></thead>
+        <tbody>
+        {% for item in budget %}
+        <tr class="{{ 'warn' if item.exceeded else '' }}"><td>{{ item.scope }}:{{ item.key }}</td><td class="num">${{ "%.2f" % item.spent_usd }}</td><td class="num">${{ "%.2f" % item.limit_usd }}</td><td class="num">${{ "%.2f" % item.remaining_usd }}</td></tr>
+        {% else %}
+        <tr><td colspan="4" class="muted">No spend recorded yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
 </div>
 
 <section class="card">
   <div class="card-head">
     <div>
-      <h2>Build a model, step by step</h2>
-      <p class="muted">You are here: <strong>{{ current }}</strong>.</p>
+      <h2>Needs attention</h2>
+      <p class="card-sub">Approvals waiting on you, and open alerts. Nothing here decides itself.</p>
     </div>
-    <span class="badge {{ 'badge-approved' if steps_done == step_total else 'badge-pending' }}">{{ steps_done }} of {{ step_total }}</span>
+    {% if inbox or alerts %}<span class="badge badge-failed">{{ inbox + (alerts | length) }} open</span>{% endif %}
   </div>
-  <progress class="meter" value="{{ steps_done }}" max="{{ step_total }}" aria-label="Steps complete"></progress>
-  <p class="muted small">Each step unlocks the next. Steps that need approval wait for someone other than the person who asked.</p>
-  <ol class="steps">
-    {% for label, href, done in steps %}
-    <li class="{{ 'done' if done else '' }}"><a href="{{ href }}">{{ label }}</a> {% if done %}{{ m.status_badge("approved") }}{% endif %}</li>
-    {% endfor %}
-  </ol>
-</section>
-
-<div class="grid">
-  <section class="card">
-    <div class="card-head">
-      <h2>Budget</h2>
-      <a class="quiet-link" href="/console/budget">All scopes {{ m.icon("arrow-right") }}</a>
-    </div>
-    <table>
-      <thead><tr><th>Scope</th><th class="num">Spent</th><th class="num">Limit</th><th class="num">Left</th></tr></thead>
+  {% if inbox or alerts %}
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr><th>Item</th><th>Type</th><th>Waiting on</th></tr></thead>
       <tbody>
-      {% for item in budget %}
-      <tr class="{{ 'warn' if item.exceeded else '' }}"><td>{{ item.scope }}:{{ item.key }}</td><td class="num">${{ "%.2f" % item.spent_usd }}</td><td class="num">${{ "%.2f" % item.limit_usd }}</td><td class="num">${{ "%.2f" % item.remaining_usd }}</td></tr>
-      {% else %}
-      <tr><td colspan="4" class="muted">No spend recorded yet.</td></tr>
-      {% endfor %}
+        {% if inbox %}
+        <tr><td class="row-title"><a href="/console/approvals">{{ inbox }} gate{{ "s" if inbox != 1 }} waiting on your decision</a><br><span class="row-sub">A gate is a human decision; the requester cannot decide their own.</span></td><td><span class="badge badge-pending">gate</span></td><td>you</td></tr>
+        {% endif %}
+        {% for alert in alerts %}
+        <tr><td class="row-title">{{ m.status_badge(alert.severity) }} {{ alert.message }}</td><td><span class="badge badge-failed">alert</span></td><td><form method="post" action="/console/alerts/{{ alert.id }}/acknowledge" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="link">Acknowledge</button></form></td></tr>
+        {% endfor %}
       </tbody>
     </table>
-  </section>
-  <section class="card">
-    <div class="card-head">
-      <h2>Recent jobs</h2>
-      <a class="quiet-link" href="/console/jobs">All jobs {{ m.icon("arrow-right") }}</a>
-    </div>
-    {% if jobs %}
-    <ul class="plain">
-      {% for job in jobs[:6] %}<li><a href="/console/jobs/{{ job.id }}">{{ job.title }}</a> {{ m.status_badge(job.state) }}</li>{% endfor %}
-    </ul>
-    {% else %}
-    <p class="empty">{{ m.icon("inbox") }} No jobs yet.</p>
-    {% endif %}
-  </section>
-</div>
+  </div>
+  {% else %}
+  <p class="empty">{{ m.icon("shield") }} No open alerts. The queue is clear.</p>
+  {% endif %}
+</section>
 
 <section class="card">
   <div class="card-head">
-    <h2>Alerts</h2>
-    {% if alerts %}<span class="badge badge-failed">{{ alerts | length }} open</span>{% endif %}
+    <div><h2>Recent jobs</h2></div>
+    <a class="quiet-link" href="/console/jobs">All jobs {{ m.icon("arrow-right") }}</a>
   </div>
-  {% if alerts %}
+  {% if jobs %}
   <ul class="plain">
-    {% for alert in alerts %}
-    <li>{{ m.status_badge(alert.severity) }} {{ alert.message }}<span class="spacer"></span>
-      <form method="post" action="/console/alerts/{{ alert.id }}/acknowledge" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="link">Acknowledge</button></form>
-    </li>
-    {% endfor %}
+    {% for job in jobs[:6] %}<li><a href="/console/jobs/{{ job.id }}">{{ job.title }}</a> {{ m.status_badge(job.state) }}</li>{% endfor %}
   </ul>
   {% else %}
-  <p class="empty">{{ m.icon("shield") }} No open alerts.</p>
+  <p class="empty">{{ m.icon("inbox") }} No jobs yet.</p>
   {% endif %}
 </section>
 {% endblock %}

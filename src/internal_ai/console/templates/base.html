@@ -14,48 +14,64 @@
 {{ m.sprite() }}
 {% if actor %}
 {% set nav_icons = {"Home": "home", "Approvals": "check-circle", "Data": "database", "Datasets": "layers", "Eval sets": "clipboard", "Models": "cube", "Jobs": "activity", "Ask": "chat", "Plan": "map", "Audit": "list", "Admin": "users"} %}
+{% set nav_groups = {"Workspace": ["Home", "Data", "Datasets", "Eval sets", "Models"], "Runs": ["Jobs", "Ask", "Plan"], "Governance": ["Approvals", "Audit", "Admin"]} %}
+{% set nav_by_label = dict(nav) %}
 <aside class="rail">
   <a class="brand" href="/console/home">
-    <img class="brand-mark" src="/console/static/brand/internal-ai-icon.svg" alt="" width="28" height="28">
-    <span>internal<span class="brand-ai">-ai</span></span>
+    <img class="brand-mark" src="/console/static/brand/internal-ai-icon.svg" alt="" width="72" height="72">
+    <span><span>internal<span class="brand-ai">-ai</span></span><span class="brand-sub">PRIVATE BY DESIGN</span></span>
   </a>
   <nav class="rail-nav" aria-label="Console">
-    {% for label, href in nav %}
-    {% set here = path.startswith(href) %}
-    <a href="{{ href }}" class="{{ 'active' if here else '' }}"{% if here %} aria-current="page"{% endif %}>{{ m.icon(nav_icons.get(label, "home")) }}<span class="nav-label">{{ label }}</span>{% if label == "Approvals" and inbox %}<span class="count">{{ inbox }}</span>{% endif %}</a>
+    {% for group, labels in nav_groups.items() %}
+    <div class="nav-group">
+      <h2 class="nav-title">{{ group }}</h2>
+      {% for label in labels %}
+      {% set href = nav_by_label[label] %}
+      {% set here = path.startswith(href) %}
+      <a href="{{ href }}" class="{{ 'active' if here else '' }}"{% if here %} aria-current="page"{% endif %}>{{ m.icon(nav_icons.get(label, "home")) }}<span class="nav-label">{{ label }}</span>{% if label == "Approvals" and inbox %}<span class="count">{{ inbox }}</span>{% endif %}</a>
+      {% endfor %}
+    </div>
     {% endfor %}
   </nav>
-  <div class="who">
-    <span class="avatar" aria-hidden="true">{{ actor.name.split()[:2] | map("first") | join("") | upper }}</span>
-    <span class="who-text">
-      <a href="/console/account">{{ actor.name }}</a>
-      <span class="roles">{{ actor.roles | sort | join(", ") }}</span>
-    </span>
-    <form method="post" action="/console/signout" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="link">Sign out</button></form>
+  <div class="side-foot">
+    <div class="side-card">
+      <strong>Kill switch ready</strong>
+      Engaging stops new jobs and spend at once. Releasing needs a different person.
+    </div>
+    <div class="who">
+      <span class="avatar" aria-hidden="true">{{ actor.name.split()[:2] | map("first") | join("") | upper }}</span>
+      <span class="who-text">
+        <a href="/console/account">{{ actor.name }}</a>
+        <span class="roles">{{ actor.roles | sort | join(", ") }}</span>
+      </span>
+      <form method="post" action="/console/signout" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="link">Sign out</button></form>
+    </div>
   </div>
 </aside>
 {% endif %}
 <div class="column">
 {% if actor %}
-<section class="killbar {{ 'engaged' if kill.engaged else '' }}">
-  {% if kill.engaged %}
-  <strong>Kill switch engaged.</strong> No new jobs or spend.
-  {% if kill.reason %}Reason: {{ kill.reason }}.{% endif %}
-  {% if kill.engaged_by %}Engaged by {{ kill.engaged_by }}; a different person must release it.{% endif %}
-  <form method="post" action="/console/kill-switch" class="inline-form">
-    {{ m.csrf_field() }}<input type="hidden" name="back" value="{{ path }}">
-    <input type="text" name="reason" placeholder="Why it is safe to resume" required maxlength="300">
-    <button type="submit" class="ok">Release</button>
-  </form>
-  {% else %}
-  <span class="kill-note">{{ m.icon("shield") }} Something wrong? Stop all jobs and spend now.</span>
-  <form method="post" action="/console/kill-switch" class="inline-form">
-    {{ m.csrf_field() }}<input type="hidden" name="back" value="{{ path }}"><input type="hidden" name="engage" value="1">
-    <input type="text" name="reason" placeholder="Reason (required)" required maxlength="300">
-    <button type="submit" class="danger">Engage kill switch</button>
-  </form>
-  {% endif %}
-</section>
+<header class="topbar">
+  <p class="crumbs">Console <span aria-hidden="true">/</span> <strong>{% block crumb %}Overview{% endblock %}</strong></p>
+  <div class="top-actions">
+    <span class="env-pill"><span class="env-dot" aria-hidden="true"></span>Local · no external calls</span>
+    {% if kill.engaged %}
+    <form method="post" action="/console/kill-switch" class="kill is-engaged">
+      {{ m.csrf_field() }}<input type="hidden" name="back" value="{{ path }}">
+      <span class="kill-label">{{ m.icon("shield") }}<span>Engaged{% if kill.engaged_by %} by {{ kill.engaged_by }}{% endif %}</span></span>
+      <input type="text" name="reason" placeholder="Why it is safe to resume" required maxlength="300" aria-label="Release reason">
+      <button type="submit" class="ok">Release</button>
+    </form>
+    {% else %}
+    <form method="post" action="/console/kill-switch" class="kill">
+      {{ m.csrf_field() }}<input type="hidden" name="back" value="{{ path }}"><input type="hidden" name="engage" value="1">
+      <span class="kill-label">{{ m.icon("shield") }}<span>Kill switch</span></span>
+      <input type="text" name="reason" placeholder="Reason (required)" required maxlength="300" aria-label="Kill switch reason">
+      <button type="submit" class="danger">Engage</button>
+    </form>
+    {% endif %}
+  </div>
+</header>
 {% endif %}
 <main>
   {% for kind, text in flashes %}

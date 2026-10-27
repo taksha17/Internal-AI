@@ -9,31 +9,38 @@ one.
 ## Shape
 
 The console is one instrument, not a set of pages. A signed-in page is a pinned
-rail and one content column.
-
-- The rail is `16.5rem` wide, `position: sticky`, `height: 100vh`, on the one
-  charcoal `--rail` with a `--rail-line` hairline on its right. The brand block
-  is the shield at `30px` on a pale sage chip and the wordmark in HTML, above a
-  hairline. Each destination is a `2.35rem` row: a `1.05rem` stroke icon from
-  the sprite, the label, and the approvals count as a sage pill. The active row
-  is `--rail-active` with a `--rail-sage` icon, `aria-current="page"`, and the
-  same fill on hover so it does not flicker. The person sits at the bottom
-  behind a hairline: an initial disc, the name, the roles, and Sign out. The
-  rail does not change with the colour scheme; only the workspace does.
-- The content column holds the kill strip and then `main`, capped at `74rem`
-  and padded `2.75rem` by side.
+rail and one content column.- The rail is `18rem` wide, `position: sticky`, `height: 100vh`, on the one
+  charcoal `--rail` with a `--rail-line` hairline on its right and a faint
+  `--rail-active` glow at the top. The brand block is the shield at about
+  `30px` on a pale sage chip, the wordmark in HTML, and a muted
+  `PRIVATE BY DESIGN` micro-cap, above a hairline. Destinations sit in three
+  labelled groups — Workspace, Runs, Governance — each under a muted caps
+  heading. Each row is `2.45rem`: a `1.05rem` stroke icon from the sprite, the
+  label, and the approvals count as a sage pill. The active row is
+  `--rail-active` with a `2px` `--rail-sage` inset bar and icon,
+  `aria-current="page"`, and the same fill on hover so it does not flicker.
+  The bottom holds a sage-bordered readiness note, then the person: an initial
+  disc, the name, the roles, and Sign out. The rail does not change with the
+  colour scheme; only the workspace does.
+- The content column holds a sticky topbar and then `main`, capped at `76rem`
+  and padded `2rem` by side. The topbar blurs the paper behind it and carries
+  a breadcrumb, a `Local · no external calls` scope pill, and the kill switch
+  as a pill: status label, a reason field that grows to fill, and
+  Engage/Release. Idle it is card on hairline; engaged it is `--danger-fill`
+  with `--on-danger` text.
 - Below `900px` the grid collapses to one column. The rail becomes a top band:
-  mark on the first line with the person at the top right, then the same links
-  in one horizontally scrolling row (`overflow-x: auto`, scrollbar hidden),
-  each keeping its icon. No menu, no script, no destination hidden.
+  mark, then the grouped links in one horizontally scrolling row
+  (`overflow-x: auto`, scrollbar hidden), each keeping its icon, then the
+  person. No menu, no script, no destination hidden. The readiness note hides;
+  the topbar wraps.
 - On narrow widths `main` is itself horizontally scrollable, so a wide table
   scrolls inside the page instead of pushing the shell sideways.
 
-Sign-in is the one page without the rail: a `25rem` charcoal brand panel with
-the mark, "Private by design." and three product facts, beside an ivory form
-panel that holds the lockup and the form at `22.5rem`. Below `900px` the panel
-is dropped and the form stands alone. Both lockups stay in the markup and the
-scheme still chooses between them.
+Sign-in is the one page without the rail: a charcoal brand panel with the
+mark, "Private by design.", the product facts and three audited guarantees,
+beside an ivory form panel that holds the theme-aware lockup and the form at
+`22.5rem`. Below `900px` the panel is dropped and the form stands alone. Both
+lockups stay in the markup and the scheme still chooses between them.
 
 ## Colour
 
@@ -80,7 +87,14 @@ nav mark and the gate stripe. `--sage-fill` is a surface only — progress,
 the nav count pill, the done step — always under `--on-sage` ink. The lighter
 sage is not used as text anywhere: it measures 2.73 on ivory, 3.03 on white.
 The primary button is `--forest` with `--on-forest` ivory text; ok, reject and
-the kill bar keep their own reds and greens and never become sage.
+the kill control keep their own reds and greens and never become sage.
+
+A second accent, clay, keeps the workspace from reading all-teal. `--clay`
+(`#9a5b23` light, `#e0a35c` dark) carries eyebrows, the headline highlight,
+alternate stat icons and sparklines; `--clay-strong` inks text on it and
+`--clay-wash` washes behind it. Clay never marks governance: approvals,
+rejections, pending states, focus and the active nav stay on their own
+colours.
 
 States are tones, not colours. `.badge-*`, `.flash-*`, `.refusal` and `tr.warn`
 all read `--tone-*-bg` / `--tone-*-ink`, so there is one rule per tone instead of
@@ -103,9 +117,12 @@ sage wash.
 ## Type
 
 `Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`. No font is
-downloaded. Body `0.95rem`, line-height `1.55`.
+downloaded. Body `0.96rem`, line-height `1.58`, over a faint `--sage-wash`
+radial glow at the top of the paper.
 
-h1 `1.6rem`/630, h2 `1.05rem`/620, h3 `0.94rem`/620, letter-spacing `-0.022em`,
+h1 `1.6rem`/700, h2 `1.05rem`/620, h3 `0.94rem`/620, letter-spacing `-0.028em`,
+with the overview headline scaling to `2.9rem` under `.page-head`. A `.pop`
+word inside a headline renders in clay italics.
 with more air above than below; a heading at the top of a page, card or callout
 loses its top margin. A page's `h1` is followed by its muted subtitle, which
 keeps the `0.95rem` size and gains `1.7rem` of air below, so every page starts
@@ -115,11 +132,12 @@ tables, grids and step lists do not. Money and counts use
 
 ## Surfaces
 
-One radius (`--radius: 12px`), one hairline (`--line`) and one padding
-(`1.35rem 1.5rem`) are shared by `.card` and `.callout`, with `--lift` under
-both. `.flash` and `.refusal` take the radius and their own tint. Controls sit
-on a tighter `--control-radius: 9px` so a button inside a card is not as round
-as the card.
+One radius (`--radius: 14px`), one hairline (`--line`) and one padding
+(`1.35rem 1.4rem`) are shared by `.card` and `.callout`, with a two-layer
+`--lift` under both. `.flash` and `.refusal` take the radius and their own
+tint. Controls sit on a tighter `--control-radius: 10px` so a button inside a
+card is not as round as the card. Tables that need their own scroll region sit
+in `.table-wrap`, which carries the border so the table inside stays flush.
 
 - `.card-head` is the row a card opens with: title and subtitle left, a badge or
   a `.quiet-link` right, wrapping on narrow widths.
@@ -139,16 +157,16 @@ as the card.
 
 ## Header, tiles and icons
 
-`.page-head` is the page's opening row: an `.eyebrow` in `0.68rem` sage caps
+`.page-head` is the page's opening row: an `.eyebrow` in `0.7rem` clay caps
 over the `h1`, a muted `.lede` under it, and any primary action right-aligned
-and vertically bottom-aligned with the text. `home.html` uses one; every other
-page gets the same rhythm from `h1` plus its subtitle.
+and vertically bottom-aligned with the text. Every page uses one.
 
-`.tiles` is a responsive row of at most four `.tile`s. A tile is a card with a
-`0.72rem` uppercase muted label, the figure at `1.85rem`/630 in tabular
-figures, and a `.tile-foot` line that carries a `5px` dot and a short state:
-`is-ok`, `is-warn`, `is-bad` or `is-live`, read from the tone inks. The dot
-never carries the meaning alone; the words do.
+`.stat-grid` is a responsive row of four `.stat`s. A stat is a card with a
+`0.72rem` uppercase muted label beside a tinted icon tile, the figure at
+`2.15rem`/720 in tabular figures, and a `.stat-meta` line pairing a short
+state with a decorative aria-hidden sparkline. Alternate stats take the
+`.clay` treatment — clay icon wash, clay sparkline, clay radial glow. The
+glyph never carries the meaning alone; the words do.
 
 Icons are one inline sprite per page, `_macros.html:sprite()`, referenced with
 `<use href="#i-name">` through `icon()`. There is no icon font, no extra request
@@ -158,7 +176,7 @@ colour of whatever they sit in, including the rail.
 
 ## Controls
 
-`--control: 2.5rem`. Inputs, selects and buttons share that height, the radius,
+`--control: 2.65rem`. Inputs, selects and buttons share that height, the radius,
 the border and the focus treatment: a 2px sage outline at `2px` offset for
 links and buttons, and a sage border with a 3px `color-mix` sage halo for
 fields, which would otherwise show two rings. Control text is `0.92rem` at
@@ -166,9 +184,9 @@ line-height `1.4`; labels are `0.86rem`.
 
 A button in a stacked form is content width (`align-self: flex-start`); the
 sign-in button stretches. Inline forms keep fields on one line and wrap only
-when they must; the gate decision form puts its reason field on its own row
-below `860px`, with Approve and Reject together under it. Buttons in the kill
-strip are `1.95rem` and `0.8rem`, on a `7px` radius.
+when they must; the gate decision form (`.gate-actions`) grows its reason
+field to fill the row, with Approve and Reject beside it. Buttons in the kill
+pill are `2rem` and `0.8rem`, on the pill's own radius.
 
 Buttons are ink on card, primary is `--on-forest` ivory on `--forest` (with
 `--forest-hover` rather than a lighter tint), `ok` is `--on-ok` on `--ok`,
@@ -180,33 +198,32 @@ readable on charcoal. Disabled controls sit at `0.55` opacity.
 
 Anything that takes longer than a page load reports itself instead of holding the
 browser. Source inspection is the model: the Data page submits the path with
-htmx, the scan runs in a worker, and `.inspect-live` sits under the Inspect
-button with a 6px `progress` bar on `--line` filled with `--sage-fill`, a
-tabular percentage, and the counts (`2,640 of 6,000 files read`). It polls
-every 700ms, replaces itself in place, and swaps the finished `#inspect-result`
-out of band; the page never navigates, so the tab never shows a spinner. Starting
-a scan clears the previous result.
+htmx, the scan runs in a worker, and `.inspect-live` sits in a `--panel` card
+beside the form, with a 6px `progress` bar on `--line` filled with
+`--sage-fill`, a tabular percentage, and the counts (`2,640 of 6,000 files
+read`). It polls every 700ms, replaces itself in place, and swaps the finished
+`#inspect-result` out of band; the page never navigates, so the tab never shows
+a spinner. Starting a scan clears the previous result.
 
-## Kill strip
+## Kill control
 
-Every signed-in page carries it under the rail, above `main`, with the same
-fields and the same engage/release actions.
+Every signed-in page carries it in the topbar, with the same fields and the
+same engage/release actions.
 
-Idle it is `2.9rem`: `--panel`, a hairline underneath, muted `0.82rem` copy
-behind a sage shield icon, a `1.95rem` reason field that grows to fill, and a
+Idle it is a pill: card on a `--line-strong` hairline, muted `0.78rem` label
+behind a sage shield icon, a borderless reason field that grows to fill, and a
 `danger` button.
 
-Engaged it is the loud bar: `--danger-fill` with `--on-danger` text, extra
-vertical padding (`93px` on desktop when the copy and form both fit), and its
+Engaged it is the loud pill: `--danger-fill` with `--on-danger` text, and its
 controls inverted to a `color-mix` ivory outline so they read on the red.
 
 ## Home
 
 `home.html` is the reference page. It opens with `.page-head` — eyebrow,
-"Welcome, {name}", the lede, and a primary Review button when the inbox is not
-empty — then four tiles: active jobs, pending approvals for this person, open
-alerts, and steps complete. `active_jobs`, `steps_done` and `step_total` are
-counted in the route so the template holds no arithmetic.
+"Mission control for *private* models", the lede, and a primary Review button
+when the inbox is not empty — then four stats: active jobs, pending approvals
+for this person, weekly spend from the budget scopes, and steps complete. The
+weekly stat finds the `week` scope in the template; counts stay in the route.
 
 The step card carries the same `<ol>` and the same words. A `.meter` above it
 is a native `<progress>` at `6px` on `--line` filled with `--sage-fill`, which
@@ -216,13 +233,16 @@ a `counter` in a `1.7rem` circle with a hairline border and muted number, a
 a `.done` step that swaps the number for a check (`\2713`) on the sage fill
 while its link turns sage at weight 550.
 
-The budget table shows the shared table treatment with right-aligned tabular
-money and its own empty row; `.plain` carries recent jobs and alerts; and "No
-jobs yet." / "No open alerts." are `.empty` blocks with a muted icon.
+The budget card keeps the shared table with right-aligned tabular money; a
+"Needs attention" card pairs the inbox with unacknowledged alerts and their
+acknowledge forms; `.plain` carries recent jobs; and empty states are `.empty`
+blocks with a muted icon. Gate cards site-wide share one shape: a card with a
+1px `--sage-fill` stripe, title plus tone badge plus muted meta, and
+evidence in a `details` element.
 
 ## Motion
 
-One transition, `150ms ease`, on colour, background and border for links,
+One transition, `160ms ease`, on colour, background and border for links,
 buttons and fields. Nothing animates on load, and
 `prefers-reduced-motion: reduce` turns the transition off.
 

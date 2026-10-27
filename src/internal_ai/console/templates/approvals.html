@@ -1,20 +1,28 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
 {% block title %}Approvals{% endblock %}
+{% block crumb %}Approvals{% endblock %}
 {% block content %}
-<h1>Approvals</h1>
-<p class="muted">A gate is a human decision. Read the evidence, then approve or reject with a reason. You can never decide a gate you asked for.</p>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Governance</p>
+    <h1>Approvals</h1>
+    <p class="lede">A gate is a human decision. Read the evidence, then approve or reject with a reason. You can never decide a gate you asked for.</p>
+  </div>
+  <div class="head-actions">
+    <a href="/console/gates/new" class="button primary">Request a gate</a>
+  </div>
+</div>
 <p class="tabs">
   {% for value in ["pending", "approved", "rejected", "all"] %}
   <a href="/console/approvals?status={{ value }}" class="{{ 'active' if status == value else '' }}">{{ value }}</a>
   {% endfor %}
-  <a href="/console/gates/new" class="button">Request a gate</a>
 </p>
 {% for gate in gates %}
 <div class="card">
   {{ m.gate_box(gate) }}
   {% if gate.evidence %}
-  <details {{ 'open' if gate.can_decide else '' }}>
+  <details class="evidence" {{ 'open' if gate.can_decide else '' }}>
     <summary>Evidence</summary>
     <dl class="evidence">
       {% for key, value in gate.evidence %}<dt>{{ key }}</dt><dd><pre>{{ value }}</pre></dd>{% endfor %}
@@ -23,6 +31,6 @@
   {% endif %}
 </div>
 {% else %}
-<p class="muted">Nothing here.</p>
+<p class="empty">Nothing here.</p>
 {% endfor %}
 {% endblock %}

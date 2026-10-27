@@ -1,14 +1,28 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
 {% block title %}Data sources{% endblock %}
+{% block crumb %}Data sources{% endblock %}
 {% block content %}
-<h1>Data sources</h1>
-<p class="muted">A model learns only from internal data a data owner has approved. Model weight files, secrets, confidential paths and anything outside the approved folders are refused.</p>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Workspace</p>
+    <h1>Data sources</h1>
+    <p class="lede">A model learns only from internal data a data owner has approved. Weight files, secrets, and sensitive paths inside a folder are left out. Anything outside the approved folders is refused.</p>
+  </div>
+  {% if can("register_source") %}
+  <div class="head-actions">
+    <a href="#inspect" class="button primary">Inspect a path</a>
+  </div>
+  {% endif %}
+</div>
 <p class="muted small">Approved folders: {% for root in roots %}<code>{{ root }}</code> {% endfor %}</p>
 
-<div class="grid">
+<div class="grid" id="inspect">
   <section class="card stack">
-    <h2>1. Inspect a path</h2>
+    <div>
+      <h2>1. Inspect a path</h2>
+      <p class="card-sub">The scan reports itself instead of holding the browser. Starting a scan clears the previous result.</p>
+    </div>
     <form method="get" action="/console/sources" class="stack" hx-get="/console/sources/inspect" hx-target="#inspect-live" hx-swap="outerHTML">
       <label>Path to a file or folder <input type="text" name="inspect" value="{{ inspect_path }}" required></label>
       <button type="submit">Inspect</button>
@@ -18,8 +32,10 @@
   {% if can("register_source") %}
   <form method="post" action="/console/sources/sample" class="stack card">
     {{ m.csrf_field() }}
-    <h2>No data yet?</h2>
-    <p class="muted">Generate a synthetic support-ticket corpus to learn the flow.</p>
+    <div>
+      <h2>No data yet?</h2>
+      <p class="card-sub">Generate a synthetic support-ticket corpus to learn the flow.</p>
+    </div>
     <label>Records <input type="number" name="records" value="120" min="20" max="5000"></label>
     <button type="submit">Generate sample data</button>
   </form>
@@ -31,7 +47,8 @@
 </section>
 
 <h2>Registered sources</h2>
-<table>
+<div class="table-wrap">
+<table class="data">
   <thead><tr><th>Source</th><th>Approval</th><th>Readers</th><th>Dataset</th><th>Actions</th></tr></thead>
   <tbody>
   {% for source in sources %}
@@ -40,7 +57,7 @@
     <td>{% if source.withdrawn %}{{ m.status_badge("withdrawn") }}{% else %}{{ m.status_badge(source.gate_status) }}{% endif %}<br><a class="small" href="/console/approvals?status=all">{{ source.gate_id }}</a></td>
     <td>{{ source.acl | join(", ") }}</td>
     <td>{% if source.dataset_id %}<a href="/console/datasets/{{ source.dataset_id }}">{{ source.dataset_id }}</a>{% else %}<span class="muted">none</span>{% endif %}</td>
-    <td class="stack">
+    <td>
       {% if source.gate_status == "approved" and not source.withdrawn and can("build_dataset") %}
       <form method="post" action="/console/sources/{{ source.id }}/build">{{ m.csrf_field() }}<button type="submit" class="primary">Build dataset</button></form>
       {% endif %}
@@ -59,4 +76,5 @@
   {% else %}<tr><td colspan="5" class="muted">No sources yet. Inspect a path above.</td></tr>{% endfor %}
   </tbody>
 </table>
+</div>
 {% endblock %}

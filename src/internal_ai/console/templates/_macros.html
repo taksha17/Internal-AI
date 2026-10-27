@@ -20,6 +20,8 @@
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/></symbol>
   <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z"/></symbol>
   <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 19.5V5m0 14.5h16"/><path d="m7 15.5 4-5 3 3 4.5-7"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5.5 12.4 4.4 4.4 8.6-9.6"/></symbol>
 </svg>
 {% endmacro %}
 
@@ -29,11 +31,13 @@
 
 {% macro gate_box(gate) %}
 <div class="gate">
+  <div class="gate-stripe" aria-hidden="true"></div>
+  <div class="gate-body">
   <div class="gate-head">
-    <strong>{{ gate.title }}</strong> {{ status_badge(gate.status) }}
-    <span class="muted">{{ gate.gate_type }} · {{ gate.id }} · subject {{ gate.subject }}</span>
+    <strong class="gate-title">{{ gate.title }}</strong> {{ status_badge(gate.status) }}
+    <span class="gate-meta">{{ gate.gate_type }} · {{ gate.id }} · subject {{ gate.subject }}</span>
   </div>
-  <p class="muted">Requested by {{ gate.requested_by }} on {{ gate.created_at }}. Needs {{ gate.required_approvers | join(" or ") }}.</p>
+  <p class="card-sub">Requested by {{ gate.requested_by }} on {{ gate.created_at }}. Needs {{ gate.required_approvers | join(" or ") }}.</p>
   {% if gate.decisions %}
   <ul class="decisions">
     {% for decision in gate.decisions %}
@@ -42,14 +46,15 @@
   </ul>
   {% endif %}
   {% if gate.can_decide %}
-  <form method="post" action="/console/approvals/{{ gate.id }}" class="inline-form">
+  <form method="post" action="/console/approvals/{{ gate.id }}" class="gate-actions">
     {{ csrf_field() }}
-    <input type="text" name="note" placeholder="Your reason (required)" required maxlength="500">
+    <input type="text" name="note" placeholder="Your reason (required)" required maxlength="500" aria-label="Decision reason">
     <button type="submit" name="decision" value="approve" class="ok">Approve</button>
     <button type="submit" name="decision" value="reject" class="danger">Reject</button>
   </form>
   {% elif gate.status == "pending" %}
   <p class="muted">You cannot decide this gate: {{ gate.why_not }}.</p>
   {% endif %}
+  </div>
 </div>
 {% endmacro %}

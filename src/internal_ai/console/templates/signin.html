@@ -4,32 +4,33 @@
 {% block content %}
 <div class="signin">
   <aside class="signin-aside">
-    <div class="signin-brand">
-      <img class="brand-mark" src="/console/static/brand/internal-ai-icon.svg" alt="" width="28" height="28">
-      <span>internal<span class="brand-ai">-ai</span></span>
+    <a class="auth-brand" href="/console/signin">
+      <img class="brand-mark" src="/console/static/brand/internal-ai-icon.svg" alt="" width="72" height="72">
+      <span>internal<span class="thin">-ai</span></span>
+    </a>
+    <div class="auth-copy">
+      <h2>Private by design.</h2>
+      <p>Only company data, approved by a data owner. Gates are decided by a person, never by an agent. Every action is audited.</p>
     </div>
-    <p class="signin-tagline">Private by design.</p>
-    <ul class="signin-points">
-      <li>{{ m.icon("database") }}Only company data, approved by a data owner.</li>
-      <li>{{ m.icon("shield") }}Gates are decided by a person, never by an agent.</li>
-      <li>{{ m.icon("lock") }}Every action is written to an append-only audit log.</li>
+    <ul class="auth-points">
+      <li>{{ m.icon("database") }}Random initialisation, approved internal data, no pretrained weights.</li>
+      <li>{{ m.icon("check-circle") }}Human gates; the requester can never approve their own gate.</li>
+      <li>{{ m.icon("lock") }}Append-only audit log, chained by hash.</li>
     </ul>
   </aside>
   <div class="signin-panel">
-    <div class="signin-card">
-      <img class="mark mark-light" src="/console/static/brand/internal-ai-lockup.svg" alt="internal-ai, private by design" width="1200" height="360">
-      <img class="mark mark-dark" src="/console/static/brand/internal-ai-lockup-dark.svg" alt="internal-ai, private by design" width="1200" height="360">
+    <form class="auth-form" method="post" action="/console/signin">
+      <img class="lockup mark-light" src="/console/static/brand/internal-ai-lockup.svg" alt="internal-ai, private by design" width="1200" height="360">
+      <img class="lockup mark-dark" src="/console/static/brand/internal-ai-lockup-dark.svg" alt="internal-ai, private by design" width="1200" height="360">
       <h1>Sign in</h1>
-      <p class="muted">Every decision you make here is recorded under your name in the audit log.</p>
+      <p class="card-sub">Every decision you make here is recorded under your name in the audit log.</p>
       {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
-      <form method="post" action="/console/signin" class="stack">
-        <input type="hidden" name="csrf_token" value="{{ signin_csrf }}">
-        <label>Name or person id <input type="text" name="person" autocomplete="username" required autofocus></label>
-        <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
-        <button type="submit" class="primary">Sign in</button>
-      </form>
+      <input type="hidden" name="csrf_token" value="{{ signin_csrf }}">
+      <label>Name or person id <input type="text" name="person" autocomplete="username" required autofocus></label>
+      <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
+      <button type="submit" class="primary">Sign in</button>
       <p class="muted small">No account? An administrator creates one for you. The first account is created on the command line with <code>internal-ai console create-account --person "Your Name"</code>.</p>
-    </div>
+    </form>
   </div>
 </div>
 {% endblock %}
