@@ -249,6 +249,22 @@ def classify_path(path: Path) -> tuple[str, str]:
     return "internal", "no sensitive markers in the path"
 
 
+def leave_out(relative: Path) -> str | None:
+    """Why a path inside a source stays out of the corpus.
+
+    The source folder can still be used. These paths are the ones the scanner
+    would otherwise refuse the whole folder for: hidden and generated
+    directories, and any path whose name marks it as sensitive.
+    """
+    for part in relative.parts:
+        if part in SKIP_DIRECTORIES or part.startswith("."):
+            return "skipped directory"
+    sensitivity, reason = classify_path(relative)
+    if sensitivity != "internal":
+        return reason
+    return None
+
+
 def _is_text_file(path: Path) -> bool:
     if path.suffix.lower() in TEXT_SUFFIXES:
         return True

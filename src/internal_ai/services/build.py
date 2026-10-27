@@ -20,7 +20,7 @@ from internal_ai.data.inventory import (
     SECRET_PATTERNS,
     classify_path,
     disguised_binary,
-    scan_source,
+    leave_out,
     target_escapes,
 )
 from internal_ai.data.tree import is_text_file
@@ -173,33 +173,70 @@ def inspect_source(
     root = max(containing, key=lambda item: len(item.parts))
     below = resolved.relative_to(root)
     sensitivity, reason = classify_path(below if below.parts else Path(resolved.name))
+    if sensitivity != "internal":
+        report(100, "done")
+        return SourceInspection(
+            str(resolved),
+            "tree" if resolved.is_dir() else "file",
+            sensitivity,
+            reason,
+            0,
+            0,
+            [],
+            {},
+            [f"the path is classified as {sensitivity} ({reason}) and is excluded"],
+        )
     weight_files: list[str] = []
     secret_hits: dict[str, int] = {}
+    escaped: list[str] = []
     if resolved.is_dir():
         kind = "tree"
         report(0, "listing files")
+        candidates: list[Path] = []
+        for directory, dirnames, names in os.walk(resolved, topdown=True):
+            dirnames[:] = [
+                name
+                for name in dirnames
+                if leave_out(Path(directory, name).relative_to(resolved)) is None
+            ]
+            candidates.extend(Path(directory, name) for name in names)
+        total = len(candidates)
 
-        def scanned(done: int, total: int) -> None:
-            percent = int(90 * done / total) if total else 90
-            report(percent, f"{done:,} of {total:,} files read")
+        def scanned(done: int, total_files: int) -> None:
+            percent = int(90 * done / total_files) if total_files else 90
+            report(percent, f"{done:,} of {total_files:,} files read")
 
-        entry = scan_source(resolved, progress=scanned)
-        files, text_files = entry.file_count, entry.text_file_count
-        secret_hits = dict(entry.secret_hits)
-        report(94, "checking for weight files")
-        escaped: list[str] = []
-        for directory, _dirs, names in os.walk(resolved):
-            for name in names:
-                file_path = Path(directory, name)
-                relative = str(file_path.relative_to(resolved))
+        scanned(0, total)
+        files = 0
+        text_files = 0
+        for done, file_path in enumerate(candidates, start=1):
+            files += 1
+            relative = str(file_path.relative_to(resolved))
+            if leave_out(Path(relative)) or target_escapes(file_path, resolved):
                 if target_escapes(file_path, resolved):
                     escaped.append(relative)
-                elif Path(name).suffix.lower() in WEIGHT_SUFFIXES or (
-                    is_text_file(file_path) and disguised_binary(file_path)
-                ):
-                    weight_files.append(relative)
-        if escaped:
-            problems.append("a link points outside the source: " + ", ".join(sorted(escaped)[:5]))
+                scanned(done, total)
+                continue
+            if file_path.suffix.lower() in WEIGHT_SUFFIXES or (
+                is_text_file(file_path) and disguised_binary(file_path)
+            ):
+                weight_files.append(relative)
+            elif is_text_file(file_path):
+                try:
+                    content = file_path.read_text(encoding="utf-8", errors="ignore")
+                except OSError:
+                    content = ""
+                hits = {
+                    name: len(pattern.findall(content))
+                    for name, pattern in SECRET_PATTERNS.items()
+                    if pattern.findall(content)
+                }
+                if hits:
+                    for name, count in hits.items():
+                        secret_hits[name] = secret_hits.get(name, 0) + count
+                elif content.strip():
+                    text_files += 1
+            scanned(done, total)
     else:
         kind = "file"
         report(30, "reading file")
@@ -221,20 +258,21 @@ def inspect_source(
                 hits = len(pattern.findall(content))
                 if hits:
                     secret_hits[name] = hits
-    if weight_files:
+    nothing_left = kind == "tree" and text_files == 0
+    if weight_files and (kind == "file" or nothing_left):
         problems.append(
             "the source contains model weight files, and pretrained weights are never used: "
             + ", ".join(sorted(weight_files)[:5])
         )
-    if sensitivity != "internal":
-        problems.append(f"the path is classified as {sensitivity} ({reason}) and is excluded")
-    if secret_hits and kind == "tree":
+    if escaped and nothing_left:
+        problems.append("a link points outside the source: " + ", ".join(sorted(escaped)[:5]))
+    if secret_hits and nothing_left:
         problems.append(
             "the folder contains what look like secrets ("
             + ", ".join(f"{name}: {count}" for name, count in sorted(secret_hits.items()))
-            + "); folders are indexed without redaction, so remove them first"
+            + "); those files were left out, and nothing usable remains"
         )
-    if kind == "tree" and text_files == 0:
+    if nothing_left:
         problems.append("the folder has no text files to learn from")
     report(100, "done")
     return SourceInspection(

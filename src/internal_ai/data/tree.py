@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from internal_ai.data.inventory import disguised_binary, target_escapes
+from internal_ai.data.inventory import SECRET_PATTERNS, disguised_binary, leave_out, target_escapes
 from internal_ai.data.records import Record
 from internal_ai.ids import file_hash, new_id, text_hash
 
@@ -154,12 +154,13 @@ def iter_tree_files(root: Path, follow_symlinks: bool = False) -> list[Path]:
         directories[:] = [
             name
             for name in directories
-            if name not in SKIP_DIRECTORIES and not name.startswith(".")
+            if leave_out(Path(directory).relative_to(root) / name) is None
         ]
         for name in names:
-            if name.startswith("."):
+            path = Path(directory) / name
+            if leave_out(path.relative_to(root)):
                 continue
-            files.append(Path(directory) / name)
+            files.append(path)
     return sorted(files)
 
 
@@ -194,6 +195,9 @@ def build_tree_index(
             index.skipped += 1
             continue
         if not text.strip():
+            index.skipped += 1
+            continue
+        if any(pattern.search(text) for pattern in SECRET_PATTERNS.values()):
             index.skipped += 1
             continue
         index.files.append(

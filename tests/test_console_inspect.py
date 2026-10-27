@@ -113,6 +113,31 @@ def test_a_weight_file_renamed_as_text_is_refused(
     assert not result.acceptable
 
 
+def test_sensitive_files_are_left_out_and_the_rest_remains(
+    platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from internal_ai.data.tree import build_tree_index
+
+    approved = tmp_path / "approved"
+    (approved / "tickets").mkdir(parents=True)
+    (approved / "tickets" / "note.txt").write_text("reset the vpn\n")
+    fhir = approved / "fhir notes"
+    fhir.mkdir()
+    (fhir / "note.txt").write_text("patient chart\n")
+    (approved / "model.pt").write_bytes(b"not-weights")
+    (approved / "keys.txt").write_text("api_key: 'sk-live-not-a-real-token'\n")
+    monkeypatch.setenv("INTERNAL_AI_DATA_ROOTS", str(approved))
+
+    result = build.inspect_source(platform, str(approved))
+
+    assert result.acceptable
+    assert result.text_files == 1
+    assert result.secret_hits
+    assert "model.pt" in result.weight_files
+    indexed = build_tree_index(approved, source_id="src")
+    assert [item.text for item in indexed.files] == ["reset the vpn\n"]
+
+
 def test_health_and_message_folders_are_excluded(
     platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
