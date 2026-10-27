@@ -44,34 +44,37 @@ lockups stay in the markup and the scheme still chooses between them.
 
 ## Colour
 
-Warm ivory workspace, one charcoal rail, muted sage accent. The token block at
-the top of `console.css` is the whole theme: rules read names, never hex, and
+Lockup-matched workspace: paper `#F7F8F6` straight from the Option B lockup
+background, ink `#202A31` from the lockup wordmark, sage fill `#8AA99B` from
+the middle icon pill, clay `#9A5B23` from the bottom pill, rail `#202A31` so
+the chrome reads as the same slate as the mark. The token block at the top of
+`console.css` is the whole theme: rules read names, never hex, and
 `tests/test_console_palette.py` fails the build if one carries a colour of its
 own.
 
 | Token | Light | Dark |
 | --- | --- | --- |
-| `--paper` | `#f4f3ed` | `#141917` |
-| `--panel` | `#ecebe2` | `#1f2622` |
+| `--paper` | `#F7F8F6` | `#141917` |
+| `--panel` | `#EAEDE7` | `#1f2622` |
 | `--card` / `--field` | `#ffffff` | `#1a211d` |
-| `--ink` | `#252b27` | `#ecf0ec` |
-| `--muted` | `#5c665f` | `#a4aea6` |
-| `--line` / `--line-strong` | `#dfe1d9` / `#c6cbbc` | `#2e3631` / `#3d463f` |
-| `--sage` | `#3d5a48` | `#a9c3b0` |
-| `--sage-fill` / `--on-sage` | `#829a87` / `#222b25` | `#829a87` / `#222b25` |
+| `--ink` | `#202A31` | `#ecf0ec` |
+| `--muted` | `#5C6670` | `#a4aea6` |
+| `--line` / `--line-strong` | `#DDE1DA` / `#C3CBC0` | `#2e3631` / `#3d463f` |
+| `--sage` | `#3F5C4E` | `#a9c3b0` |
+| `--sage-fill` / `--on-sage` | `#8AA99B` / `#222B25` | `#8AA99B` / `#222B25` |
 | `--sage-wash` | `#dce8de` | `#26312b` |
-| `--forest` / `--forest-hover` / `--on-forest` | `#315b40` / `#27492f` / `#f4f3ed` | `#3c6b4c` / `#336042` / `#f4f3ed` |
+| `--forest` / `--forest-hover` / `--on-forest` | `#315B40` / `#27492F` / `#F7F8F6` | `#3c6b4c` / `#336042` / `#F7F8F6` |
 | `--ok` / `--ok-hover` / `--on-ok` | `#2f6b45` / `#27593a` / `#f4f3ed` | `#6ec99a` / `#5fba8d` / `#16201a` |
 | `--danger-fill` / `--danger-hover` / `--on-danger` | `#9c3a3a` / `#832e2e` / `#fbeeec` | `#8f3b3b` / `#7a3131` / `#fbeeec` |
 | `--tone-ok-bg` / `-ink` | `#d8f0e2` / `#145c38` | `#1c3328` / `#a9dcc0` |
 | `--tone-warn-bg` / `-ink` | `#f6e7c4` / `#6b4a0e` | `#3a3220` / `#f3e6c0` |
 | `--tone-bad-bg` / `-ink` | `#fbdad6` / `#8a1d16` | `#3a2422` / `#f2bdb6` |
-| `--tone-idle-bg` / `-ink` | `#e7e6dc` / `#4e5751` | `#262c28` / `#b6c0b8` |
+| `--tone-idle-bg` / `-ink` | `#E8E9E2` / `#4e5751` | `#262c28` / `#b6c0b8` |
 
 Rail tokens are declared once, outside the scheme block, because the rail is
-the same charcoal in both: `--rail #202522`, `--rail-ink #f1f4ef`,
-`--rail-item #cfd8d1`, `--rail-sage #a9c3b0`, `--rail-muted #9ba69d`,
-`--rail-line #3a423b`, `--rail-active #2c3a31`, `--rail-hover #262c27`,
+the same slate as the mark in both: `--rail #202A31`, `--rail-ink #F1F4EF`,
+`--rail-item #CFD8D1`, `--rail-sage #A9C3B0`, `--rail-muted #9BA69D`,
+`--rail-line #36434D`, `--rail-active #2B3640`, `--rail-hover #263038`,
 `--rail-chip #dce8de`. `--rail-item` is the nav text: `10.67` on the charcoal
 and `9.78` on the hover fill, where plain `--rail-ink` would glare.
 
@@ -102,8 +105,8 @@ a light and a dark duplicate, and a state added later has to pick a tone.
 Tone borders are `color-mix` of the tone ink, which keeps edges out of the token
 block without adding eight more literals.
 
-Measured contrast, light then dark: ink on paper 13.00 / 15.44, muted on paper
-5.37 / 7.77, sage on paper 6.86 / 9.41, ink on the sage fill 4.76 in both,
+Measured contrast, light then dark: ink on paper 13.72 / 15.44, muted on paper
+5.49 / 7.77, sage on paper 6.91 / 9.41, ink on the sage fill 5.71 in both,
 ivory on forest 6.99 / 5.61, ivory on ok 5.71, dark ink on the dark ok 8.35,
 tone ink on tone wash 6.68 / 8.81 ok, 6.57 / 10.19 warn, 7.10 / 8.75 bad,
 5.97 / 7.62 idle, and the same inks on a card 8.02 / 10.70, 8.04 / 13.20,
@@ -118,7 +121,8 @@ sage wash.
 
 `Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`. No font is
 downloaded. Body `0.96rem`, line-height `1.58`, over a faint `--sage-wash`
-radial glow at the top of the paper.
+radial glow plus a fainter `--clay-wash` glow at the top of the paper, so the
+all-sage field picks up the logo's clay second voice without a new paint.
 
 h1 `1.6rem`/700, h2 `1.05rem`/620, h3 `0.94rem`/620, letter-spacing `-0.028em`,
 with the overview headline scaling to `2.9rem` under `.page-head`. A `.pop`

@@ -1,11 +1,11 @@
 /* Tokens first. Rules below read names, never hex, so a theme is this block. */
 :root {
-  --ink: #252b27;
-  --muted: #5c665f;
-  --line: #dfe1d9;
-  --line-strong: #c6cbbc;
-  --paper: #f4f3ed;
-  --panel: #ecebe2;
+  --ink: #202A31;
+  --muted: #5C6670;
+  --line: #DDE1DA;
+  --line-strong: #C3CBC0;
+  --paper: #F7F8F6;
+  --panel: #EAEDE7;
   --card: #ffffff;
   --field: #ffffff;
   --shade: #000000;
@@ -13,20 +13,20 @@
     0 2px 14px color-mix(in srgb, var(--shade) 5%, transparent);
   --lift-sm: 0 1px 0 color-mix(in srgb, var(--shade) 4%, transparent);
 
-  --sage: #3d5a48;
-  --sage-fill: #829a87;
-  --on-sage: #222b25;
+  --sage: #3F5C4E;
+  --sage-fill: #8AA99B;
+  --on-sage: #222B25;
   --sage-wash: #dce8de;
   --clay: #9a5b23;
   --clay-strong: #7a4a1e;
   --clay-wash: #f3e2c8;
 
-  --forest: #315b40;
-  --forest-hover: #27492f;
-  --on-forest: #f4f3ed;
-  --ok: #2f6b45;
-  --ok-hover: #27593a;
-  --on-ok: #f4f3ed;
+  --forest: #315B40;
+  --forest-hover: #27492F;
+  --on-forest: #F7F8F6;
+  --ok: #2F6B45;
+  --ok-hover: #27593A;
+  --on-ok: #F7F8F6;
   --danger-fill: #9c3a3a;
   --danger-hover: #832e2e;
   --on-danger: #fbeeec;
@@ -37,17 +37,17 @@
   --tone-warn-ink: #6b4a0e;
   --tone-bad-bg: #fbdad6;
   --tone-bad-ink: #8a1d16;
-  --tone-idle-bg: #e7e6dc;
-  --tone-idle-ink: #4e5751;
+  --tone-idle-bg: #E8E9E2;
+  --tone-idle-ink: #4E5751;
 
-  --rail: #202522;
-  --rail-ink: #f1f4ef;
-  --rail-item: #cfd8d1;
-  --rail-sage: #a9c3b0;
-  --rail-muted: #9ba69d;
-  --rail-line: #3a423b;
-  --rail-active: #2c3a31;
-  --rail-hover: #262c27;
+  --rail: #202A31;
+  --rail-ink: #F1F4EF;
+  --rail-item: #CFD8D1;
+  --rail-sage: #A9C3B0;
+  --rail-muted: #9BA69D;
+  --rail-line: #36434D;
+  --rail-active: #2B3640;
+  --rail-hover: #263038;
   --rail-chip: #dce8de;
 
   --radius: 14px;
@@ -108,6 +108,7 @@ body {
   line-height: 1.58;
   background:
     radial-gradient(52rem 30rem at 82% -10rem, color-mix(in srgb, var(--sage-wash) 72%, transparent), transparent 62%),
+    radial-gradient(44rem 26rem at 12% -12rem, color-mix(in srgb, var(--clay-wash) 38%, transparent), transparent 60%),
     var(--paper);
 }
 body.signed-in { display: grid; grid-template-columns: 18rem minmax(0, 1fr); min-height: 100vh; }
