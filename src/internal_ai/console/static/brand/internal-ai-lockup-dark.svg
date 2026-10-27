@@ -1,15 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360">
   <rect width="1200" height="360" rx="30" fill="#171D22"/>
   <g transform="translate(42 20) scale(.625)">
-    <path d="M256 54 402 138v168c0 76-57 124-146 160-89-36-146-84-146-160V138Z"
-          fill="none" stroke="#E6ECE8" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M178 203 256 158 334 203M178 309 256 354 334 309M178 203v106M334 203v106"
-          fill="none" stroke="#8AA99B" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M256 216 296 256 256 296 216 256Z" fill="#E6ECE8"/>
-    <g fill="#8AA99B">
-      <circle cx="178" cy="203" r="15"/><circle cx="334" cy="203" r="15"/>
-      <circle cx="178" cy="309" r="15"/><circle cx="334" cy="309" r="15"/>
-      <circle cx="256" cy="158" r="12"/><circle cx="256" cy="354" r="12"/>
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="175" y="51" width="162" height="162" rx="81" stroke="#E6ECE8" stroke-width="38"/>
+      <rect x="175" y="175" width="162" height="162" rx="81" stroke="#8AA99B" stroke-width="38"/>
+      <rect x="175" y="299" width="162" height="162" rx="81" stroke="#9A5B23" stroke-width="38"/>
     </g>
   </g>
   <text x="390" y="174" font-family="Inter, Avenir, Helvetica, Arial, sans-serif" font-size="77" font-weight="650" letter-spacing="-2.5" fill="#F0F3F1">internal<tspan fill="#8AA99B">-ai</tspan></text>
