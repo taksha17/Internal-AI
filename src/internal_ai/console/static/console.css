@@ -383,6 +383,15 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .steps li.done > a { color: var(--sage); font-weight: 550; }
 .steps li.done::before { content: "\2713"; border-color: var(--sage-fill); background: var(--sage-fill); color: var(--on-sage); font-size: 0.8rem; }
 
+/* ---------- what the data can carry ---------- */
+.suggest { max-width: none; margin: 1.15rem 0 0; }
+.suggest h3 { margin: 0; }
+.suggest-list { max-width: none; margin: 0.6rem 0 0; padding: 0; list-style: none; display: grid; gap: 0.5rem; }
+.suggest-item { display: grid; gap: 0.15rem; padding: 0.6rem 0.85rem; border: 1px solid var(--line); border-left: 3px solid var(--line-strong); border-radius: var(--control-radius); background: color-mix(in srgb, var(--panel) 45%, transparent); }
+.suggest-item-ready { border-left-color: var(--sage-fill); background: var(--card); }
+.suggest-kind { display: flex; align-items: center; gap: 0.45rem; font-weight: 600; text-transform: capitalize; }
+.suggest-why { color: var(--muted); font-size: 0.88rem; max-width: 78ch; }
+
 /* One tone set per state; a new state must pick a tone, not a colour. */
 .badge { display: inline-flex; align-items: center; gap: 0.32rem; padding: 0.1rem 0.55rem; border-radius: 999px; background: var(--tone-idle-bg); color: var(--tone-idle-ink); font-size: 0.71rem; font-weight: 600; letter-spacing: 0.01em; text-transform: lowercase; white-space: nowrap; }
 .badge::before { content: ""; width: 5px; height: 5px; flex: none; border-radius: 50%; background: currentColor; opacity: 0.85; }

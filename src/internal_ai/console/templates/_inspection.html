@@ -10,6 +10,13 @@
 {% if inspection.weight_files and not inspection.problems %}
 <p class="callout">Weight files were left out and are never trained on: {% for name in inspection.weight_files[:5] %}<code>{{ name }}</code> {% endfor %}</p>
 {% endif %}
+{% if suggestions %}
+<div class="suggest">
+  <h3>What to build from this</h3>
+  <p class="card-sub">Ranked from what the scan measured. This reads the data; it builds nothing, and whichever path you take still needs its approval.</p>
+  {{ m.suggest_list(suggestions) }}
+</div>
+{% endif %}
 {% if inspection.problems %}
 <div class="refusal"><strong>This source would be refused:</strong>
   <ul>{% for problem in inspection.problems %}<li>{{ problem }}</li>{% endfor %}</ul></div>

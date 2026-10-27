@@ -26,6 +26,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
 from internal_ai.context import Platform
+from internal_ai.data.suggest import suggest_model_types
 from internal_ai.domain import GateStatus, GateType, TaskState
 from internal_ai.engine import PlanError
 from internal_ai.gates import GATE_CATALOG, GateError
@@ -720,6 +721,32 @@ def mount_console(
         threading.Thread(target=work, name=f"inspect-{run.token}", daemon=True).start()
         return run
 
+    def suggestions_for(inspection: Any) -> list[dict[str, Any]]:
+        """Which model to build from a scan, and nothing when it was refused.
+
+        A source that failed inspection has a refusal to read first, and a
+        recommendation on top of it would bury the reason it cannot be used.
+        """
+        if inspection is None or not inspection.acceptable:
+            return []
+        return suggest_model_types(inspection.to_dict())
+
+    def guided_suggestions(platform: Platform, source_id: str) -> list[dict[str, Any]]:
+        """The same ranking on a later request, from what the source row stored.
+
+        The in-memory scan does not survive a restart, so this reads the copy
+        saved on the source and adds the dataset's record count once built.
+        """
+        source = build.get_source(platform, source_id)
+        if source is None:
+            return []
+        summary = dict(source.get("scan") or {})
+        if source.get("dataset_id"):
+            dataset = platform.store.get_dataset(source["dataset_id"])
+            if dataset is not None:
+                summary["records"] = dataset.record_count
+        return suggest_model_types(summary)
+
     def inspection_panel(ctx: Ctx, run: InspectionRun, clear_result: bool = False) -> HTMLResponse:
         return templates.TemplateResponse(
             ctx.request,
@@ -731,6 +758,7 @@ def mount_console(
                 "inspect_percent": run.percent,
                 "inspect_detail": run.detail,
                 "inspection": run.result,
+                "suggestions": suggestions_for(run.result),
                 "inspect_error": run.error,
                 "inspect_clear_result": clear_result and not run.done,
                 "can": lambda action: allowed(ctx.actor, Action(action)),
@@ -776,6 +804,8 @@ def mount_console(
             sources=build.list_sources(ctx.platform),
             roots=build.data_roots(ctx.platform),
             inspection=run.result if run else None,
+            suggestions=suggestions_for(run.result) if run else [],
+            guided_suggestions=guided_suggestions(ctx.platform, guided) if guided.strip() else [],
             inspect_path=inspect,
             inspect_token=run.token if run else "",
             inspect_running=bool(run and not run.done),

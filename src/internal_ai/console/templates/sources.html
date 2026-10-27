@@ -69,6 +69,13 @@
     <li class="{{ 'done' if step.done else '' }}">{% if step.href and step.done %}<a href="{{ step.href }}">{{ step.label }}</a>{% else %}{{ step.label }}{% endif %}</li>
     {% endfor %}
   </ol>
+  {% if guided_suggestions %}
+  <div class="suggest">
+    <h3>What this data can carry</h3>
+    <p class="card-sub">Read again on every visit, from the saved scan and the dataset. It recommends; it starts nothing.</p>
+    {{ m.suggest_list(guided_suggestions) }}
+  </div>
+  {% endif %}
 </section>
 {% endif %}
 

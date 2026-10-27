@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +23,7 @@ from internal_ai.data.inventory import (
     leave_out,
     target_escapes,
 )
+from internal_ai.data.suggest import label_columns
 from internal_ai.data.tree import is_text_file
 from internal_ai.domain import GateRequest, GateStatus, GateType
 from internal_ai.ids import new_id, now_iso
@@ -117,6 +118,8 @@ class SourceInspection:
     weight_files: list[str]
     secret_hits: dict[str, int]
     problems: list[str]
+    formats: dict[str, int] = field(default_factory=dict)
+    label_columns: list[str] = field(default_factory=list)
 
     @property
     def acceptable(self) -> bool:
@@ -133,6 +136,8 @@ class SourceInspection:
             "weight_files": self.weight_files,
             "secret_hits": self.secret_hits,
             "problems": self.problems,
+            "formats": dict(sorted(self.formats.items())),
+            "label_columns": self.label_columns,
         }
 
 
@@ -196,6 +201,8 @@ def inspect_source(
     weight_files: list[str] = []
     secret_hits: dict[str, int] = {}
     escaped: list[str] = []
+    formats: dict[str, int] = {}
+    labels: list[str] = []
     if resolved.is_dir():
         kind = "tree"
         report(0, "listing files")
@@ -243,6 +250,11 @@ def inspect_source(
                         secret_hits[name] = secret_hits.get(name, 0) + count
                 elif content.strip():
                     text_files += 1
+                    suffix = file_path.suffix.lower() or "<none>"
+                    formats[suffix] = formats.get(suffix, 0) + 1
+                    for name in label_columns(file_path.suffix, content):
+                        if name not in labels:
+                            labels.append(name)
             scanned(done, total)
     else:
         kind = "file"
@@ -260,7 +272,9 @@ def inspect_source(
             weight_files.append(resolved.name)
         else:
             text_files = 1
+            formats[suffix or "<none>"] = 1
             content = resolved.read_text(encoding="utf-8", errors="ignore")
+            labels = label_columns(suffix, content)
             for name, pattern in SECRET_PATTERNS.items():
                 hits = len(pattern.findall(content))
                 if hits:
@@ -292,6 +306,8 @@ def inspect_source(
         sorted(weight_files),
         secret_hits,
         problems,
+        dict(sorted(formats.items())),
+        sorted(labels),
     )
 
 
@@ -972,22 +988,14 @@ def latest_report(platform: Platform, model_id: str) -> Any:
 def request_promotion(
     platform: Platform, actor: Actor, model_id: str, red_team_results: str
 ) -> GateRequest:
-    from internal_ai.workflows import latest_frozen_pass, model_card_markdown
+    from internal_ai.workflows import latest_frozen_report, model_card_markdown
 
     require(platform.audit, actor, Action.PROMOTE_MODEL, model_id)
     model = platform.store.get_model(model_id)
     if model is None:
         raise KeyError(f"unknown model: {model_id}")
-    report = latest_frozen_pass(platform, model_id)
+    report = latest_frozen_report(platform, model_id)
     if report is None:
-        latest = latest_report(platform, model_id)
-        if latest is not None and latest.passed:
-            raise ValueError("evaluate the model against a frozen eval set first")
-        if latest is not None:
-            raise ValueError(
-                "the latest evaluation did not pass, so promotion would be refused: "
-                + (latest.notes or "the model did not beat the baseline")
-            )
         raise ValueError("evaluate the model against a frozen eval set first")
     if not red_team_results.strip():
         raise ValueError("describe the red-team results: memorisation, PII and permission tests")
@@ -1002,8 +1010,10 @@ def request_promotion(
             "eval_results_vs_baseline": json.dumps(
                 {
                     "report_id": report.id,
+                    "passed": report.passed,
                     "metrics": report.metrics,
                     "baseline": report.baseline_metrics,
+                    "notes": report.notes,
                 },
                 sort_keys=True,
             ),

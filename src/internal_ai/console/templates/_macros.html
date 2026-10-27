@@ -29,6 +29,21 @@
 
 {% macro status_badge(value) %}<span class="badge badge-{{ value }}">{{ value }}</span>{% endmacro %}
 
+{# The model types one source can carry, best first. Advisory: it names a path
+   and what that path would need. It starts nothing, and whatever a person
+   picks still goes through its usual gate and approval. #}
+{% macro suggest_list(items) %}
+<ol class="suggest-list">
+  {% for option in items %}
+  <li class="suggest-item{{ ' suggest-item-ready' if option.ready else '' }}">
+    <span class="suggest-kind">{{ option.kind }}{% if option.ready and option.rank == 1 %} <span class="badge badge-approved">best fit</span>{% endif %}</span>
+    <span class="suggest-why">{{ option.why }}</span>
+    {% if option.needs %}<span class="muted small">Needs {{ option.needs }}.</span>{% endif %}
+  </li>
+  {% endfor %}
+</ol>
+{% endmacro %}
+
 {% macro gate_box(gate) %}
 <div class="gate">
   <div class="gate-stripe" aria-hidden="true"></div>
