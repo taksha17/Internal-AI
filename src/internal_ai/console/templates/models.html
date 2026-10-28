@@ -146,7 +146,9 @@
     {% endfor %}
   </ul>
   {% endif %}
-  {% if can("evaluate_model") %}
+  {% if row.judge %}<p class="muted small">Judged by {{ row.judge }}.</p>{% endif %}
+  {% if row.self_judging %}<p class="callout">The newest report was run by the person who built this model. A different ml_lead has to evaluate it before it can be promoted.</p>{% endif %}
+  {% if can("evaluate_model") and not row.self_judging %}
   <form method="post" action="/console/models/{{ model.id }}/evaluate" class="inline-form">{{ m.csrf_field() }}
     {% if frozen_sets %}
     <label>Frozen eval set <select name="eval_set_id">{% for item in frozen_sets %}<option value="{{ item.id }}">{{ item.name }} v{{ item.version }}</option>{% endfor %}</select></label>
@@ -158,7 +160,7 @@
   {% if model.status != "promoted" and can("promote_model") %}
     {% if row.gate and row.gate.status == "approved" %}
     <form method="post" action="/console/models/{{ model.id }}/promote">{{ m.csrf_field() }}<button type="submit" class="primary">Promote</button></form>
-    {% elif row.report and row.report.passed and (not row.gate or row.gate.status == "rejected") %}
+    {% elif row.report and row.report.passed and not row.self_judging and (not row.gate or row.gate.status == "rejected") %}
     <form method="post" action="/console/models/{{ model.id }}/request-promotion" class="stack">{{ m.csrf_field() }}
       <label>Red-team results (memorisation, PII and permission tests) <textarea name="red_team_results" rows="3" required></textarea></label>
       <button type="submit">Request promotion</button></form>

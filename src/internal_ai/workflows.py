@@ -247,6 +247,19 @@ def train_embedding_model(
         )
         for row in rows
     ]
+    validation = [
+        Record(
+            id=row["id"],
+            record_key=row["record_key"],
+            text=row["payload"],
+            source_id=row["source_id"],
+            sensitivity=row["sensitivity"],
+            acl=row["acl"],
+            tokens=row["tokens"],
+            meta=row["meta"],
+        )
+        for row in platform.store.dataset_records_by_split(dataset_id, "validation")
+    ]
     from internal_ai.training.ownership import require_released_dataset
 
     dataset = require_released_dataset(platform.store.get_dataset(dataset_id))
@@ -268,6 +281,7 @@ def train_embedding_model(
         dataset_hash=dataset.content_hash if dataset else "unknown",
         actor=actor,
         pairs=pairs,
+        validation_records=validation,
     )
 
 
@@ -280,6 +294,7 @@ def evaluate_embedding_model(
     margin: float = 0.0,
     actor: str = "evaluation",
     model_id: str | None = None,
+    judged_by: str | None = None,
 ) -> dict[str, Any]:
     from internal_ai.brief import load as load_brief
     from internal_ai.evals.harness import EvalHarness
@@ -319,7 +334,9 @@ def evaluate_embedding_model(
         actor=actor,
         brief=load_brief(platform.store),
     )
-    report = harness.record_report(model_id or model_path.stem, eval_set_id, outcome, actor=actor)
+    report = harness.record_report(
+        model_id or model_path.stem, eval_set_id, outcome, actor=actor, judged_by=judged_by
+    )
     return {
         "report_id": report.id,
         "model_id": report.model_id,
@@ -361,6 +378,7 @@ def register_model(
         ],
         "trained_from_scratch": True,
         "pretrained_weights_used": False,
+        "registered_by": actor,
         "created_at": now_iso(),
     }
     model = ModelVersion(
@@ -401,6 +419,12 @@ def promote_model(
     if report is None:
         raise PermissionError(
             "model promotion requires a passing eval report on a frozen eval set (FR-15)"
+        )
+    builder = str(model.card.get("registered_by") or "")
+    if report.judged_by and report.judged_by in {builder, approver}:
+        raise PermissionError(
+            "the newest report was judged by the person who built or is approving this model; "
+            "a different ml_lead has to run that evaluation"
         )
     model.card["eval_results"] = report.metrics
     model.card["baseline_metrics"] = report.baseline_metrics
@@ -749,12 +773,13 @@ def build_tree_corpus(
     version: int = 1,
     acl: list[str] | None = None,
     actor: str = "data_engineer",
+    sensitivity: str = "internal",
 ) -> CorpusBuild:
     """Version a file tree as a dataset with path metadata and lineage."""
 
-    records = index.records(acl=acl or ["engineering", "support"])
+    records = index.records(acl=acl or ["engineering", "support"], sensitivity=sensitivity)
     for record in records:
-        record.sensitivity = "internal"
+        record.sensitivity = sensitivity
     dataset = DatasetVersion(
         id=new_id("ds"),
         name=name,
@@ -772,7 +797,7 @@ def build_tree_corpus(
                     "path": str(index.root),
                     "content_hash": content_hash(sorted(item.content_hash for item in index.files)),
                     "owner": "data_owner",
-                    "sensitivity": "internal",
+                    "sensitivity": sensitivity,
                     "records_ingested": len(records),
                     "approved": True,
                 }

@@ -213,3 +213,165 @@ def test_a_sampled_trace_reaches_every_source(platform, corpus_path: Path) -> No
     assert broken["passed"] is False
     assert broken["coverage"] < 1.0
     assert any(failure["record"] == victim["record_key"] for failure in broken["failures"])
+
+
+def test_every_metric_line_names_the_batch_it_read(platform, corpus_path: Path) -> None:
+    built = build_corpus(platform, [corpus_path], name="data-position")
+    tokenizer, _coverage = train_tokenizer_for(platform, built.dataset_id, vocab_size=300)
+    dataset = platform.store.get_dataset(built.dataset_id)
+    assert dataset is not None
+    outcome = trainer_for(platform).train(
+        tiny_config(4),
+        records_for(platform, built.dataset_id),
+        tokenizer,
+        dataset_id=built.dataset_id,
+        dataset_hash=dataset.content_hash,
+        resume=False,
+        run_id="run_data_position",
+    )
+
+    lines = [
+        json.loads(line)
+        for line in Path(outcome.metrics_path).read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert [line["step"] for line in lines] == [0, 1, 2, 3]
+    assert all(line["batch_hash"] for line in lines)
+    paired = {(line["batch_index"], line["batch_hash"]) for line in lines}
+    assert len(paired) == len({line["batch_index"] for line in lines}), "a batch keeps one hash"
+
+
+def test_a_resumed_run_continues_on_the_batch_the_checkpoint_left(
+    platform, corpus_path: Path
+) -> None:
+    built = build_corpus(platform, [corpus_path], name="resume-position")
+    tokenizer, _coverage = train_tokenizer_for(platform, built.dataset_id, vocab_size=300)
+    dataset = platform.store.get_dataset(built.dataset_id)
+    assert dataset is not None
+    records = records_for(platform, built.dataset_id)
+    trainer = trainer_for(platform)
+    first = trainer.train(
+        tiny_config(4),
+        records,
+        tokenizer,
+        dataset_id=built.dataset_id,
+        dataset_hash=dataset.content_hash,
+        resume=False,
+        run_id="run_same_batch",
+    )
+
+    torch = pytest.importorskip("torch")
+    checkpoint = torch.load(first.checkpoint_path, weights_only=True)
+    left_off = checkpoint["data_position"]
+    first_lines = Path(first.metrics_path).read_text(encoding="utf-8").splitlines()
+
+    second = trainer.train(
+        tiny_config(8),
+        records,
+        tokenizer,
+        dataset_id=built.dataset_id,
+        dataset_hash=dataset.content_hash,
+        run_id="run_same_batch",
+    )
+
+    resumed_lines = Path(second.metrics_path).read_text(encoding="utf-8").splitlines()
+    new_lines = [json.loads(line) for line in resumed_lines[len(first_lines) :]]
+    assert second.resumed_from == 4
+    assert new_lines[0]["step"] == 4
+    assert new_lines[0]["batch_index"] == left_off["batch_index"]
+    assert new_lines[0]["batch_hash"] == left_off["batch_hash"]
+    resumed = platform.store.list_audit(action="train.resumed")[0]
+    assert resumed.details["batch_hash"] == left_off["batch_hash"]
+
+
+def test_a_checkpoint_whose_data_position_moved_is_refused(platform, corpus_path: Path) -> None:
+    built = build_corpus(platform, [corpus_path], name="resume-moved")
+    tokenizer, _coverage = train_tokenizer_for(platform, built.dataset_id, vocab_size=300)
+    dataset = platform.store.get_dataset(built.dataset_id)
+    assert dataset is not None
+    records = records_for(platform, built.dataset_id)
+    trainer = trainer_for(platform)
+    first = trainer.train(
+        tiny_config(4),
+        records,
+        tokenizer,
+        dataset_id=built.dataset_id,
+        dataset_hash=dataset.content_hash,
+        resume=False,
+        run_id="run_moved_data",
+    )
+
+    torch = pytest.importorskip("torch")
+    payload = torch.load(first.checkpoint_path, weights_only=True)
+    payload["data_position"] = {"batch_index": 0, "batch_hash": "deadbeef"}
+    torch.save(payload, first.checkpoint_path)
+
+    refusal = trainer.train(
+        tiny_config(8),
+        records,
+        tokenizer,
+        dataset_id=built.dataset_id,
+        dataset_hash=dataset.content_hash,
+        run_id="run_moved_data",
+    )
+
+    assert refusal.status == "blocked_by_data_position"
+    assert refusal.steps == 0
+    assert "deadbeef" in refusal.alerts[0]
+    event = platform.store.list_audit(action="train.resume_position_mismatch")[0]
+    assert event.details["recorded"]["batch_hash"] == "deadbeef"
+
+
+def test_a_held_out_loss_is_logged_during_the_run(platform, corpus_path: Path) -> None:
+    built = build_corpus(platform, [corpus_path], name="val-curve")
+    tokenizer, _coverage = train_tokenizer_for(platform, built.dataset_id, vocab_size=300)
+    dataset = platform.store.get_dataset(built.dataset_id)
+    assert dataset is not None
+    records = records_for(platform, built.dataset_id)
+    config = tiny_config(6)
+    config.eval_interval = 2
+
+    outcome = trainer_for(platform).train(
+        config,
+        records[:9],
+        tokenizer,
+        dataset_id=built.dataset_id,
+        dataset_hash=dataset.content_hash,
+        resume=False,
+        run_id="run_val_curve",
+        validation_records=records[9:],
+    )
+
+    lines = [
+        json.loads(line)
+        for line in Path(outcome.metrics_path).read_text(encoding="utf-8").splitlines()
+    ]
+
+    measured = [line for line in lines if "val_loss" in line]
+    assert [line["step"] for line in measured] == [0, 2, 4]
+    assert all(line["val_loss"] == line["val_loss"] for line in measured), "no NaN"
+    assert "val_loss" not in next(line for line in lines if line["step"] == 1)
+
+
+def test_each_checkpoint_is_reloaded_and_measured_again(platform, corpus_path: Path) -> None:
+    built = build_corpus(platform, [corpus_path], name="reload")
+    tokenizer, _coverage = train_tokenizer_for(platform, built.dataset_id, vocab_size=300)
+    dataset = platform.store.get_dataset(built.dataset_id)
+    assert dataset is not None
+    records = records_for(platform, built.dataset_id)
+
+    trainer_for(platform).train(
+        tiny_config(4),
+        records[:9],
+        tokenizer,
+        dataset_id=built.dataset_id,
+        dataset_hash=dataset.content_hash,
+        resume=False,
+        run_id="run_reload",
+        validation_records=records[9:],
+    )
+
+    verified = platform.store.list_audit(action="train.checkpoint_verified")
+    assert verified, "a checkpoint is reloaded and compared"
+    assert all(event.details["delta"] <= 1e-5 for event in verified)
+    assert not platform.store.list_audit(action="train.checkpoint_mismatch")
