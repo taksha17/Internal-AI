@@ -90,6 +90,7 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
             name="support-tickets",
             purpose="search over resolved tickets",
             acl="engineering",
+            legal_status="internal",
         )
         source = build.list_sources(platform)[0]
         assert source["gate_status"] == "pending"

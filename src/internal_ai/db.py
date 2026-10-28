@@ -340,6 +340,10 @@ CREATE TABLE IF NOT EXISTS data_sources (
     requested_by TEXT NOT NULL,
     gate_id TEXT,
     dataset_id TEXT,
+    legal_status TEXT NOT NULL DEFAULT '',
+    license_name TEXT NOT NULL DEFAULT '',
+    license_url TEXT NOT NULL DEFAULT '',
+    license_note TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 );
 """
@@ -365,6 +369,12 @@ def init_db(conn: sqlite3.Connection) -> None:
     }
     if "expires_at" not in token_columns:
         conn.execute("ALTER TABLE api_tokens ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''")
+    source_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(data_sources)").fetchall()
+    }
+    for name in ("legal_status", "license_name", "license_url", "license_note"):
+        if name not in source_columns:
+            conn.execute(f"ALTER TABLE data_sources ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
     report_columns = {
         row["name"] for row in conn.execute("PRAGMA table_info(eval_reports)").fetchall()
     }
