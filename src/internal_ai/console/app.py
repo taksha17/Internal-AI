@@ -1550,6 +1550,10 @@ def mount_console(
                         dataset.record_count if dataset else 0,
                         dataset.token_count if dataset else 0,
                     ),
+                    "progress": brief.progress_rows(
+                        brief.load(platform.store),
+                        platform.store.list_eval_reports(model.id),
+                    ),
                     "gate": gate_view(platform, ctx.actor, gate) if gate else None,
                 }
             )

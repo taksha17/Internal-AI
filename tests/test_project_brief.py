@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import ClassVar
 
 import numpy as np
 import pytest
@@ -333,3 +334,70 @@ def test_a_classifier_is_judged_by_the_same_recorded_bar(platform, tmp_path: Pat
     )
     met = evaluate_classifier_model(platform, Path(trained.model_path), tokenizer, built.dataset.id)
     assert met["brief_targets"]["passed"] is True
+
+
+def test_the_model_card_shows_the_gap_for_each_recent_evaluation(tmp_path: Path) -> None:
+    from internal_ai.domain import EvalReport, ModelVersion
+
+    app = create_app(root=tmp_path, llm_kind="scripted", sync_jobs=True)
+    with TestClient(app):
+        platform = app.state.platform
+        lead = enroll(platform, "Lena Lead", ["program_lead"])
+        brief.save(
+            platform.store,
+            platform.audit,
+            lead,
+            brief.ProjectBrief(
+                metrics=[brief.Metric(name="recall@10", threshold="0.70", direction="at_least")]
+            ),
+        )
+        platform.store.add_model(
+            ModelVersion(
+                id="mdl_progress",
+                name="tickets-embed",
+                version=1,
+                content_hash="h",
+                created_at="now",
+            )
+        )
+        for report_id, stamp, recall in (
+            ("rep_old", "2026-10-01T09:00:00+00:00", 0.412),
+            ("rep_new", "2026-10-02T09:00:00+00:00", 0.655),
+        ):
+            platform.store.add_eval_report(
+                EvalReport(
+                    id=report_id,
+                    model_id="mdl_progress",
+                    eval_set_id="evs_tickets",
+                    created_at=stamp,
+                    metrics={"recall_at_10": recall},
+                    passed=False,
+                )
+            )
+
+        client, _csrf = signed_in_as(app, "Lena Lead")
+        page = client.get("/console/models").text
+
+        assert "Recent evaluations against the bar the brief sets now" in page
+        assert "recall@10 0.412 of 0.70 — 0.288 short" in page
+        assert "recall@10 0.655 of 0.70 — 0.045 short" in page
+        assert page.index("0.412 of 0.70") < page.index("0.655 of 0.70")
+
+
+def test_a_met_bar_reads_as_headroom_and_an_unmeasured_one_says_why() -> None:
+    class Report:
+        created_at = "2026-10-03T09:00:00+00:00"
+        passed = True
+        metrics: ClassVar[dict[str, float]] = {"recall_at_10": 0.81, "mrr": 0.5}
+
+    project = brief.ProjectBrief(
+        metrics=[
+            brief.Metric(name="recall@10", threshold="0.70", direction="at_least"),
+            brief.Metric(name="ndcg@10", threshold="0.60", direction="at_least"),
+        ]
+    )
+    rows = brief.progress_rows(project, [Report()])
+
+    assert rows[0]["met"] is False
+    assert "recall@10 0.810 of 0.70 — 0.110 to spare" in rows[0]["text"]
+    assert "this evaluation does not measure ndcg@10" in rows[0]["text"]

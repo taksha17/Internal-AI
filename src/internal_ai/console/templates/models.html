@@ -135,6 +135,14 @@
     {{ m.brief_targets_row(row.report.checks.get("brief_targets")) }}
     {% if row.advice %}<ul class="advice-list">{% for line in row.advice %}<li>{{ line }}</li>{% endfor %}</ul>{% endif %}
   {% endif %}
+  {% if row.progress %}
+  <p class="card-sub">Recent evaluations against the bar the brief sets now, newest last:</p>
+  <ul class="plain">
+    {% for entry in row.progress %}
+    <li>{{ m.status_badge("passed" if entry.met else "failed") }} {{ entry.text }}<span class="spacer"></span><span class="muted small">{{ entry.created_at | when }}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
   {% if can("evaluate_model") %}
   <form method="post" action="/console/models/{{ model.id }}/evaluate" class="inline-form">{{ m.csrf_field() }}
     {% if frozen_sets %}

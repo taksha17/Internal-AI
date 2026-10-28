@@ -105,18 +105,22 @@ class ProjectBrief:
                 note = f"the threshold {metric.threshold!r} is not a number"
             else:
                 note = ""
+            gap: float | None = None
             if value is None or threshold is None:
                 met: bool | None = None
             elif metric.direction == "at_most":
                 met = value <= threshold
+                gap = round(threshold - value, 6)
             else:
                 met = value >= threshold
+                gap = round(value - threshold, 6)
             verdicts.append(
                 {
                     "name": metric.name,
                     "threshold": metric.threshold,
                     "direction": metric.direction,
                     "measured": None if value is None else round(value, 6),
+                    "gap": gap,
                     "met": met,
                     "note": note,
                 }
@@ -193,6 +197,42 @@ def describe_verdict(verdict: dict[str, Any]) -> str:
         return f"{asked} — measured {measured:.3f}"
     side = "above" if verdict["direction"] == "at_most" else "below"
     return f"{asked} — measured {measured:.3f}, {side} the bar"
+
+
+def progress_rows(brief: ProjectBrief, reports: list[Any], limit: int = 5) -> list[dict[str, Any]]:
+    """How close each recent evaluation came to the bar the brief sets now.
+
+    Read against the brief as it stands, not as it stood when the report was
+    written: a lead watching progress is watching the target they have today.
+    """
+    rows: list[dict[str, Any]] = []
+    ordered = sorted(reports, key=lambda report: report.created_at)[-limit:]
+    for report in ordered:
+        verdicts = brief.metric_verdicts(dict(report.metrics or {}))
+        if not verdicts:
+            continue
+        parts: list[str] = []
+        for verdict in verdicts:
+            measured = verdict["measured"]
+            gap = verdict["gap"]
+            if measured is None or gap is None:
+                parts.append(describe_verdict(verdict))
+                continue
+            head = f"{verdict['name']} {measured:.3f} of {verdict['threshold']}"
+            if gap < 0:
+                side = "over" if verdict["direction"] == "at_most" else "short"
+                parts.append(f"{head} — {abs(gap):.3f} {side}")
+            else:
+                parts.append(f"{head} — {gap:.3f} to spare")
+        rows.append(
+            {
+                "created_at": report.created_at,
+                "passed": bool(report.passed),
+                "met": all(bool(verdict["met"]) for verdict in verdicts),
+                "text": " · ".join(parts),
+            }
+        )
+    return rows
 
 
 def load(store: Store) -> ProjectBrief:
