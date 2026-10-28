@@ -697,12 +697,13 @@ def build_tree_corpus(
     version: int = 1,
     acl: list[str] | None = None,
     actor: str = "data_engineer",
+    sensitivity: str = "internal",
 ) -> CorpusBuild:
     """Version a file tree as a dataset with path metadata and lineage."""
 
-    records = index.records(acl=acl or ["engineering", "support"])
+    records = index.records(acl=acl or ["engineering", "support"], sensitivity=sensitivity)
     for record in records:
-        record.sensitivity = "internal"
+        record.sensitivity = sensitivity
     dataset = DatasetVersion(
         id=new_id("ds"),
         name=name,
@@ -720,7 +721,7 @@ def build_tree_corpus(
                     "path": str(index.root),
                     "content_hash": content_hash(sorted(item.content_hash for item in index.files)),
                     "owner": "data_owner",
-                    "sensitivity": "internal",
+                    "sensitivity": sensitivity,
                     "records_ingested": len(records),
                     "approved": True,
                 }

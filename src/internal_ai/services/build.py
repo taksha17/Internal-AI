@@ -542,7 +542,12 @@ def build_dataset(platform: Platform, actor: Actor, runner: JobRunner, source_id
 
             index = build_tree_index(Path(source["path"]), source_id=source_id)
             built = build_tree_corpus(
-                platform, index, name=source["name"], version=version, acl=source["acl"]
+                platform,
+                index,
+                name=source["name"],
+                version=version,
+                acl=source["acl"],
+                sensitivity=source["sensitivity"],
             )
         else:
             from internal_ai.data.pipeline import DataPipeline, PipelineConfig
@@ -554,7 +559,7 @@ def build_dataset(platform: Platform, actor: Actor, runner: JobRunner, source_id
                     Source(
                         source_id=source_id,
                         path=Path(source["path"]),
-                        sensitivity="internal",
+                        sensitivity=source["sensitivity"],
                         acl=source["acl"],
                         approved=True,
                         owner=source["requested_by"],
