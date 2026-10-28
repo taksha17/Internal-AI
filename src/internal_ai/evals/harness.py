@@ -315,6 +315,7 @@ class EvalHarness:
                 "note": "eval set has no relevance labels, contamination check could not run",
             }
         checks["permission_leak"] = permission_probe(corpus_records, relevant_doc_ids)
+        checks["instruction_payload"] = instruction_probe(corpus_records, relevant_doc_ids)
         return checks
 
     def record_report(
@@ -346,6 +347,25 @@ class EvalHarness:
             details={"model_id": model_id, "passed": report.passed},
         )
         return report
+
+
+def instruction_probe(corpus_records: list[Record], relevant_doc_ids: set[str]) -> dict[str, Any]:
+    """Whether a document the eval relies on carries instructions for the model.
+
+    A labelled document is what the score rests on; if it also says "ignore
+    previous instructions", the number describes a corpus nobody vetted.
+    """
+    from internal_ai.data.injection import instruction_hits
+
+    labelled = [record for record in corpus_records if record.record_key in relevant_doc_ids]
+    if not labelled:
+        return {"passed": True, "note": "no labelled document to inspect", "probed": 0}
+    hits = instruction_hits(labelled)
+    return {
+        "passed": not hits,
+        "probed": len(labelled),
+        "carrying_instructions": hits[:5],
+    }
 
 
 def brief_targets(brief: ProjectBrief | None, metrics: dict[str, float]) -> dict[str, Any] | None:

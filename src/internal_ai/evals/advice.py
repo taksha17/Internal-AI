@@ -27,6 +27,11 @@ CHECK_ACTIONS: dict[str, str] = {
         "personal data. Scrub the dataset and release a new version before training again."
     ),
     "permission_leak": "The permission check did not pass. Settle that before reading the score.",
+    "instruction_payload": (
+        "The instruction check did not pass: a document the evaluation rests on carries "
+        "instructions aimed at the model. Remove the text from the corpus and release a "
+        "new dataset version before training again."
+    ),
 }
 
 # Reported for context, never a reason to refuse on its own.

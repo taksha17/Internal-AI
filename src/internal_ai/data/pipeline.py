@@ -371,6 +371,33 @@ class DataPipeline:
         )
         return result.to_dict()
 
+    def instruction_payloads(self, dataset_id: str) -> list[dict[str, str]]:
+        """Records whose text tries to give the model orders (FR-6, security review)."""
+        from internal_ai.data.injection import instruction_hits
+
+        rows = self.store.dataset_records(dataset_id)
+        records = [
+            Record(
+                id=row["id"],
+                record_key=row["record_key"],
+                text=row["payload"],
+                source_id=row["source_id"],
+                sensitivity=row["sensitivity"],
+                acl=row["acl"],
+            )
+            for row in rows
+        ]
+        hits = instruction_hits(records)
+        if hits:
+            self.audit.record(
+                actor="data_engineer",
+                action="dataset.instruction_payload",
+                subject=dataset_id,
+                outcome=AuditOutcome.DENIED,
+                details={"records": len(hits), "documents": [hit["document"] for hit in hits]},
+            )
+        return hits
+
     def release(self, dataset_id: str, actor: str, gate_approved: bool) -> DatasetVersion:
         if not gate_approved:
             raise PermissionError(
@@ -384,6 +411,13 @@ class DataPipeline:
             raise PermissionError(
                 f"release audit found {audit_result['critical_findings']} critical finding(s) "
                 "(personal data or a secret); the dataset cannot be released"
+            )
+        planted = self.instruction_payloads(dataset_id)
+        if planted:
+            names = ", ".join(hit["document"] for hit in planted[:5])
+            raise PermissionError(
+                f"release audit found {len(planted)} record(s) carrying instructions "
+                f"({names}); a corpus is data, not a command channel"
             )
         self.store.release_dataset(dataset_id)
         released = self.store.get_dataset(dataset_id)
