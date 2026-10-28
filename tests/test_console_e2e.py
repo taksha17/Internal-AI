@@ -8,6 +8,7 @@ from pathlib import Path
 
 from conftest import enroll, session_csrf, sign_in
 from fastapi.testclient import TestClient
+from programme import actor_named, record_ready_programme
 
 from internal_ai.api import create_app
 from internal_ai.context import Platform
@@ -89,6 +90,7 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
             name="support-tickets",
             purpose="search over resolved tickets",
             acl="engineering",
+            legal_status="internal",
         )
         source = build.list_sources(platform)[0]
         assert source["gate_status"] == "pending"
@@ -107,6 +109,7 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
         overview = mo.get("/console/home")
         assert "Active jobs" in overview and "queue is clear" in overview
 
+        record_ready_programme(platform, actor_named(platform, "Mo Builder"))
         mo.post(f"/console/datasets/{dataset_id}/split")
         dana.post(f"/console/datasets/{dataset_id}/request-release")
         approve(platform, mo, GateType.DATASET_RELEASE, dataset_id)
