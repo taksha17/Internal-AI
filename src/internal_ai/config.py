@@ -7,7 +7,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ENV_HOME = "INTERNAL_AI_HOME"
+ENV_OFFLINE = "INTERNAL_AI_OFFLINE"
 DEFAULT_HOME = "var"
+_OFFLINE_OFF = frozenset({"0", "false", "off", "no"})
+
+
+def offline_mode() -> bool:
+    """True unless a lab sets INTERNAL_AI_OFFLINE=0.
+
+    Enterprise installs make no outbound call. The default is offline so a
+    missing variable cannot open the network.
+    """
+    flag = os.environ.get(ENV_OFFLINE, "1").strip().lower()
+    return flag not in _OFFLINE_OFF
 
 
 @dataclass(frozen=True, slots=True)

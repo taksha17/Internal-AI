@@ -55,6 +55,7 @@ def test_the_wire_payload_is_redacted(monkeypatch) -> None:  # type: ignore[no-u
             sent.update(json)
             return FakeResponse()
 
+    monkeypatch.setenv("INTERNAL_AI_OFFLINE", "0")
     monkeypatch.setattr(httpx, "Client", FakeClient)
     adapter = AnthropicAdapter(model="x", api_key="test-key")
     adapter.complete("debug this: password = 's3cret-value-here' from ticket 7")

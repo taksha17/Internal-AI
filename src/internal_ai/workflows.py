@@ -170,7 +170,9 @@ def train_embedding_model(
         )
         for row in rows
     ]
-    dataset = platform.store.get_dataset(dataset_id)
+    from internal_ai.training.ownership import require_released_dataset
+
+    dataset = require_released_dataset(platform.store.get_dataset(dataset_id))
     trainer = Trainer(
         platform.store,
         platform.audit,
@@ -225,19 +227,8 @@ def evaluate_embedding_model(
         )
         for row in corpus_rows
     ]
-    training_rows = platform.store.dataset_records_by_split(dataset_id, "train")
     training_records = [
-        Record(
-            id=row["id"],
-            record_key=row["record_key"],
-            text=row["payload"],
-            source_id=row["source_id"],
-            sensitivity=row["sensitivity"],
-            acl=row["acl"],
-            tokens=row["tokens"],
-            meta=row["meta"],
-        )
-        for row in training_rows
+        record for record, row in zip(corpus, corpus_rows, strict=True) if row["split"] == "train"
     ]
     embedder = TorchEmbedder(model_path, tokenizer)
     outcome = harness.evaluate_retrieval(
@@ -338,7 +329,11 @@ def promote_model(
         actor_kind="human",
         action="model.promoted",
         subject=model_id,
-        details={"eval_report_id": report.id, "eval_set_id": report.eval_set_id},
+        details={
+            "eval_report_id": report.id,
+            "eval_set_id": report.eval_set_id,
+            "passed": report.passed,
+        },
     )
     return platform.store.get_model(model_id)
 
@@ -348,7 +343,9 @@ def latest_frozen_pass(platform: Platform, model_id: str) -> Any:
 
     A classifier run records a report too, and its file name can be chosen to
     match a registered model. That report has no frozen eval set, so it must
-    not satisfy promotion.
+    not satisfy promotion. A report that failed its safety checks must not
+    satisfy it either: the human gate approves a promotion, it does not
+    re-run the PII and leakage checks.
     """
     reports = platform.store.list_eval_reports(model_id)
     if not reports or not reports[-1].passed:
@@ -369,6 +366,9 @@ def model_card_markdown(model: ModelVersion) -> str:
         f"- Intended use: {card.get('intended_use', 'unspecified')}",
         f"- Trained from scratch: {card.get('trained_from_scratch', True)}",
         f"- Pretrained weights used: {card.get('pretrained_weights_used', False)}",
+        f"- Base model: {card.get('base_repo_id', 'none')}",
+        f"- Base revision: {card.get('base_revision', 'none')}",
+        f"- Base license: {card.get('base_license', 'none')}",
         f"- Dataset: {card.get('dataset_id')} (hash {card.get('dataset_hash')})",
         f"- Data sources: {', '.join(card.get('data_sources', [])) or 'unknown'}",
         f"- Commit: {card.get('commit')}",
@@ -509,7 +509,9 @@ def train_classifier_model(
     """Train a task classifier over frozen from-scratch encoder embeddings."""
     from internal_ai.data.labels import build_labeled_dataset
     from internal_ai.training.classifier import ClassifierTrainer
+    from internal_ai.training.ownership import require_released_dataset
 
+    require_released_dataset(platform.store.get_dataset(dataset_id))
     rows = platform.store.dataset_records_by_split(dataset_id, split)
     if not rows:
         rows = platform.store.dataset_records(dataset_id)

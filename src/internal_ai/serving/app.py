@@ -20,6 +20,7 @@ from internal_ai.serving.service import (
     RetrievalService,
     load_principals,
     log_request,
+    served_model,
 )
 from internal_ai.training.embedder import TorchEmbedder
 
@@ -33,6 +34,17 @@ class SearchRequest(BaseModel):
 class RollbackRequest(BaseModel):
     model_id: str
     reason: str = "rollback requested"
+
+
+class CitationHit(BaseModel):
+    path: str
+    line: int
+    text: str = ""
+
+
+class AnswerRequest(BaseModel):
+    question: str
+    hits: list[CitationHit]
 
 
 def create_serving_app(
@@ -128,7 +140,7 @@ def create_serving_app(
         platform = get_platform()
         router: ModelRouter = app.state.router
         retrieval: RetrievalService = app.state.retrieval
-        model = router.resolve("embedding-v1")
+        model = served_model(platform.store, router)
         if model is None:
             raise HTTPException(status_code=404, detail="no embedding model is registered")
         dataset_id = request.dataset_id
@@ -181,7 +193,7 @@ def create_serving_app(
         started = time.monotonic()
         platform = get_platform()
         router: ModelRouter = app.state.router
-        model = router.resolve("embedding-v1")
+        model = served_model(platform.store, router)
         if model is None:
             raise HTTPException(status_code=404, detail="no embedding model is registered")
         vectors = embedder_for(model.path).embed([request.query])
@@ -205,5 +217,46 @@ def create_serving_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"model_id": model.id, "name": name, "active": True}
+
+    @app.post("/v1/answer")
+    def answer(
+        request: AnswerRequest, principal: Principal = Depends(authenticate)
+    ) -> dict[str, Any]:
+        """Generate from the on-prem runner. A mixed citation is replaced by the hits."""
+        import os
+
+        from internal_ai.llm import LocalRunnerAdapter
+        from internal_ai.training.alpha.answer import cited_answer
+        from internal_ai.training.alpha.citations import AskHit
+
+        if not os.environ.get("INTERNAL_AI_LOCAL_RUNNER", "").strip():
+            raise HTTPException(status_code=503, detail="no on-prem runner is configured")
+        if not request.question.strip() or not request.hits:
+            raise HTTPException(
+                status_code=400, detail="a question and at least one hit are required"
+            )
+        started = time.monotonic()
+        hits = [AskHit(item.path, item.line) for item in request.hits]
+        excerpts = [item.text for item in request.hits]
+        try:
+            result = cited_answer(LocalRunnerAdapter(), request.question, hits, excerpts)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        latency = (time.monotonic() - started) * 1000
+        log_request(
+            get_platform().audit,
+            principal,
+            "/v1/answer",
+            200,
+            latency,
+            {"hits": len(hits), "citation_passed": result.passed, "model": result.model},
+        )
+        return {
+            "text": result.text,
+            "citation_passed": result.passed,
+            "model": result.model,
+            "mismatches": list(result.mismatches),
+            "latency_ms": round(latency, 3),
+        }
 
     return app

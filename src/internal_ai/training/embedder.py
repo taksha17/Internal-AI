@@ -15,6 +15,10 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise ImportError("PyTorch is required to serve embeddings") from exc
 
+# One feed-forward activation for the whole corpus was about 6.3 GB. A batch of
+# 64 keeps that tensor near 30 MB, which fits beside the loaded documents.
+EMBED_BATCH_SIZE = 64
+
 
 class TorchEmbedder:
     """Mean-pooled contextual embeddings from a trained checkpoint."""
@@ -35,14 +39,25 @@ class TorchEmbedder:
         self.model.load_state_dict(payload["model_state"])
         self.model.eval()
 
-    def embed(self, texts: list[str]) -> np.ndarray:
+    def embed(self, texts: list[str], batch_size: int = EMBED_BATCH_SIZE) -> np.ndarray:
         if not texts:
             return np.zeros((0, self.model_config.d_model), dtype=np.float32)
+        if batch_size < 1:
+            raise ValueError("batch_size must be positive")
         encoded = [
             list(self.tokenizer.encode(text, max_tokens=self.max_seq_len - 1)) or [1]
             for text in texts
         ]
+        # Padding participates in attention, so every batch uses the same width
+        # a single forward over the whole list would have used.
         width = max(len(row) for row in encoded)
+        parts = [
+            self._embed_encoded(encoded[start : start + batch_size], width)
+            for start in range(0, len(encoded), batch_size)
+        ]
+        return parts[0] if len(parts) == 1 else np.concatenate(parts, axis=0)
+
+    def _embed_encoded(self, encoded: list[list[int]], width: int) -> np.ndarray:
         padded = [row + [PAD_ID] * (width - len(row)) for row in encoded]
         input_ids = torch.tensor(padded, dtype=torch.long)
         mask = (input_ids != PAD_ID).unsqueeze(-1)

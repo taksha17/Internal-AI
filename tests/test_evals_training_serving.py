@@ -162,6 +162,44 @@ def test_a_passing_report_off_a_frozen_set_cannot_promote(platform) -> None:
     assert promoted.eval_report_id == "rep_frozen_again"
 
 
+def test_a_failed_report_on_a_frozen_set_cannot_promote(platform) -> None:
+    from internal_ai.domain import EvalReport, ModelVersion
+    from internal_ai.evals.harness import EvalHarness
+    from internal_ai.workflows import promote_model
+
+    model = platform.store.add_model(
+        ModelVersion(
+            id="mdl_failed",
+            name="embedding-v1",
+            version=1,
+            content_hash="h",
+            created_at="now",
+        )
+    )
+    harness = EvalHarness(platform.store, platform.audit)
+    eval_set = harness.create_eval_set("v1", [{"query": "q", "relevant_ids": ["d1"]}])
+    harness.freeze_eval_set(eval_set.id, "ml_lead", gate_approved=True)
+    platform.store.add_eval_report(
+        EvalReport(
+            id="rep_failed",
+            model_id=model.id,
+            eval_set_id=eval_set.id,
+            created_at="2026-01-01T00:00:01+00:00",
+            metrics={"recall_at_10": 1.0},
+            baseline_metrics={"recall_at_10": 0.0},
+            checks={
+                "pii_regurgitation": {"passed": False},
+                "contamination": {"passed": False},
+            },
+            passed=False,
+            notes="PII regurgitation and training leakage both failed",
+        )
+    )
+    with pytest.raises(PermissionError):
+        promote_model(platform, model.id, gate_approved=True)
+    assert platform.store.get_model(model.id).status == "candidate"
+
+
 def test_serving_reports_the_model_that_is_actually_served(tmp_path) -> None:
     from fastapi.testclient import TestClient
 
@@ -413,3 +451,54 @@ def test_model_router_rolls_back(platform) -> None:
         if event.action == "serving.version_activated"
     ]
     assert len(events) == 2
+
+
+def test_served_model_uses_a_promoted_model_when_the_sample_name_is_absent(platform) -> None:
+    from internal_ai.domain import ModelVersion
+    from internal_ai.serving.service import served_model
+
+    platform.store.add_model(
+        ModelVersion(
+            id="mdl_named",
+            name="new-volume-3",
+            version=1,
+            content_hash="h",
+            created_at="2026-01-01T00:00:00+00:00",
+            status="promoted",
+        )
+    )
+    router = ModelRouter(platform.store, platform.audit)
+    assert router.resolve("embedding-v1") is None
+    assert served_model(platform.store, router).id == "mdl_named"
+
+
+def test_batched_embeddings_match_one_forward(tmp_path) -> None:
+    torch = pytest.importorskip("torch")
+    from internal_ai.data.tokenizer import train_tokenizer
+    from internal_ai.training.embedder import TorchEmbedder
+    from internal_ai.training.model import TinyTransformer, TransformerConfig
+
+    texts = ["alpha beta", "gamma", "delta epsilon zeta eta"] * 3
+    tokenizer = train_tokenizer(texts, vocab_size=80)
+    config = TransformerConfig(
+        vocab_size=tokenizer.vocab_size,
+        d_model=32,
+        n_heads=2,
+        n_layers=1,
+        d_ff=64,
+        max_seq_len=32,
+    )
+    path = tmp_path / "encoder.pt"
+    torch.manual_seed(0)
+    torch.save(
+        {
+            "model_state": TinyTransformer(config).state_dict(),
+            "model_config": config.to_dict(),
+        },
+        path,
+    )
+    embedder = TorchEmbedder(path, tokenizer, max_seq_len=32)
+    whole = embedder.embed(texts, batch_size=len(texts))
+    batched = embedder.embed(texts, batch_size=2)
+    assert whole.shape == batched.shape == (len(texts), config.d_model)
+    assert np.allclose(whole, batched, atol=1e-5)

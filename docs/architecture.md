@@ -120,11 +120,26 @@ evaluation harness compares genuinely disjoint sets.
 
 ## Model and training
 
+The company owns the model it improves. Training text comes from a released
+internal dataset. A change is a new dataset version and a new run, then a
+human promotion gate. A released dataset is not edited, and alpha output is
+not training data for the from-scratch track.
+
+Offline is the default (`config.offline_mode`). In that mode the Anthropic
+adapter raises before any HTTP call, and the alpha fetcher refuses to
+download a base. A base is accepted only by `training/alpha/pin.py`
+`verify_snapshot`, which checks the pinned name, revision, and shard hashes
+on disk. A lab sets `INTERNAL_AI_OFFLINE=0`.
+
 The transformer in `training/model.py` is a standard encoder: token and
 position embeddings, multi-head self attention, a feed-forward block and layer
 normalisation, with an optional causal mask for language modelling. It is
-randomly initialised. There is no `load_state_dict` path that accepts external
-weights, and the model card records `pretrained_weights_used: false`.
+randomly initialised. The from-scratch track has no path that accepts external
+weights, and its model card records `pretrained_weights_used: false`. The alpha
+track in `training/alpha/` is the only place a pinned open base may be loaded,
+and that card records the base name, revision and license. The company owns
+the adapter. The from-scratch language model is the later beta in
+`docs/beta-from-scratch.md`.
 
 ### Objectives
 

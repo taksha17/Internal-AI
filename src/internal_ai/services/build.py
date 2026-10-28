@@ -1216,15 +1216,17 @@ def latest_report(platform: Platform, model_id: str) -> Any:
 def request_promotion(
     platform: Platform, actor: Actor, model_id: str, red_team_results: str
 ) -> GateRequest:
-    from internal_ai.workflows import latest_frozen_report, model_card_markdown
+    from internal_ai.workflows import latest_frozen_pass, model_card_markdown
 
     require(platform.audit, actor, Action.PROMOTE_MODEL, model_id)
     model = platform.store.get_model(model_id)
     if model is None:
         raise KeyError(f"unknown model: {model_id}")
-    report = latest_frozen_report(platform, model_id)
+    report = latest_frozen_pass(platform, model_id)
     if report is None:
-        raise ValueError("evaluate the model against a frozen eval set first")
+        raise ValueError(
+            "evaluate the model against a frozen eval set first, and the report must pass"
+        )
     if not red_team_results.strip():
         raise ValueError("describe the red-team results: memorisation, PII and permission tests")
     _no_open_gate(platform, GateType.MODEL_PROMOTION, model_id)

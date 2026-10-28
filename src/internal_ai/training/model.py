@@ -1,8 +1,10 @@
 """A transformer implemented from scratch.
 
-Weights are randomly initialized and trained only on internal data. There is no
-code path that loads pretrained weights, and no distillation from third-party
-models (PRD non-goals 2.2, policy P3).
+Weights are randomly initialized and trained only on a released internal
+dataset. A change is a new dataset version, not an edit. This from-scratch
+track does not load a published checkpoint. The only loader for the pinned
+open base is ``internal_ai.training.alpha``. Alpha output is not training
+data for this track (PRD non-goals 2.2, policy P3).
 """
 
 from __future__ import annotations

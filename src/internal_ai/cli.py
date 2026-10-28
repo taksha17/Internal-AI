@@ -1002,7 +1002,7 @@ def cmd_model_card(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="internal_ai", description="Internal-AI control plane")
     parser.add_argument("--root", type=Path, default=None, help="project root")
-    parser.add_argument("--llm", default="auto", choices=["auto", "scripted", "anthropic"])
+    parser.add_argument("--llm", default="auto", choices=["auto", "scripted", "anthropic", "local"])
     parser.add_argument(
         "--as",
         dest="as_person",

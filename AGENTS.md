@@ -4,18 +4,37 @@ Conventions for agents and humans working in this repository.
 
 ## Purpose
 
-Internal-AI is the control plane for a multi-agent engineering organisation that
-builds from-scratch models on company data. Changes here change how other
-agents behave, so the bar is higher than for ordinary application code.
-The repository is licensed under the PolyForm Noncommercial License 1.0.0
-in `LICENSE`. Do not restore the Apache License or a permissive grant. A
-company needs a separate license from the owners for commercial use.
+Internal-AI is the control plane a company runs on its own machines. It has
+two purposes:
+
+1. **Offline private AI.** A bank, hospital, or defence install makes no
+   outbound call. Records, prompts, and weights stay on machines the company
+   controls. Offline is the default (`INTERNAL_AI_OFFLINE` unset or `1`). A
+   lab turns it off with `INTERNAL_AI_OFFLINE=0`. Policy P2 stays a human
+   decision; this default does not change it.
+2. **Own your AI.** The company builds and improves a model from data it
+   releases. The from-scratch track starts from random weights. The alpha
+   track adapts one pinned open base that is already on disk, and the company
+   owns the adapter. A change is a new dataset version, a new run, a citation
+   check, and a new human gate. A released dataset is not edited. Alpha output
+   is not training data for the from-scratch track.
+
+Changes here change how other agents behave, so the bar is higher than for
+ordinary application code. The repository is licensed under the PolyForm
+Noncommercial License 1.0.0 in `LICENSE`. Do not restore the Apache License
+or a permissive grant. A company needs a separate license from the owners
+for commercial use.
 
 ## Non-negotiables
 
-1. **Never load pretrained weights.** There is no code path that reads
-   pretrained parameters, and none may be added. A model is trained from
-   random initialisation on approved internal data only.
+1. **Never load pretrained weights on the from-scratch track.** That track
+   has no code path that reads pretrained parameters, and none may be added.
+   A from-scratch model is trained from random initialisation on approved
+   internal data only. The alpha track is the one exception: only
+   `internal_ai/training/alpha/` may load the pinned open base named in that
+   package, every alpha model card must name that base, and alpha output
+   must not be used to train the from-scratch track. Weight files found in a
+   data source are still refused.
 2. **Never train on third-party model output.** Distillation is a stated
    non-goal. Task data must come from internal documents, tickets and
    resolved questions.

@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
@@ -57,23 +58,26 @@ class RateLimiter:
     def __init__(self, requests_per_minute: int = 60) -> None:
         self.limit = requests_per_minute
         self._hits: dict[str, deque[float]] = defaultdict(deque)
+        self._lock = threading.Lock()
 
     def allow(self, user_id: str, now: float | None = None) -> bool:
         moment = now if now is not None else time.monotonic()
-        window = self._hits[user_id]
-        while window and moment - window[0] > 60.0:
-            window.popleft()
-        if len(window) >= self.limit:
-            return False
-        window.append(moment)
-        return True
+        with self._lock:
+            window = self._hits[user_id]
+            while window and moment - window[0] > 60.0:
+                window.popleft()
+            if len(window) >= self.limit:
+                return False
+            window.append(moment)
+            return True
 
     def remaining(self, user_id: str, now: float | None = None) -> int:
         moment = now if now is not None else time.monotonic()
-        window = self._hits[user_id]
-        while window and moment - window[0] > 60.0:
-            window.popleft()
-        return max(self.limit - len(window), 0)
+        with self._lock:
+            window = self._hits[user_id]
+            while window and moment - window[0] > 60.0:
+                window.popleft()
+            return max(self.limit - len(window), 0)
 
 
 def parse_api_keys(raw: str) -> dict[str, Principal]:
@@ -154,6 +158,19 @@ class ModelRouter:
 
     def rollback(self, name: str, model_id: str, actor: str) -> ModelVersion:
         return self.set_active(name, model_id, actor, reason="rollback")
+
+
+def served_model(store: Store, router: ModelRouter) -> ModelVersion | None:
+    """The model a request uses when the caller does not name one.
+
+    The sample path is named embedding-v1. A deployment of a promoted model
+    under another name is what gets served when that sample name is absent.
+    """
+    named = router.resolve("embedding-v1")
+    if named is not None:
+        return named
+    promoted = [item for item in store.list_models() if item.status == "promoted"]
+    return promoted[-1] if promoted else None
 
 
 class RetrievalService:

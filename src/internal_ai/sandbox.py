@@ -9,11 +9,15 @@ role holds the matching capability.
 from __future__ import annotations
 
 import os
-import resource
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+try:
+    import resource
+except ImportError:
+    resource = None  # Windows has no resource module; limits are a no-op there.
 
 SANDBOX_ENV_ALLOWLIST = (
     "PATH",
@@ -38,6 +42,8 @@ class SandboxResult:
 
 
 def _limits(cpu_seconds: int, memory_mb: int) -> None:
+    if resource is None:
+        return
     resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
     memory_bytes = memory_mb * 1024 * 1024
     resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
@@ -87,6 +93,9 @@ class Sandbox:
         started = time.monotonic()
         timed_out = False
         try:
+            run_kwargs: dict[str, object] = {}
+            if resource is not None:
+                run_kwargs["preexec_fn"] = lambda: _limits(self.cpu_seconds, self.memory_mb)
             proc = subprocess.run(
                 command,
                 cwd=str(workdir),
@@ -94,8 +103,8 @@ class Sandbox:
                 capture_output=True,
                 text=True,
                 timeout=timeout or self.timeout,
-                preexec_fn=lambda: _limits(self.cpu_seconds, self.memory_mb),
                 check=False,
+                **run_kwargs,
             )
             return SandboxResult(
                 exit_code=proc.returncode,

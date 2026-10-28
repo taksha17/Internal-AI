@@ -125,11 +125,14 @@ Agent capabilities in `roles.py` are unchanged.
 
 Each item has a denial test.
 
-- No pretrained weights. The console has no model upload. Training always
-  starts from random initialisation. Source registration refuses paths
-  containing weight files (`.pt`, `.pth`, `.bin`, `.safetensors`, `.gguf`,
-  `.onnx`, `.ckpt`) and any path the inventory scanner does not classify as
-  `internal`.
+- Two training tracks, and no model upload. The from-scratch track starts
+  from random initialisation, and its card records that pretrained weights
+  were not used. The alpha track may load only the pinned open base already
+  on disk, and its card names that base, revision, and license. Source
+  registration refuses paths containing weight files (`.pt`, `.pth`, `.bin`,
+  `.safetensors`, `.gguf`, `.onnx`, `.ckpt`) and any path the inventory
+  scanner does not classify as `internal`. A released dataset is not edited;
+  an improvement is a new version.
 - No distillation. Sources are internal files or directories inside the
   configured data roots (`INTERNAL_AI_DATA_ROOTS`, default `<root>/data` and the
   sample directory) and need an approved `new_data_source_access` gate. There is

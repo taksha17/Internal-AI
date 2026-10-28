@@ -1,21 +1,26 @@
 """LLM adapters for role agents.
 
 Policy P2 governs this layer: agents may use third-party LLM APIs for code and
-configuration work, but never for raw internal data. The external adapter
-therefore redacts anything that looks like a secret or personal data before a
-prompt leaves the process, and every call is audited with its token cost.
+configuration work, but never for raw internal data. Offline mode is the
+default and raises before any HTTP call. When a lab turns it off, the
+external adapter redacts anything that looks like a secret or personal data
+before a prompt leaves the process, and every call is audited with its token
+cost.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 import httpx
 
+from internal_ai.config import offline_mode
 from internal_ai.data.inventory import SECRET_PATTERNS
 
 OUTBOUND_PATTERNS: dict[str, re.Pattern[str]] = {
@@ -151,6 +156,8 @@ class AnthropicAdapter:
         max_tokens: int = 2048,
         temperature: float = 0.0,
     ) -> Completion:
+        if offline_mode():
+            raise RuntimeError("offline mode refuses third-party model APIs")
         if not self.api_key:
             raise RuntimeError("ANTHROPIC_API_KEY is not set")
         prompt, redacted_prompt = redact_for_external(prompt)
@@ -192,6 +199,73 @@ class AnthropicAdapter:
         )
 
 
+def private_runner_url(url: str) -> str:
+    """Accept only a loopback or private-network runner. Public hosts are refused."""
+    parsed = urlsplit(url.strip())
+    host = parsed.hostname
+    if parsed.scheme not in {"http", "https"} or not host:
+        raise ValueError("local runner URL must be http or https with a host")
+    if host == "localhost":
+        return url.rstrip("/")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError as exc:
+        raise ValueError("local runner host must be a private or loopback IP") from exc
+    if not (address.is_loopback or address.is_private):
+        raise ValueError("local runner host must be a private or loopback IP")
+    return url.rstrip("/")
+
+
+class LocalRunnerAdapter:
+    """On-prem generation. The runner owns the KV cache. Company text stays on the LAN."""
+
+    name = "local-runner"
+
+    def __init__(
+        self,
+        base_url: str | None = None,
+        model: str | None = None,
+        timeout: float = 180.0,
+    ) -> None:
+        raw = base_url if base_url is not None else os.environ.get("INTERNAL_AI_LOCAL_RUNNER", "")
+        self.base_url = private_runner_url(raw)
+        self.model = model or os.environ.get("INTERNAL_AI_LOCAL_MODEL", "qwen2.5-3b-lumen")
+        self.timeout = timeout
+
+    def complete(
+        self,
+        prompt: str,
+        system: str = "",
+        max_tokens: int = 512,
+        temperature: float = 0.0,
+    ) -> Completion:
+        messages: list[dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        with httpx.Client(timeout=self.timeout) as client:
+            response = client.post(f"{self.base_url}/chat/completions", json=payload)
+            response.raise_for_status()
+            data = response.json()
+        choice = (data.get("choices") or [{}])[0]
+        message = choice.get("message") or {}
+        text = str(message.get("content") or "")
+        usage = data.get("usage") or {}
+        return Completion(
+            text=text,
+            model=str(data.get("model") or self.model),
+            input_tokens=int(usage.get("prompt_tokens", 0)),
+            output_tokens=int(usage.get("completion_tokens", 0)),
+            raw=data,
+        )
+
+
 class FallbackAdapter:
     """Tries the primary adapter and falls back to the deterministic one."""
 
@@ -216,8 +290,15 @@ class FallbackAdapter:
 def build_adapter(kind: str = "auto") -> LLMAdapter:
     if kind == "scripted":
         return ScriptedAdapter()
+    if kind == "local":
+        return LocalRunnerAdapter()
     if kind == "anthropic":
         return AnthropicAdapter()
+    local = os.environ.get("INTERNAL_AI_LOCAL_RUNNER", "").strip()
+    if local:
+        return LocalRunnerAdapter(base_url=local)
+    if offline_mode():
+        return ScriptedAdapter()
     anthropic = AnthropicAdapter()
     if anthropic.available:
         return FallbackAdapter(anthropic, ScriptedAdapter())
