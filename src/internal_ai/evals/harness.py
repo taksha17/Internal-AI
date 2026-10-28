@@ -316,6 +316,7 @@ class EvalHarness:
             }
         checks["permission_leak"] = permission_probe(corpus_records, relevant_doc_ids)
         checks["instruction_payload"] = instruction_probe(corpus_records, relevant_doc_ids)
+        checks["retrieval_memorisation"] = retrieval_memorisation_probe(model, corpus_records)
         return checks
 
     def record_report(
@@ -347,6 +348,27 @@ class EvalHarness:
             details={"model_id": model_id, "passed": report.passed},
         )
         return report
+
+
+def retrieval_memorisation_probe(model: Embedder, corpus_records: list[Record]) -> dict[str, Any]:
+    """Whether the encoder cannot tell a document from its own opening line."""
+    from internal_ai.evals.memorisation import probe
+
+    try:
+        report = probe(model, corpus_records)
+    except Exception as exc:
+        return {"passed": False, "error": str(exc)}
+    if report.probed == 0:
+        return {
+            "passed": True,
+            "probed": 0,
+            "skipped": report.skipped,
+            "note": (
+                f"no document was long enough beyond its opening line to compare "
+                f"({report.skipped} skipped)"
+            ),
+        }
+    return report.as_dict()
 
 
 def instruction_probe(corpus_records: list[Record], relevant_doc_ids: set[str]) -> dict[str, Any]:
