@@ -8,6 +8,7 @@ from pathlib import Path
 
 from conftest import enroll, session_csrf, sign_in
 from fastapi.testclient import TestClient
+from programme import actor_named, record_ready_programme
 
 from internal_ai.api import create_app
 from internal_ai.context import Platform
@@ -204,6 +205,7 @@ def test_guided_register_builds_release_and_asks(tmp_path: Path) -> None:
                 },
             )
             assert response.status_code == 200
+        record_ready_programme(platform, actor_named(platform, "Mo Builder"))
         dana.post(f"/console/datasets/{dataset_id}/release", data={"csrf_token": csrf})
         assert platform.store.get_dataset(dataset_id).released
 

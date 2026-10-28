@@ -169,6 +169,43 @@ def count_parameters(config: TransformerConfig) -> int:
     return model.parameter_count()
 
 
+def spec_violations(model: TinyTransformer, config: TransformerConfig) -> list[str]:
+    """Where the built model disagrees with the config it was built from.
+
+    Training will happily run through a mis-shaped layer and report a poor model,
+    so the shapes are compared with the spec before the first step.
+    """
+    expected: dict[str, tuple[int, ...]] = {
+        "token_embedding.weight": (config.vocab_size, config.d_model),
+        "position_embedding.weight": (config.max_seq_len, config.d_model),
+        "norm.weight": (config.d_model,),
+    }
+    if not config.tie_embeddings:
+        expected["lm_head.weight"] = (config.vocab_size, config.d_model)
+    shapes = {name: tuple(parameter.shape) for name, parameter in model.named_parameters()}
+    violations = [
+        f"{name} is {'.'.join(str(size) for size in shapes.get(name, ()))} but the spec says "
+        f"{'.'.join(str(size) for size in shape)}"
+        for name, shape in expected.items()
+        if shapes.get(name) != shape
+    ]
+    built_layers = sum(1 for name in shapes if name.endswith("attention.qkv.weight"))
+    if built_layers != config.n_layers:
+        violations.append(
+            f"the model has {built_layers} attention layers; the spec says {config.n_layers}"
+        )
+    return violations
+
+
+def non_finite_parameters(model: TinyTransformer) -> list[str]:
+    """Parameters holding a NaN or an infinity before training even starts."""
+    return [
+        name
+        for name, parameter in model.named_parameters()
+        if not bool(torch.isfinite(parameter).all())
+    ]
+
+
 def build_model(config: TransformerConfig, seed: int = 0) -> TinyTransformer:
     torch.manual_seed(seed)
     return TinyTransformer(config)
