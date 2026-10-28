@@ -12,6 +12,7 @@
 </head>
 <body{% if actor %} class="signed-in"{% else %} class="signed-out"{% endif %}>
 {{ m.sprite() }}
+{% if actor %}<a class="skip" href="#main">Skip to content</a>{% endif %}
 {% if actor %}
 {% set nav_icons = {"Home": "home", "Approvals": "check-circle", "Data": "database", "Datasets": "layers", "Eval sets": "clipboard", "Models": "cube", "Jobs": "activity", "Ask": "chat", "Plan": "map", "Audit": "list", "Admin": "users"} %}
 {% set nav_groups = {"Workspace": ["Home", "Data", "Datasets", "Eval sets", "Models"], "Runs": ["Jobs", "Ask", "Plan"], "Governance": ["Approvals", "Audit", "Admin"]} %}
@@ -55,25 +56,31 @@
   <p class="crumbs">Console <span aria-hidden="true">/</span> <strong>{% block crumb %}Overview{% endblock %}</strong></p>
   <div class="top-actions">
     <span class="env-pill"><span class="env-dot" aria-hidden="true"></span>Local · no external calls</span>
-    {% if kill.engaged %}
-    <form method="post" action="/console/kill-switch" class="kill is-engaged">
-      {{ m.csrf_field() }}<input type="hidden" name="back" value="{{ path }}">
-      <span class="kill-label">{{ m.icon("shield") }}<span>Engaged{% if kill.engaged_by %} by {{ kill.engaged_by }}{% endif %}</span></span>
-      <input type="text" name="reason" placeholder="Why it is safe to resume" required maxlength="300" aria-label="Release reason">
-      <button type="submit" class="ok">Release</button>
-    </form>
-    {% else %}
-    <form method="post" action="/console/kill-switch" class="kill">
-      {{ m.csrf_field() }}<input type="hidden" name="back" value="{{ path }}"><input type="hidden" name="engage" value="1">
-      <span class="kill-label">{{ m.icon("shield") }}<span>Kill switch</span></span>
-      <input type="text" name="reason" placeholder="Reason (required)" required maxlength="300" aria-label="Kill switch reason">
-      <button type="submit" class="danger">Engage</button>
-    </form>
-    {% endif %}
+    <details class="kill{{ ' is-engaged' if kill.engaged else '' }}"{% if kill.engaged %} open{% endif %}>
+      <summary>
+        {{ m.icon("shield") }}<span>{{ "Engaged" if kill.engaged else "Kill switch" }}</span>
+        <span class="kill-chip-note">{% if kill.engaged and kill.engaged_by %}by {{ kill.engaged_by }}{% else %}ready{% endif %}</span>
+      </summary>
+      {% if kill.engaged %}
+      <form method="post" action="/console/kill-switch" class="kill-panel">
+        {{ m.csrf_field() }}<input type="hidden" name="back" value="{{ path }}">
+        <span class="kill-label">Release reason</span>
+        <input type="text" name="reason" placeholder="Why it is safe to resume" required maxlength="300" aria-label="Release reason">
+        <button type="submit" class="ok">Release</button>
+      </form>
+      {% else %}
+      <form method="post" action="/console/kill-switch" class="kill-panel">
+        {{ m.csrf_field() }}<input type="hidden" name="back" value="{{ path }}"><input type="hidden" name="engage" value="1">
+        <span class="kill-label">Reason</span>
+        <input type="text" name="reason" placeholder="What is happening" required maxlength="300" aria-label="Kill switch reason">
+        <button type="submit" class="danger">Engage</button>
+      </form>
+      {% endif %}
+    </details>
   </div>
 </header>
 {% endif %}
-<main>
+<main id="main" tabindex="-1">
   {% for kind, text in flashes %}
   <div class="flash flash-{{ kind }}" role="status">{{ text }}</div>
   {% endfor %}

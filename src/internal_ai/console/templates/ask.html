@@ -2,8 +2,7 @@
 {% import "_macros.html" as m with context %}
 {% block title %}Ask{% endblock %}
 {% block content %}
-<h1>Ask</h1>
-<p class="muted">Answers come only from records your groups ({{ actor.groups | sort | join(", ") or "none" }}) may read, in a released dataset, and every answer cites its sources. On small data keyword search answers first; a trained model joins in only when it earns its place.</p>
+{{ m.page_head("Ask", "Answers come only from records your groups (" ~ (actor.groups | sort | join(", ") or "none") ~ ") may read, in a released dataset, and every answer cites its sources. On small data keyword search answers first; a trained model joins in only when it earns its place.", "Runs") }}
 <form method="post" action="/console/ask" class="stack card">
   {{ m.csrf_field() }}
   {% if datasets %}

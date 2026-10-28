@@ -1,21 +1,20 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
 {% block title %}Datasets{% endblock %}
+{% block crumb %}Datasets{% endblock %}
 {% block content %}
-<h1>Datasets</h1>
-<p class="muted">A dataset version is built from an approved source. Split it, release it through its gate, and train a tokenizer on its training split.</p>
-<table>
-  <thead><tr><th>Dataset</th><th>Records</th><th>Split</th><th>Released</th><th>Tokenizer</th></tr></thead>
-  <tbody>
+{{ m.page_head("Datasets", "A dataset version is built from an approved source. Split it, release it through its gate, and train a tokenizer on its training split.", "Workspace") }}
+{% call m.data_table([("Dataset",), ("Records", true), ("Split",), ("Released",), ("Tokenizer",)]) %}
   {% for row in rows %}
   <tr>
     <td><a href="/console/datasets/{{ row.dataset.id }}">{{ row.dataset.name }} v{{ row.dataset.version }}</a> <span class="muted small">{{ row.dataset.id }}</span></td>
-    <td>{{ row.dataset.record_count }}</td>
+    <td class="num">{{ row.dataset.record_count }}</td>
     <td>{{ "yes" if row.has_splits else "no" }}</td>
     <td>{{ m.status_badge("released" if row.dataset.released else "draft") }}</td>
     <td>{{ "yes" if row.tokenizer else "no" }}</td>
   </tr>
-  {% else %}<tr><td colspan="5" class="muted">No datasets yet. Build one from an approved <a href="/console/sources">data source</a>.</td></tr>{% endfor %}
-  </tbody>
-</table>
+  {% else %}
+  {{ m.empty_row(5, "No datasets yet", "A dataset is built from a source a data owner approved.", "/console/sources", "Approve a source") }}
+  {% endfor %}
+{% endcall %}
 {% endblock %}

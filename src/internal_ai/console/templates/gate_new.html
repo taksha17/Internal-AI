@@ -2,8 +2,7 @@
 {% import "_macros.html" as m with context %}
 {% block title %}Request a gate{% endblock %}
 {% block content %}
-<h1>Request a gate</h1>
-<p class="muted">Most gates are requested for you by the step that needs them. Use this page for budget increases and training runs above the cost threshold.</p>
+{{ m.page_head("Request a gate", "Most gates are requested for you by the step that needs them. Use this page for budget increases and training runs above the cost threshold.", "Governance") }}
 <form method="get" action="/console/gates/new" class="inline-form card">
   <label>Gate type
     <select name="gate_type">

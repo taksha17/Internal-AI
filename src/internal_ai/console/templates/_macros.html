@@ -29,6 +29,42 @@
 
 {% macro status_badge(value) %}<span class="badge badge-{{ value }}">{{ value }}</span>{% endmacro %}
 
+{# One header shape for every page, so the eye finds the title in the same place
+   whether the page is a list, a form or a detail. Actions are the caller. #}
+{% macro page_head(title, lede="", eyebrow="", status="") %}
+{% set actions %}{% if caller is defined %}{{ caller() }}{% endif %}{% endset %}
+<div class="page-head">
+  <div>
+    {% if eyebrow %}<p class="eyebrow">{{ eyebrow }}</p>{% endif %}
+    <h1>{{ title }}{% if status %} {{ status_badge(status) }}{% endif %}</h1>
+    {% if lede %}<p class="lede">{{ lede }}</p>{% endif %}
+  </div>
+  {% if actions | trim %}<div class="head-actions">{{ actions }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{# A header is (label, numeric): every column announces itself to a screen
+   reader, and numbers line up on their last digit. #}
+{% macro data_table(headers) %}
+<div class="table-wrap">
+<table class="data">
+  <thead><tr>{% for h in headers %}{% set label = h if h is string else h[0] %}{% set numeric = h is not string and h | length > 1 and h[1] %}<th scope="col"{% if numeric %} class="num"{% endif %}>{{ label }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {{ caller() }}
+  </tbody>
+</table>
+</div>
+{% endmacro %}
+
+{# An empty state names the next action; a blank table never does. #}
+{% macro empty(title, hint="", href="", action="") %}
+<p class="empty">{{ icon("inbox") }}<span><strong>{{ title }}</strong>{% if hint %} {{ hint }}{% endif %}{% if href %} <a href="{{ href }}">{{ action }}</a>{% endif %}</span></p>
+{% endmacro %}
+
+{% macro empty_row(colspan, title, hint="", href="", action="") %}
+<tr><td colspan="{{ colspan }}"><span class="empty-row">{{ icon("inbox") }}<span><strong>{{ title }}</strong>{% if hint %} {{ hint }}{% endif %}{% if href %} <a href="{{ href }}">{{ action }}</a>{% endif %}</span></span></td></tr>
+{% endmacro %}
+
 {# The model types one source can carry, best first. With a path it is also the
    way to pick one: the button hands the folder to the guided path with that
    intent, and the choice still goes through its usual gate and approval. #}
@@ -60,7 +96,7 @@
     <strong class="gate-title">{{ gate.title }}</strong> {{ status_badge(gate.status) }}
     <span class="gate-meta">{{ gate.gate_type }} · {{ gate.id }} · subject {{ gate.subject }}</span>
   </div>
-  <p class="card-sub">Requested by {{ gate.requested_by }} on {{ gate.created_at }}. Needs {{ gate.required_approvers | join(" or ") }}.</p>
+  <p class="card-sub">Requested by {{ gate.requested_by }} {{ gate.created_at | when }}. Needs {{ gate.required_approvers | join(" or ") }}.</p>
   {% if gate.decisions %}
   <ul class="decisions">
     {% for decision in gate.decisions %}

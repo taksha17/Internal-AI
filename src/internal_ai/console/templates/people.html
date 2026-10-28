@@ -2,7 +2,7 @@
 {% import "_macros.html" as m with context %}
 {% block title %}People and accounts{% endblock %}
 {% block content %}
-<h1>People and accounts</h1>
+{{ m.page_head("People and accounts", "Roles decide what a person may do and which gates they may approve. Groups decide which records they may read. Placeholder people from the PRD cannot sign in until they are replaced with a real person.", "Admin") }}
 <p class="tabs"><a href="/console/admin/people" class="active">People</a><a href="/console/admin/policy">Policy</a><a href="/console/admin/budget">Budget</a></p>
 {% if one_time %}
 <div class="callout">
@@ -10,11 +10,8 @@
   <p class="small">Give it to them in person or over a trusted channel. It is shown only now, and they must change it when they first sign in.</p>
 </div>
 {% endif %}
-<p class="muted">Roles decide what a person may do and which gates they may approve. Groups decide which records they may read. Placeholder people from the PRD cannot sign in until they are replaced with a real person.</p>
 {% set manage = can("manage_people") %}
-<table>
-  <thead><tr><th>Person</th><th>Roles</th><th>Groups</th><th>Account</th>{% if manage %}<th>Manage</th>{% endif %}</tr></thead>
-  <tbody>
+{% call m.data_table([("Person",), ("Roles",), ("Groups",), ("Account",)] + ([("Manage",)] if manage else [])) %}
   {% for person in people %}
   {% set account = accounts.get(person.id) %}
   <tr>
@@ -45,8 +42,7 @@
     {% endif %}
   </tr>
   {% endfor %}
-  </tbody>
-</table>
+{% endcall %}
 {% if manage %}
 <form method="post" action="/console/admin/people" class="stack card">
   {{ m.csrf_field() }}

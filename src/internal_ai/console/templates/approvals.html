@@ -3,16 +3,9 @@
 {% block title %}Approvals{% endblock %}
 {% block crumb %}Approvals{% endblock %}
 {% block content %}
-<div class="page-head">
-  <div>
-    <p class="eyebrow">Governance</p>
-    <h1>Approvals</h1>
-    <p class="lede">A gate is a human decision. Read the evidence, then approve or reject with a reason. You can never decide a gate you asked for.</p>
-  </div>
-  <div class="head-actions">
-    <a href="/console/gates/new" class="button primary">Request a gate</a>
-  </div>
-</div>
+{% call m.page_head("Approvals", "A gate is a human decision. Read the evidence, then approve or reject with a reason. You can never decide a gate you asked for.", "Governance") %}
+  <a href="/console/gates/new" class="button primary">Request a gate</a>
+{% endcall %}
 <p class="tabs">
   {% for value in ["pending", "approved", "rejected", "all"] %}
   <a href="/console/approvals?status={{ value }}" class="{{ 'active' if status == value else '' }}">{{ value }}</a>
@@ -31,6 +24,6 @@
   {% endif %}
 </div>
 {% else %}
-<p class="empty">Nothing here.</p>
+{{ m.empty("No gates in this state", "Switch the tab above, or request one for a budget increase or a costly run.", "/console/gates/new", "Request a gate") }}
 {% endfor %}
 {% endblock %}

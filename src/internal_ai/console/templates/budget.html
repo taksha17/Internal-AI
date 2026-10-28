@@ -2,19 +2,17 @@
 {% import "_macros.html" as m with context %}
 {% block title %}Budget{% endblock %}
 {% block content %}
-<h1>Budget limits</h1>
+{{ m.page_head("Budget limits", "Lowering or adding a limit takes effect at once. Raising one needs an approved budget_increase gate whose subject is the limit's scope:key.", "Admin") }}
 <p class="tabs"><a href="/console/admin/people">People</a><a href="/console/admin/policy">Policy</a><a href="/console/admin/budget" class="active">Budget</a></p>
-<p class="muted">Lowering or adding a limit takes effect at once. Raising one needs an approved budget_increase gate whose subject is the limit's scope:key.</p>
-<table>
-  <thead><tr><th>Scope</th><th>Spent</th><th>Limit</th><th>Left</th><th>Used</th></tr></thead>
-  <tbody>
+{% call m.data_table([("Scope",), ("Spent", true), ("Limit", true), ("Left", true), ("Used", true)]) %}
   {% for item in budget %}
-  <tr class="{{ 'warn' if item.exceeded else '' }}"><td>{{ item.scope }}:{{ item.key }}</td><td>${{ "%.2f" % item.spent_usd }}</td><td>${{ "%.2f" % item.limit_usd }}</td><td>${{ "%.2f" % item.remaining_usd }}</td><td>{{ "%.0f" % (item.utilization * 100) }}%</td></tr>
+  <tr class="{{ 'warn' if item.exceeded else '' }}"><td>{{ item.scope }}:{{ item.key }}</td><td class="num">${{ "%.2f" % item.spent_usd }}</td><td class="num">${{ "%.2f" % item.limit_usd }}</td><td class="num">${{ "%.2f" % item.remaining_usd }}</td><td class="num">{{ "%.0f" % (item.utilization * 100) }}%</td></tr>
+  {% else %}
+  {{ m.empty_row(5, "No limits set", "A job refuses to start when any budget has less left than its cap.", "#set-limit", "Set a limit") }}
   {% endfor %}
-  </tbody>
-</table>
+{% endcall %}
 {% if can("set_budget") %}
-<form method="post" action="/console/admin/budget" class="stack card">
+<form method="post" action="/console/admin/budget" class="stack card" id="set-limit">
   {{ m.csrf_field() }}
   <h2>Set a limit</h2>
   <label>Scope <select name="scope">{% for scope in ["global", "project", "agent", "job", "weekly"] %}<option value="{{ scope }}">{{ scope }}</option>{% endfor %}</select></label>

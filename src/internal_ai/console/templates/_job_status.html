@@ -1,7 +1,7 @@
 {% import "_macros.html" as m with context %}
-<section class="card" id="job-status"{% if not job.finished %} hx-get="/console/jobs/{{ job.id }}/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+<section class="card" id="job-status" aria-live="polite"{% if not job.finished %} hx-get="/console/jobs/{{ job.id }}/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
   <h2>Status {{ m.status_badge(job.state) }}</h2>
-  {% if not job.finished %}<p class="muted">Working… this page updates by itself.</p>{% endif %}
+  <p class="muted small">Started {{ job.created_at | when }}{% if job.finished %} · finished {{ job.finished_at | when }}{% else %} · updates itself every 2 seconds{% endif %}</p>
   {% if job.state == "failed" %}<pre class="refusal">{{ job.error }}</pre>{% endif %}
   {% if job.state == "succeeded" %}
   <pre>{{ job.result | tojson(indent=2) }}</pre>

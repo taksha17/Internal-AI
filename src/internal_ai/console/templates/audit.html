@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
 {% block title %}Audit{% endblock %}
+{% block crumb %}Audit{% endblock %}
 {% block content %}
-<h1>Audit log</h1>
+{{ m.page_head("Audit log", "Every action a person or an agent takes. The chain links each event to the one before it, so a removed or edited row is visible.", "Governance") }}
 <p class="{{ 'callout' if verify.ok else 'refusal' }}">
   {% if verify.ok %}The hash chain is intact across {{ verify.checked }} events.{% else %}The hash chain is broken at event {{ verify.broken_at_seq }}: {{ verify.reason }}.{% endif %}
 </p>
@@ -10,13 +11,13 @@
   <label>Actor <input type="text" name="actor" value="{{ actor_filter }}"></label>
   <label>Action <input type="text" name="action" value="{{ action_filter }}"></label>
   <button type="submit">Filter</button>
+  {% if actor_filter or action_filter %}<a class="quiet-link" href="/console/audit">Clear</a>{% endif %}
 </form>
-<table>
-  <thead><tr><th>#</th><th>When</th><th>Actor</th><th>Action</th><th>Subject</th><th>Outcome</th></tr></thead>
-  <tbody>
+{% call m.data_table([("#", true), ("When",), ("Actor",), ("Action",), ("Subject",), ("Outcome",)]) %}
   {% for event in events %}
-  <tr class="{{ 'warn' if event.outcome != 'success' else '' }}"><td>{{ event.seq }}</td><td>{{ event.created_at }}</td><td>{{ event.actor }} <span class="muted">{{ event.actor_kind }}</span></td><td>{{ event.action }}</td><td>{{ event.subject }}</td><td>{{ m.status_badge(event.outcome) }}</td></tr>
+  <tr class="{{ 'warn' if event.outcome != 'success' else '' }}"><td class="num">{{ event.seq }}</td><td>{{ event.created_at | when }}</td><td>{{ event.actor }} <span class="muted small">{{ event.actor_kind }}</span></td><td>{{ event.action }}</td><td>{{ event.subject }}</td><td>{{ m.status_badge(event.outcome) }}</td></tr>
+  {% else %}
+  {{ m.empty_row(6, "No events match", "Clear the filter to see the whole chain.", "/console/audit", "Show everything") }}
   {% endfor %}
-  </tbody>
-</table>
+{% endcall %}
 {% endblock %}

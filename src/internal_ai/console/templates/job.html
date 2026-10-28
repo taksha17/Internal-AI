@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
 {% block title %}{{ job.title }}{% endblock %}
+{% block crumb %}<a href="/console/jobs">Jobs</a> / {{ job.title }}{% endblock %}
 {% block content %}
-<h1>{{ job.title }}</h1>
-<p class="muted small">{{ job.id }} · started by {{ job.requested_by }} · scheduler job {{ job.scheduler_job_id }}</p>
+{{ m.page_head(job.title, job.id ~ " · started by " ~ job.requested_by ~ " · scheduler job " ~ job.scheduler_job_id, "Run", status=job.state) }}
 {% include "_job_status.html" %}
 <details><summary>Parameters</summary><pre>{{ job.params | tojson(indent=2) }}</pre></details>
 {% endblock %}

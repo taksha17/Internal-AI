@@ -2,8 +2,7 @@
 {% import "_macros.html" as m with context %}
 {% block title %}Eval sets{% endblock %}
 {% block content %}
-<h1>Eval sets</h1>
-<p class="muted">An eval set is the exam a model sits. Its answers must come only from the held-out test split, and once frozen nobody, human or agent, can change it. A change means a new version and a new approval.</p>
+{{ m.page_head("Eval sets", "An eval set is the exam a model sits. Its answers must come only from the held-out test split, and once frozen nobody, human or agent, can change it. A change means a new version and a new approval.", "Workspace") }}
 {% for row in rows %}
 <section class="card">
   <h2>{{ row.set.name }} v{{ row.set.version }} {{ m.status_badge("frozen" if row.set.frozen else "open") }}</h2>
@@ -28,6 +27,6 @@
   </div>
 </section>
 {% else %}
-<p class="muted">No eval sets yet. Create one from a split <a href="/console/datasets">dataset</a>.</p>
+{{ m.empty("No eval sets yet", "An eval set is created from a split dataset, and then frozen.", "/console/datasets", "Open datasets") }}
 {% endfor %}
 {% endblock %}

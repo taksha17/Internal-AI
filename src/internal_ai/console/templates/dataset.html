@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
 {% block title %}{{ view.dataset.name }}{% endblock %}
+{% block crumb %}<a href="/console/datasets">Datasets</a> / {{ view.dataset.name }}{% endblock %}
 {% block content %}
 {% set dataset = view.dataset %}
-<h1>{{ dataset.name }} v{{ dataset.version }} {{ m.status_badge("released" if dataset.released else "draft") }}</h1>
-<p class="muted small">{{ dataset.id }} · content hash <code>{{ dataset.content_hash[:16] }}</code></p>
+{{ m.page_head(dataset.name ~ " v" ~ dataset.version, dataset.id ~ " · content hash " ~ dataset.content_hash[:16], "Dataset", status="released" if dataset.released else "draft") }}
 
 <div class="grid">
   <section class="card">

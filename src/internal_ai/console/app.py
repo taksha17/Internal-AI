@@ -15,15 +15,19 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 from starlette.concurrency import run_in_threadpool
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from internal_ai.context import Platform
 from internal_ai.data.suggest import suggest_model_types
@@ -182,6 +186,40 @@ def _groups(raw: str) -> list[str]:
     return sorted({item.strip() for item in (raw or "").split(",") if item.strip()})
 
 
+def when(value: Any) -> Markup:
+    """A time read at a glance, citable exactly.
+
+    Rows carry ISO-8601 from the audit and job stores. A person scanning a list
+    wants "4 min ago"; an auditor wants the exact instant. The element keeps
+    both, and anything unparseable falls back to the value it was given.
+    """
+    if value is None or value == "":
+        return Markup("")
+    text = str(value)
+    try:
+        stamp = datetime.fromisoformat(text)
+    except ValueError:
+        return Markup.escape(text)
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=UTC)
+    seconds = (datetime.now(UTC) - stamp).total_seconds()
+    if seconds < 0:
+        label = stamp.strftime("%d %b %Y")
+    elif seconds < 60:
+        label = "just now"
+    elif seconds < 3600:
+        label = f"{int(seconds // 60)} min ago"
+    elif seconds < 86_400:
+        label = f"{int(seconds // 3600)} h ago"
+    elif seconds < 7 * 86_400:
+        label = f"{int(seconds // 86_400)} d ago"
+    else:
+        label = stamp.strftime("%d %b %Y")
+    return Markup('<time datetime="{}" title="{}">{}</time>').format(
+        text, stamp.strftime("%d %b %Y, %H:%M UTC"), label
+    )
+
+
 def mount_console(
     app: FastAPI,
     get_platform: Callable[[], Platform],
@@ -191,6 +229,7 @@ def mount_console(
     templates = Jinja2Templates(directory=str(HERE / "templates"))
     templates.env.globals["nav"] = NAV
     templates.env.globals["min_password_length"] = MIN_PASSWORD_LENGTH
+    templates.env.filters["when"] = when
     app.mount("/console/static", StaticFiles(directory=str(HERE / "static")), name="console-static")
     limiter = SignInLimiter()
     flashes: dict[str, list[tuple[str, str]]] = {}
@@ -205,6 +244,32 @@ def mount_console(
     @app.exception_handler(PasswordChangeRequired)
     async def _to_password(request: Request, exc: PasswordChangeRequired) -> Response:
         return RedirectResponse("/console/password", status_code=303)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _console_http_error(request: Request, exc: StarletteHTTPException) -> Response:
+        """A wrong id in the console is a page, not a JSON body.
+
+        A polled fragment keeps the plain error: htmx swaps whatever comes back
+        into a small target, so a full page there would corrupt the page.
+        """
+        path = request.url.path
+        if exc.status_code not in (403, 404) or not path.startswith("/console"):
+            return await http_exception_handler(request, exc)
+        if path.startswith("/console/static"):
+            return await http_exception_handler(request, exc)
+        if request.headers.get("hx-request"):
+            return await http_exception_handler(request, exc)
+        try:
+            ctx = context(request)
+        except (SignInRequired, PasswordChangeRequired):
+            return RedirectResponse("/console/signin", status_code=303)
+        return render(
+            ctx,
+            "error.html",
+            status_code=exc.status_code,
+            code=exc.status_code,
+            detail=str(exc.detail),
+        )
 
     # ------------------------------------------------------------ plumbing
 

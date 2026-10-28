@@ -2,8 +2,7 @@
 {% import "_macros.html" as m with context %}
 {% block title %}Models{% endblock %}
 {% block content %}
-<h1>Models</h1>
-<p class="muted">Models are trained from random initialisation on a released dataset. No pretrained weights are ever loaded.</p>
+{{ m.page_head("Models", "Models are trained from random initialisation on a released dataset. No pretrained weights are ever loaded.", "Workspace") }}
 
 {% if can("train_model") %}
 <form method="post" action="/console/models/train" class="stack card">
@@ -57,9 +56,7 @@
 
 <section class="card">
   <h2>Classifier runs</h2>
-  <table>
-    <thead><tr><th>Run</th><th>State</th><th>Result</th><th></th></tr></thead>
-    <tbody>
+  {% call m.data_table([("Run",), ("State",), ("Result",), ("Action",)]) %}
     {% for row in classifiers %}
     {% set run = row.run %}
     <tr>
@@ -81,24 +78,24 @@
         {% endif %}
       </td>
     </tr>
-    {% else %}<tr><td colspan="4" class="muted">No classifier runs yet.</td></tr>{% endfor %}
-    </tbody>
-  </table>
+    {% else %}
+    {{ m.empty_row(4, "No classifier runs yet", "A classifier sits on an encoder you trained from one of your datasets.", "/console/models", "Train an encoder above") }}
+    {% endfor %}
+  {% endcall %}
 </section>
 
 <section class="card">
   <h2>Training runs</h2>
-  <table>
-    <thead><tr><th>Run</th><th>State</th><th>Result</th><th></th></tr></thead>
-    <tbody>
+  {% call m.data_table([("Run",), ("State",), ("Result",), ("Action",)]) %}
     {% for run in runs %}
     <tr><td><a href="/console/jobs/{{ run.id }}">{{ run.title }}</a></td><td>{{ m.status_badge(run.state) }}</td>
       <td>{% if run.result %}{{ run.result.status }}, loss {{ "%.4f" % (run.result.final_loss or 0) }}, ${{ "%.4f" % (run.result.cost_usd or 0) }}{% endif %}</td>
       <td>{% if run.registered %}registered{% elif run.state == "succeeded" and run.result.status == "completed" and can("register_model") %}
         <form method="post" action="/console/runs/{{ run.id }}/register">{{ m.csrf_field() }}<button type="submit">Register model</button></form>{% endif %}</td></tr>
-    {% else %}<tr><td colspan="4" class="muted">No runs yet.</td></tr>{% endfor %}
-    </tbody>
-  </table>
+    {% else %}
+    {{ m.empty_row(4, "No runs yet", "Release a dataset with a tokenizer, then start training above.", "/console/datasets", "Open datasets") }}
+    {% endfor %}
+  {% endcall %}
 </section>
 
 {% for row in models %}

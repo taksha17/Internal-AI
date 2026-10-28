@@ -175,9 +175,42 @@ hex, no inline script or style, no CDN, no downloaded font, no new capability,
 gate type or task state. The rail keeps one charcoal in both schemes. Contrast
 pairs stay above 4.5:1 in both.
 
+## What landed (Phase 1)
+
+- Density in the token block: body 15px, control 2.25rem (2.65rem at 900px and
+  below, so touch targets stay compliant), card padding 1.05/1.1rem, table cell
+  0.5/0.7rem, radius 12/8. The body's two radial washes are gone; paper is flat.
+  `h1` is 1.5rem everywhere instead of up to 2.9rem.
+- `page_head` in `_macros.html` is the only page title shape, with an optional
+  eyebrow, lede, status badge and caller-supplied actions. Eighteen pages use
+  it, including the password form.
+- `data_table` renders the wrapper, `<th scope="col">` and numeric alignment;
+  `empty` and `empty_row` name the next action. No template draws a table, and
+  a test holds that.
+- A `when` filter prints `<time datetime="…" title="exact">4 min ago</time>`.
+  Anything older than a week shows the date. No template prints `created_at`
+  raw, and a test holds that.
+- Skip-to-content link, `main#main`, `aria-live` on the polled job status, and
+  breadcrumbs that link back on dataset and job pages.
+- The kill switch is a top-bar chip that opens the same form: typed reason still
+  required, engage still immediate, still on every signed-in page. The reason
+  input no longer occupies the bar looking like a search field.
+- A wrong id or a refused post inside `/console` renders `error.html` with the
+  breadcrumb and the way back. A polled fragment (`HX-Request`) still gets the
+  plain error so htmx never swaps a whole page into a small target.
+- Home's four sparklines are deleted. A figure with no measured history behind
+  it is now shown as a figure.
+
+Guards live in `tests/test_console_markup.py`: no table outside the macro, no
+raw timestamp, one header and scoped columns on every page, an empty list that
+offers the next step, and the error page (including the anonymous redirect).
+
+Not in this phase: search, filters, sort, paging, the Inbox page, CSV export,
+row-level depth, an explicit density switch, and the command palette.
+
 ## Open
 
-- Density default: operator-dense as above, or keep today's airiness and make
-  compact a choice?
+- Density default: operator-dense as above, or keep the previous airiness and
+  make compact a choice?
 - Whether the Phase 2 search lives in the top bar on every page or on its own
   route linked from it.

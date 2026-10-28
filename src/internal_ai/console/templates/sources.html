@@ -3,18 +3,9 @@
 {% block title %}Data sources{% endblock %}
 {% block crumb %}Data sources{% endblock %}
 {% block content %}
-<div class="page-head">
-  <div>
-    <p class="eyebrow">Workspace</p>
-    <h1>Data sources</h1>
-    <p class="lede">A model learns only from internal data a data owner has approved. Weight files, secrets, and sensitive paths inside a folder are left out. Anything outside the approved folders is refused.</p>
-  </div>
-  {% if can("register_source") %}
-  <div class="head-actions">
-    <a href="#inspect" class="button primary">Inspect a path</a>
-  </div>
-  {% endif %}
-</div>
+{% call m.page_head("Data sources", "A model learns only from internal data a data owner has approved. Weight files, secrets, and sensitive paths inside a folder are left out. Anything outside the approved folders is refused.", "Workspace") %}
+  {% if can("register_source") %}<a href="#inspect" class="button primary">Inspect a path</a>{% endif %}
+{% endcall %}
 <p class="muted small">Approved folders: {% for root in roots %}<code>{{ root }}</code> {% endfor %}</p>
 
 <div class="grid" id="inspect">
@@ -101,10 +92,7 @@
 </section>
 
 <h2>Registered sources</h2>
-<div class="table-wrap">
-<table class="data">
-  <thead><tr><th>Source</th><th>Approval</th><th>Readers</th><th>Dataset</th><th>Actions</th></tr></thead>
-  <tbody>
+{% call m.data_table([("Source",), ("Approval",), ("Readers",), ("Dataset",), ("Actions",)]) %}
   {% for source in sources %}
   <tr>
     <td><strong>{{ source.name }}</strong> <span class="muted small">{{ source.id }}</span><br><code class="small">{{ source.path }}</code><br><span class="muted small">{{ source.purpose }}</span></td>
@@ -127,8 +115,8 @@
       {% endif %}
     </td>
   </tr>
-  {% else %}<tr><td colspan="5" class="muted">No sources yet. Inspect a path above.</td></tr>{% endfor %}
-  </tbody>
-</table>
-</div>
+  {% else %}
+  {{ m.empty_row(5, "No sources yet", "Inspect a path above; what the scan finds is what the approver will see.", "#inspect", "Inspect a path") }}
+  {% endfor %}
+{% endcall %}
 {% endblock %}

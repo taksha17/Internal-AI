@@ -3,23 +3,12 @@
 {% block title %}Jobs{% endblock %}
 {% block crumb %}Jobs{% endblock %}
 {% block content %}
-<div class="page-head">
-  <div>
-    <p class="eyebrow">Runs</p>
-    <h1>Jobs</h1>
-    <p class="lede">Long steps run as jobs. Each one passed the kill switch and budget checks before it started.</p>
-  </div>
-</div>
-<div class="card">
-  <div class="table-wrap">
-    <table class="data">
-      <thead><tr><th>Job</th><th>Started by</th><th>State</th><th class="num">Cap</th><th>Created</th></tr></thead>
-      <tbody>
-      {% for job in jobs %}
-      <tr><td class="row-title"><a href="/console/jobs/{{ job.id }}">{{ job.title }}</a></td><td>{{ job.requested_by }}</td><td>{{ m.status_badge(job.state) }}</td><td class="num">${{ "%.2f" % job.cost_cap_usd }}</td><td>{{ job.created_at }}</td></tr>
-      {% else %}<tr><td colspan="5" class="muted">No jobs yet.</td></tr>{% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
+{{ m.page_head("Jobs", "Long steps run as jobs. Each one passed the kill switch and budget checks before it started.", "Runs") }}
+{% call m.data_table([("Job",), ("Started by",), ("State",), ("Cap", true), ("Started",)]) %}
+  {% for job in jobs %}
+  <tr><td class="row-title"><a href="/console/jobs/{{ job.id }}">{{ job.title }}</a></td><td>{{ job.requested_by }}</td><td>{{ m.status_badge(job.state) }}</td><td class="num">${{ "%.2f" % job.cost_cap_usd }}</td><td>{{ job.created_at | when }}</td></tr>
+  {% else %}
+  {{ m.empty_row(5, "No jobs yet", "Building a dataset, training a tokenizer or starting a run creates one.", "/console/sources", "Start with data") }}
+  {% endfor %}
+{% endcall %}
 {% endblock %}
