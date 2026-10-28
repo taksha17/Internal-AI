@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from internal_ai.domain import GateType, ModelVersion
+from internal_ai.domain import DatasetVersion, GateType, ModelVersion
 from internal_ai.ids import now_iso
 from internal_ai.training.alpha.card import alpha_card
 from internal_ai.training.alpha.citations import AskHit, score_answer
@@ -22,6 +22,21 @@ HITS = [
     AskHit("Acmy_Website/src/app/api/payments/razorpay/create-order/route.ts", 8),
     AskHit("Acmy_Website/docs/PRD.md", 16),
 ]
+
+
+def dataset(platform, dataset_id: str, released: bool) -> None:
+    platform.store.add_dataset(
+        DatasetVersion(
+            id=dataset_id,
+            name="company",
+            version=1,
+            content_hash=f"hash-{dataset_id}",
+            record_count=1,
+            token_count=1,
+            created_at=now_iso(),
+            released=released,
+        )
+    )
 
 
 def test_only_the_alpha_package_names_a_published_loader() -> None:
@@ -103,10 +118,11 @@ def test_streamed_lora_step_uses_rank_8_and_drops_the_matrix(tmp_path: Path) -> 
 def test_alpha_promotion_is_requested_and_serving_waits(
     platform, enroll_person, tmp_path: Path
 ) -> None:
-    person = enroll_person(platform, "Elena Alpha", ["domain_expert"])
+    person = enroll_person(platform, "Elena Alpha", ["ml_lead"])
+    dataset(platform, "ds_alpha", released=True)
     adapter = tmp_path / "adapter.pt"
     torch.save({"A": torch.zeros(1)}, adapter)
-    model = register_alpha(platform, PRIMARY, adapter, "ds_missing", person.id)
+    model = register_alpha(platform, PRIMARY, adapter, "ds_alpha", person)
     assert model.card["pretrained_weights_used"] is True
     gate = request_alpha_promotion(
         platform,
@@ -128,3 +144,43 @@ def test_alpha_promotion_is_requested_and_serving_waits(
     assert model.card["adapter_sha256"] in body
     assert "local-runner" in body
     assert str(GateType.MODEL_PROMOTION) == "model_promotion"
+
+
+def test_registering_an_alpha_model_needs_the_register_model_capability(
+    platform, enroll_person, tmp_path: Path
+) -> None:
+    from internal_ai.services.permissions import PermissionDenied
+
+    dataset(platform, "ds_alpha", released=True)
+    adapter = tmp_path / "adapter.pt"
+    torch.save({"A": torch.zeros(1)}, adapter)
+    outsider = enroll_person(platform, "Rae Outsider", ["data_engineer"])
+    with pytest.raises(PermissionDenied):
+        register_alpha(platform, PRIMARY, adapter, "ds_alpha", outsider)
+    lead = enroll_person(platform, "Mo Lead", ["ml_lead"])
+    model = register_alpha(platform, PRIMARY, adapter, "ds_alpha", lead)
+    assert model.card["pretrained_weights_used"] is True
+    assert model.status == "candidate"
+
+
+def test_an_alpha_model_may_name_only_the_pinned_base(
+    platform, enroll_person, tmp_path: Path
+) -> None:
+    from dataclasses import replace
+
+    dataset(platform, "ds_alpha", released=True)
+    adapter = tmp_path / "adapter.pt"
+    torch.save({"A": torch.zeros(1)}, adapter)
+    lead = enroll_person(platform, "Mo Lead", ["ml_lead"])
+    forged = replace(PRIMARY, repo_id="Qwen/Qwen3-4B-finetuned", revision="0" * 40)
+    with pytest.raises(PermissionError, match="pinned"):
+        register_alpha(platform, forged, adapter, "ds_alpha", lead)
+
+
+def test_an_alpha_model_needs_a_released_dataset(platform, enroll_person, tmp_path: Path) -> None:
+    dataset(platform, "ds_draft", released=False)
+    adapter = tmp_path / "adapter.pt"
+    torch.save({"A": torch.zeros(1)}, adapter)
+    lead = enroll_person(platform, "Mo Lead", ["ml_lead"])
+    with pytest.raises(PermissionError, match="released"):
+        register_alpha(platform, PRIMARY, adapter, "ds_draft", lead)

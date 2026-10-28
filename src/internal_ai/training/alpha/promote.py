@@ -11,9 +11,11 @@ from internal_ai.domain import GateType, ModelVersion
 from internal_ai.ids import content_hash, file_hash, new_id, now_iso
 from internal_ai.services import governance
 from internal_ai.services.actor import Actor
+from internal_ai.services.permissions import Action, require
 from internal_ai.training.alpha.card import alpha_card
 from internal_ai.training.alpha.citations import AskHit, CitationReport, score_answer
-from internal_ai.training.alpha.pin import RECIPE, PinnedBase
+from internal_ai.training.alpha.pin import FALLBACK, PRIMARY, RECIPE, PinnedBase
+from internal_ai.training.ownership import require_released_dataset
 from internal_ai.workflows import model_card_markdown
 
 
@@ -22,15 +24,24 @@ def register_alpha(
     base: PinnedBase,
     adapter_path: Path,
     dataset_id: str,
-    actor: str,
+    actor: Actor,
 ) -> ModelVersion:
-    dataset = platform.store.get_dataset(dataset_id)
+    """Register an adapter as a candidate model.
+
+    Registering is a governed act: only an ml lead may do it, only the base
+    pinned in this package may be named, and only a released dataset may be
+    claimed as the text it learned from.
+    """
+    require(platform.audit, actor, Action.REGISTER_MODEL, str(adapter_path))
+    if base not in (PRIMARY, FALLBACK):
+        raise PermissionError("alpha may load only the pinned base named in this package")
+    dataset = require_released_dataset(platform.store.get_dataset(dataset_id))
     digest = file_hash(adapter_path)
     card = alpha_card(
         base,
         RECIPE,
         dataset_id,
-        dataset.content_hash if dataset else None,
+        dataset.content_hash,
         digest,
     )
     existing = platform.store.list_models(name=base.repo_id.split("/")[-1].lower())
@@ -49,7 +60,7 @@ def register_alpha(
     )
     platform.store.add_model(model)
     platform.audit.record(
-        actor=actor,
+        actor=actor.id,
         action="model.registered",
         subject=model.id,
         details={

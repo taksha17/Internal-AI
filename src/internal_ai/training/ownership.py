@@ -16,6 +16,6 @@ def require_released_dataset(dataset: DatasetVersion | None) -> DatasetVersion:
         raise KeyError("unknown dataset")
     if not dataset.released:
         raise PermissionError(
-            "training uses a released dataset; improve the model with a new version"
+            "a model is built from a released dataset; improve the model with a new version"
         )
     return dataset
