@@ -199,37 +199,73 @@ def describe_verdict(verdict: dict[str, Any]) -> str:
     return f"{asked} — measured {measured:.3f}, {side} the bar"
 
 
-def progress_rows(brief: ProjectBrief, reports: list[Any], limit: int = 5) -> list[dict[str, Any]]:
-    """How close each recent evaluation came to the bar the brief sets now.
+def recorded_verdicts(report: Any) -> list[dict[str, Any]] | None:
+    """The bars a report was judged by at the time, if it recorded any."""
+    checks = getattr(report, "checks", None)
+    if not isinstance(checks, dict):
+        return None
+    block = checks.get("brief_targets")
+    if not isinstance(block, dict):
+        return None
+    verdicts = block.get("targets")
+    return list(verdicts) if isinstance(verdicts, list) and verdicts else None
 
-    Read against the brief as it stands, not as it stood when the report was
-    written: a lead watching progress is watching the target they have today.
+
+def _movement(
+    brief: ProjectBrief, recorded: list[dict[str, Any]], measured: dict[str, float]
+) -> list[str]:
+    """Targets whose bar has changed since the report was written."""
+    now = {metric_key(verdict["name"]): verdict for verdict in brief.metric_verdicts(measured)}
+    moved: list[str] = []
+    for verdict in recorded:
+        current = now.get(metric_key(str(verdict.get("name", ""))))
+        if current is None or str(current["threshold"]) == str(verdict.get("threshold")):
+            continue
+        moved.append(
+            f"{verdict['name']} was {verdict['threshold']}, the brief now asks "
+            f"{current['threshold']}"
+        )
+    return moved
+
+
+def progress_rows(brief: ProjectBrief, reports: list[Any], limit: int = 5) -> list[dict[str, Any]]:
+    """How far each recent evaluation was from the bar it was judged by.
+
+    A report that recorded its targets is read against those, so editing the
+    brief does not rewrite how short a past run was; the row says what moved
+    instead. A report from before the brief was read at all falls back to the
+    brief as it stands, and says so with `basis`.
     """
     rows: list[dict[str, Any]] = []
     ordered = sorted(reports, key=lambda report: report.created_at)[-limit:]
     for report in ordered:
-        verdicts = brief.metric_verdicts(dict(report.metrics or {}))
+        measured = dict(report.metrics or {})
+        recorded = recorded_verdicts(report)
+        verdicts = recorded or brief.metric_verdicts(measured)
         if not verdicts:
             continue
         parts: list[str] = []
         for verdict in verdicts:
-            measured = verdict["measured"]
-            gap = verdict["gap"]
-            if measured is None or gap is None:
+            value = verdict.get("measured")
+            gap = verdict.get("gap")
+            if value is None or gap is None:
                 parts.append(describe_verdict(verdict))
                 continue
-            head = f"{verdict['name']} {measured:.3f} of {verdict['threshold']}"
+            head = f"{verdict['name']} {value:.3f} of {verdict['threshold']}"
             if gap < 0:
                 side = "over" if verdict["direction"] == "at_most" else "short"
                 parts.append(f"{head} — {abs(gap):.3f} {side}")
             else:
                 parts.append(f"{head} — {gap:.3f} to spare")
+        if recorded:
+            parts.extend(_movement(brief, recorded, measured))
         rows.append(
             {
                 "created_at": report.created_at,
                 "passed": bool(report.passed),
-                "met": all(bool(verdict["met"]) for verdict in verdicts),
+                "met": all(bool(verdict.get("met")) for verdict in verdicts),
                 "text": " · ".join(parts),
+                "basis": "recorded" if recorded else "current",
             }
         )
     return rows
