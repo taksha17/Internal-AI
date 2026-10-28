@@ -50,6 +50,7 @@ from internal_ai.services.identity import (
 )
 from internal_ai.services.jobs import JobRunner
 from internal_ai.services.permissions import Action, allowed, deny, reason
+from internal_ai.serving.service import out_of_service
 from internal_ai.store import ALLOWED_TRANSITIONS, TransitionError
 
 HERE = Path(__file__).resolve().parent
@@ -370,6 +371,7 @@ def mount_console(
             "flashes": pop_flashes(ctx),
             "path": ctx.request.url.path,
             "brief": brief.load(platform.store),
+            "programme_gaps": brief.programme_gaps(platform, release=True),
             "waiting": waiting,
             "inbox": len(waiting.yours),
             "attention": waiting.count,
@@ -1259,6 +1261,10 @@ def mount_console(
                 form.get("name", ""),
                 form.get("purpose", ""),
                 _groups(form.get("acl", "")),
+                legal_status=form.get("legal_status", ""),
+                license_name=form.get("license_name", ""),
+                license_url=form.get("license_url", ""),
+                license_note=form.get("license_note", ""),
             ),
             lambda source: (
                 f"source {source['name']} registered; a data owner must approve "
@@ -1411,6 +1417,17 @@ def mount_console(
         ),
     )
     dataset_action(
+        "dedup",
+        lambda ctx, dataset_id, form: build.drop_duplicate_copies(
+            ctx.platform, ctx.actor, dataset_id
+        ),
+        lambda created: (
+            f"version {created.version} keeps {created.record_count} records; "
+            "the previous version was not changed and still needs its own release"
+        ),
+        lambda created: f"/console/datasets/{created.id}",
+    )
+    dataset_action(
         "release",
         lambda ctx, dataset_id, form: build.release_dataset(ctx.platform, ctx.actor, dataset_id),
         "dataset released; it is now immutable",
@@ -1550,6 +1567,7 @@ def mount_console(
                         dataset.record_count if dataset else 0,
                         dataset.token_count if dataset else 0,
                     ),
+                    "service": out_of_service(platform.store, model),
                     "progress": brief.progress_rows(
                         brief.load(platform.store),
                         platform.store.list_eval_reports(model.id),

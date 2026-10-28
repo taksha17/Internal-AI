@@ -155,6 +155,42 @@ def deduplicate(
     return kept, stats
 
 
+def duplicate_report(
+    records: list[Record],
+    threshold: int = 12,
+    jaccard_threshold: float = 0.8,
+    residual_max: float = 0.01,
+) -> dict[str, Any]:
+    """Count exact copies and the near-duplicate residual the release gate uses.
+
+    Exact groups always fail a release. Near copies are the same SimHash pass
+    ``deduplicate`` already runs, and they fail only above ``residual_max``.
+    """
+    seen: dict[str, str] = {}
+    grouped: set[str] = set()
+    groups = 0
+    pairs: list[list[str]] = []
+    for record in records:
+        digest = record.fingerprint()
+        prior = seen.get(digest)
+        if prior is None:
+            seen[digest] = record.record_key
+            continue
+        if digest not in grouped:
+            groups += 1
+            grouped.add(digest)
+        if len(pairs) < 5:
+            pairs.append([prior, record.record_key])
+    _, stats = deduplicate(records, threshold=threshold, jaccard_threshold=jaccard_threshold)
+    return {
+        "exact_duplicate_groups": groups,
+        "near_duplicate_pairs": stats["near_duplicates_removed"],
+        "residual_rate": stats["duplicate_rate"],
+        "pairs": pairs,
+        "residual_max": residual_max,
+    }
+
+
 # ----------------------------------------------------------------------- scrub
 
 PII_PATTERNS: dict[str, re.Pattern[str]] = {
@@ -239,6 +275,30 @@ def scrub_pii(
 def secret_scan(text: str) -> list[str]:
     """Detect secrets in text without modifying it, for pre-ingest checks."""
     return [kind for kind, pattern in PII_PATTERNS.items() if pattern.search(text)]
+
+
+def detector_recall() -> dict[str, Any]:
+    """How often the planted email, API token and private key are found and removed.
+
+    This is a fixture, not a claim about a customer's corpus. A detector that
+    misses its own planted sample scores below 1.0.
+    """
+    from internal_ai.data.records import Record
+
+    planted = {
+        "email": "reach the owner at ada@example.com about the invoice today",
+        "api_token": "the deploy token is sk-abcdefghijklmnopqrstuvwxyz today",
+        "private_key": "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
+    }
+    per_detector: dict[str, float] = {}
+    for kind, text in planted.items():
+        found = kind in secret_scan(text)
+        scrubbed, _stats = scrub_pii(
+            [Record(id="planted", record_key=kind, text=text, source_id="fixture")]
+        )
+        removed = kind not in secret_scan(scrubbed[0].text)
+        per_detector[kind] = 1.0 if found and removed else 0.0
+    return {"planted": len(planted), "per_detector": per_detector}
 
 
 # --------------------------------------------------------------------- quality
