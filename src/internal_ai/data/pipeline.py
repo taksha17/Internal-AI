@@ -398,6 +398,49 @@ class DataPipeline:
             )
         return hits
 
+    def _exclusion_audit(self, dataset_id: str, actor: str) -> dict[str, Any]:
+        from internal_ai.data.governance import exclusion_audit
+
+        rows = self.store.dataset_records(dataset_id)
+        records = [
+            Record(
+                id=row["id"],
+                record_key=row["record_key"],
+                text=row["payload"],
+                source_id=row["source_id"],
+                sensitivity=row["sensitivity"],
+                acl=row["acl"],
+                tokens=row["tokens"],
+                meta=row["meta"],
+            )
+            for row in rows
+        ]
+        legal = {
+            row["id"]: row["legal_status"]
+            for row in self.store.conn.execute("SELECT id, legal_status FROM data_sources")
+        }
+        result = exclusion_audit(records, legal)
+        dataset = self.store.get_dataset(dataset_id)
+        if dataset is not None:
+            stats = dict(dataset.stats)
+            stats["exclusion_audit"] = result
+            self.store.conn.execute(
+                "UPDATE datasets SET stats = ? WHERE id = ?",
+                (json.dumps(stats, sort_keys=True, default=str), dataset_id),
+            )
+        classes = sorted(
+            {hit.get("sensitivity") or hit.get("legal_status", "") for hit in result["hits"]}
+        )
+        self.audit.record(
+            actor=actor,
+            actor_kind="human",
+            action="dataset.exclusion_audit",
+            subject=dataset_id,
+            outcome=AuditOutcome.SUCCESS if result["passed"] else AuditOutcome.DENIED,
+            details={"classes": [name for name in classes if name], **result},
+        )
+        return result
+
     def release(self, dataset_id: str, actor: str, gate_approved: bool) -> DatasetVersion:
         if not gate_approved:
             raise PermissionError(
@@ -406,6 +449,15 @@ class DataPipeline:
         dataset = self.store.get_dataset(dataset_id)
         if dataset is None:
             raise KeyError(f"unknown dataset: {dataset_id}")
+        exclusion = self._exclusion_audit(dataset_id, actor)
+        if not exclusion["passed"]:
+            named = sorted(
+                {hit.get("sensitivity") or hit.get("legal_status", "") for hit in exclusion["hits"]}
+            )
+            raise PermissionError(
+                "release sample contains excluded data: "
+                + ", ".join(name for name in named if name)
+            )
         audit_result = self.run_pii_audit(dataset_id, sample_size=None)
         if not audit_result["passed"]:
             raise PermissionError(

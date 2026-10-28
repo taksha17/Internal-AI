@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from internal_ai.audit import AuditLog
-from internal_ai.data.records import Record
+from internal_ai.data.records import EXCLUDED_SENSITIVITY, Record
 from internal_ai.data.transforms import PII_PATTERNS
 from internal_ai.domain import AuditOutcome
 from internal_ai.ids import new_id, now_iso
@@ -51,6 +51,50 @@ class PiiAuditResult:
             "examples": self.examples[:5],
             "passed": self.passed,
         }
+
+
+def exclusion_audit(
+    records: list[Record],
+    legal_status: dict[str, str],
+    sample_size: int = 50,
+    seed: str = "pii-audit",
+    excluded: tuple[str, ...] = EXCLUDED_SENSITIVITY,
+) -> dict[str, Any]:
+    """The same seeded sample as the PII spot check, read for classes that must stay out.
+
+    A regulated or customer-confidential row, or a row whose source was refused,
+    fails the release. The seed matches ``pii_spot_check`` so the two samples
+    are the same rows.
+    """
+    selected = list(records)
+    if sample_size > 0 and sample_size < len(selected):
+        selected = random.Random(seed).sample(selected, sample_size)
+    blocked = set(excluded)
+    hits: list[dict[str, str]] = []
+    for record in selected:
+        if record.sensitivity in blocked:
+            hits.append(
+                {
+                    "record_key": record.record_key,
+                    "sensitivity": record.sensitivity,
+                    "source_id": record.source_id,
+                }
+            )
+        elif legal_status.get(record.source_id) == "refused":
+            hits.append(
+                {
+                    "record_key": record.record_key,
+                    "legal_status": "refused",
+                    "source_id": record.source_id,
+                }
+            )
+    return {
+        "sampled": len(selected),
+        "seed": seed,
+        "hits": hits[:10],
+        "hit_count": len(hits),
+        "passed": not hits,
+    }
 
 
 def pii_spot_check(
