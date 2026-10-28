@@ -174,3 +174,25 @@ def test_the_release_audit_refuses_a_surviving_api_token(platform, corpus_path: 
     )
     with pytest.raises(PermissionError, match="release audit"):
         pipeline.release(built.dataset_id, "ml_lead", gate_approved=True)
+
+
+def test_an_artifact_path_may_not_escape_the_shared_store(platform, tmp_path: Path) -> None:
+    from internal_ai.tools import ToolDenied, ToolRegistry
+
+    registry = ToolRegistry(platform.audit, tmp_path / "work", tmp_path / "artifacts")
+    read = registry.get("read_artifact").handler
+    write = registry.get("write_artifact").handler
+    secret = tmp_path / "secret.txt"
+    secret.write_text("the keys to the kingdom", encoding="utf-8")
+    written = write(name="note", content="a note for the team")
+
+    assert read(written) == "a note for the team"
+
+    with pytest.raises(ToolDenied, match="outside"):
+        read(str(tmp_path / "artifacts" / ".." / "secret.txt"))
+    with pytest.raises(ToolDenied, match="outside"):
+        read(str(secret))
+    link = tmp_path / "artifacts" / "link.txt"
+    link.symlink_to(secret)
+    with pytest.raises(ToolDenied, match="outside"):
+        read(str(link))
