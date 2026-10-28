@@ -578,17 +578,6 @@ class DataPipeline:
                 "near-duplicate residual "
                 f"{duplicates['residual_rate']} is above {duplicates['residual_max']}"
             )
-        lineage = self.trace_sample(dataset_id, limit=20, actor=actor)
-        self._store_stats(dataset_id, "lineage_sample", lineage)
-        if not lineage["passed"]:
-            raise PermissionError(
-                "lineage sample failed"
-                + (f": {lineage['failures'][0]['problem']}" if lineage["failures"] else "")
-                + ("" if lineage["code_commit"] != "unknown" else ": code commit is unknown")
-            )
-        from internal_ai.data.transforms import detector_recall
-
-        self._store_stats(dataset_id, "detector_recall", detector_recall())
         exclusion = self._exclusion_audit(dataset_id, actor)
         if not exclusion["passed"]:
             named = sorted(
@@ -604,6 +593,17 @@ class DataPipeline:
                 f"release audit found {audit_result['critical_findings']} critical finding(s) "
                 "(personal data or a secret); the dataset cannot be released"
             )
+        lineage = self.trace_sample(dataset_id, limit=20, actor=actor)
+        self._store_stats(dataset_id, "lineage_sample", lineage)
+        if not lineage["passed"]:
+            raise PermissionError(
+                "lineage sample failed"
+                + (f": {lineage['failures'][0]['problem']}" if lineage["failures"] else "")
+                + ("" if lineage["code_commit"] != "unknown" else ": code commit is unknown")
+            )
+        from internal_ai.data.transforms import detector_recall
+
+        self._store_stats(dataset_id, "detector_recall", detector_recall())
         planted = self.instruction_payloads(dataset_id)
         if planted:
             names = ", ".join(hit["document"] for hit in planted[:5])
