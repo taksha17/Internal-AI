@@ -113,7 +113,13 @@ def test_the_class_of_a_registered_source_reaches_its_dataset(
     reviewer = enroll_person(platform, "Rae Reviewer", ["data_owner"])
     compliance = enroll_person(platform, "Cleo Compliance", ["compliance"])
     source = build.register_source(
-        platform, owner, str(root / "notes.txt"), "notes", "learn", ["engineering"]
+        platform,
+        owner,
+        str(root / "notes.txt"),
+        "notes",
+        "learn",
+        ["engineering"],
+        legal_status="internal",
     )
     platform.store.conn.execute(
         "UPDATE data_sources SET sensitivity = ? WHERE id = ?", ("confidential", source["id"])
