@@ -33,6 +33,12 @@ CHECK_ACTIONS: dict[str, str] = {
         "than encoding its meaning. More varied documents change this; a longer run at "
         "this corpus size does not."
     ),
+    "paraphrase_memorisation": (
+        "The paraphrase check did not pass: a reworded question scores against its record "
+        "as highly as the record's own text would, so the model cannot tell a rewrite from "
+        "the document it came from. That is the shape of memorisation, and it means a "
+        "reworded query only works when it repeats the document's words."
+    ),
     "instruction_payload": (
         "The instruction check did not pass: a document the evaluation rests on carries "
         "instructions aimed at the model. Remove the text from the corpus and release a "
@@ -63,23 +69,32 @@ def failed_checks(report: Any) -> list[str]:
     )
 
 
+# How each failed memorisation check names the records it flagged.
+MEMORISATION_LABELS: dict[str, str] = {
+    "retrieval_memorisation": "Documents the encoder cannot separate from their own opening line: ",
+    "paraphrase_memorisation": "Rewrites scored as highly as the record they came from: ",
+}
+
+
 def memorised_documents(checks: dict[str, Any], limit: int = 5) -> list[str]:
     """The documents a failed memorisation check named, so they can be found."""
-    result = checks.get("retrieval_memorisation") or {}
-    if _value(result, "passed", True):
-        return []
-    flagged = list(_value(result, "flagged", ()) or ())
-    if not flagged:
-        return []
-    named = [
-        f"{item.get('document', '?')} at {float(item.get('similarity', 0.0)):.3f}"
-        for item in flagged[:limit]
-    ]
-    line = "Documents the encoder cannot separate from their own opening line: "
-    line += ", ".join(named)
-    if len(flagged) > len(named):
-        line += f", and {len(flagged) - len(named)} more"
-    return [line + "."]
+    lines: list[str] = []
+    for name, label in MEMORISATION_LABELS.items():
+        result = checks.get(name) or {}
+        if _value(result, "passed", True):
+            continue
+        flagged = list(_value(result, "flagged", ()) or ())
+        if not flagged:
+            continue
+        named = [
+            f"{item.get('document', '?')} at {float(item.get('similarity', 0.0)):.3f}"
+            for item in flagged[:limit]
+        ]
+        line = label + ", ".join(named)
+        if len(flagged) > len(named):
+            line += f", and {len(flagged) - len(named)} more"
+        lines.append(line + ".")
+    return lines
 
 
 def retrieval_advice(report: Any, records: int, tokens: int) -> list[str]:

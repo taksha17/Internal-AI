@@ -523,6 +523,7 @@ def derive_eval_items(
             items.append(
                 {
                     "query": query,
+                    "paraphrase": query,
                     "relevant_ids": [row["record_key"]],
                     "kind": "retrieval",
                     "source_id": row["source_id"],

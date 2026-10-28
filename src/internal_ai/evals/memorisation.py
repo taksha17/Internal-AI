@@ -133,3 +133,55 @@ def probe(
         threshold=threshold,
         margin=margin,
     )
+
+
+def probe_items(
+    model: Any,
+    items: Sequence[dict[str, Any]],
+    records: Sequence[Record],
+    threshold: float = DEFAULT_THRESHOLD,
+    limit: int = DEFAULT_LIMIT,
+    margin: float = DEFAULT_MARGIN,
+) -> RetrievalMemorisationReport:
+    """Rewrites that the model scores like the record they were written from."""
+    by_key = {record.record_key: record for record in records}
+    pairs: list[tuple[Record, str]] = []
+    skipped = 0
+    for item in list(items)[:limit]:
+        rewritten = str(item.get("paraphrase") or "").strip()
+        owners = [str(key) for key in item.get("relevant_ids", [])]
+        record = next((by_key[key] for key in owners if key in by_key), None)
+        if not rewritten or record is None:
+            skipped += 1
+            continue
+        pairs.append((record, rewritten))
+    if not pairs:
+        return RetrievalMemorisationReport(True, (), 0, skipped, threshold, margin)
+    rewritten = _normalise(np.asarray(model.embed([item for _record, item in pairs])))
+    bodies = _normalise(np.asarray(model.embed([record.text for record, _item in pairs])))
+    scores = rewritten @ bodies.T
+    flagged: list[dict[str, Any]] = []
+    for index, (record, item) in enumerate(pairs):
+        similarity = float(scores[index, index])
+        others = np.delete(scores[index], index)
+        background = float(np.median(others)) if others.size else None
+        if similarity < threshold:
+            continue
+        if background is not None and similarity - background < margin:
+            continue
+        flagged.append(
+            {
+                "document": record.record_key,
+                "similarity": round(similarity, 6),
+                "background": round(background, 6) if background is not None else None,
+                "paraphrase": " ".join(item.split()[:8]),
+            }
+        )
+    return RetrievalMemorisationReport(
+        passed=not flagged,
+        flagged=tuple(flagged),
+        probed=len(pairs),
+        skipped=skipped,
+        threshold=threshold,
+        margin=margin,
+    )

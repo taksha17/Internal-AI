@@ -192,6 +192,9 @@ class EvalHarness:
         checks = self._safety_checks(
             model, corpus_records, training_records or [], relevant_doc_ids
         )
+        checks["paraphrase_memorisation"] = paraphrase_memorisation_probe(
+            model, eval_set.items, corpus_records
+        )
         baseline_mean = sum(baseline_scores) / len(baseline_scores) if baseline_scores else 0.0
         checks["baseline_informativeness"] = {
             "passed": True,
@@ -348,6 +351,26 @@ class EvalHarness:
             details={"model_id": model_id, "passed": report.passed},
         )
         return report
+
+
+def paraphrase_memorisation_probe(
+    model: Embedder, items: list[dict[str, Any]], corpus_records: list[Record]
+) -> dict[str, Any]:
+    """Whether the model scores an item's rewrite like the record it came from."""
+    from internal_ai.evals.memorisation import probe_items
+
+    try:
+        report = probe_items(model, items, corpus_records)
+    except Exception as exc:
+        return {"passed": False, "error": str(exc)}
+    if report.probed == 0:
+        return {
+            "passed": True,
+            "probed": 0,
+            "skipped": report.skipped,
+            "note": "no eval item carried a paraphrase to score",
+        }
+    return report.as_dict()
 
 
 def retrieval_memorisation_probe(model: Embedder, corpus_records: list[Record]) -> dict[str, Any]:
