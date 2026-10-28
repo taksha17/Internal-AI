@@ -51,7 +51,11 @@ def main() -> None:
     from internal_ai.training.alpha.smoke import smoke
 
     result = smoke(args.root, args.out)
-    print(f"{result['base_repo_id']} {result['adapter']}", flush=True)
+    print(
+        f"smoke adapter (not trained on company text): {result['base_repo_id']} "
+        f"{result['adapter']}",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

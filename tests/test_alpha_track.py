@@ -128,6 +128,15 @@ def test_streamed_lora_step_uses_rank_8_and_drops_the_matrix(tmp_path: Path) -> 
         lora_step(torch.ones(2, 2), type(RECIPE)(quantization="4bit"))
 
 
+def test_the_streamed_step_learns_a_rank_8_correction() -> None:
+    torch.manual_seed(0)
+    weight = torch.randn(6, 4)
+    adapter = lora_step(weight, RECIPE, steps=100)
+    assert adapter["A"].abs().sum() > 0, "the adapter never left its zero initialisation"
+    assert adapter["B"].abs().sum() > 0, "the adapter never learned anything"
+    assert adapter["loss_last"] < adapter["loss_first"]
+
+
 def test_alpha_promotion_is_requested_and_serving_waits(
     platform, enroll_person, tmp_path: Path
 ) -> None:

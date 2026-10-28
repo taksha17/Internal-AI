@@ -1,4 +1,9 @@
-"""One streamed LoRA step on the pinned base, then the matrix is dropped."""
+"""One streamed LoRA step on the pinned base, then the matrix is dropped.
+
+The adapter this writes proves the machine can hold the pinned base and take a
+gradient step on a matrix that came off disk. It is not a fine-tune, and the
+artifact says so, so it is never mistaken for a model trained on company text.
+"""
 
 from __future__ import annotations
 
@@ -25,10 +30,16 @@ def _step(base, root: Path, out: Path) -> dict[str, str]:
             "rank": adapter["rank"],
             "max_seq_len": adapter["max_seq_len"],
             "quantization": adapter["quantization"],
+            "trained_on_company_text": False,
         },
         out,
     )
-    return {"base_repo_id": base.repo_id, "base_revision": base.revision, "adapter": str(out)}
+    return {
+        "base_repo_id": base.repo_id,
+        "base_revision": base.revision,
+        "adapter": str(out),
+        "kind": "smoke",
+    }
 
 
 def smoke(root: Path, out: Path) -> dict[str, str]:
