@@ -1261,6 +1261,10 @@ def mount_console(
                 form.get("name", ""),
                 form.get("purpose", ""),
                 _groups(form.get("acl", "")),
+                legal_status=form.get("legal_status", ""),
+                license_name=form.get("license_name", ""),
+                license_url=form.get("license_url", ""),
+                license_note=form.get("license_note", ""),
             ),
             lambda source: (
                 f"source {source['name']} registered; a data owner must approve "
