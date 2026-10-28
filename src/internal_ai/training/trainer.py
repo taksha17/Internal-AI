@@ -330,6 +330,7 @@ class Trainer:
             "dataset_hash": dataset_hash,
             "tokenizer_hash": content_hash(tokenizer.vocab),
             "seed": config.seed,
+            "parameter_count": parameters,
             "environment": {
                 "python": platform.python_version(),
                 "torch": torch.__version__,

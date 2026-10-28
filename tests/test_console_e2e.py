@@ -120,6 +120,12 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
         page = mo.post(f"/console/datasets/{dataset_id}/tokenizer", vocab_size="600")
         assert "succeeded" in page
         assert build.tokenizer_path(platform, dataset_id) is not None
+        # The sample is below the tokens-per-parameter floor. Record a measured
+        # count large enough for the click-through to reach promotion.
+        counted = platform.store.get_dataset(dataset_id)
+        stats = dict(counted.stats)
+        stats["token_count_kind"] = "measured"
+        platform.store.update_dataset_tokens(dataset_id, 10**12, stats)
 
         dex.post(f"/console/datasets/{dataset_id}/eval-set", name="tickets-eval", count="16")
         eval_set = platform.store.list_eval_sets()[0]
