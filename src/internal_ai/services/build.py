@@ -689,9 +689,11 @@ def request_release(platform: Platform, actor: Actor, dataset_id: str) -> GateRe
 
 
 def release_dataset(platform: Platform, actor: Actor, dataset_id: str) -> Any:
+    from internal_ai.brief import require_programme
     from internal_ai.data.pipeline import DataPipeline
 
     require(platform.audit, actor, Action.RELEASE_DATASET, dataset_id)
+    require_programme(platform, actor.id, release=True, actor_kind=actor.kind)
     _require_gate(platform, actor, GateType.DATASET_RELEASE, dataset_id, "release_dataset")
     pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
     return pipeline.release(dataset_id, actor.id, gate_approved=True)

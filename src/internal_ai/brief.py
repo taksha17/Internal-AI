@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from internal_ai.audit import AuditLog
+from internal_ai.domain import AuditOutcome
 from internal_ai.ids import now_iso
 from internal_ai.services.actor import Actor
 from internal_ai.services.permissions import Action, require
@@ -300,3 +301,59 @@ def save(store: Store, audit: AuditLog, actor: Actor, brief: ProjectBrief) -> Pr
         details={"complete": brief.complete, "missing": brief.missing},
     )
     return load(store)
+
+
+def programme_gaps(platform: Any, *, release: bool) -> list[str]:
+    """What still blocks a run, in the same words the brief already uses.
+
+    A complete form is not enough: an owner has to be a real person who holds
+    that role. Release also waits on the data-class policy, because an
+    undecided question is not a decision that the data is allowed.
+    """
+    from internal_ai.people import PeopleRegistry
+
+    brief = load(platform.store)
+    gaps = list(brief.missing)
+    roster = PeopleRegistry(platform.store)
+    for role in OWNER_ROLES:
+        person_id = str(brief.owners.get(role, "")).strip()
+        if not person_id:
+            continue
+        person = roster.get(person_id)
+        if person is None:
+            gaps.append(f"{role} names a person who is not enrolled")
+            continue
+        if person["placeholder"]:
+            gaps.append(f"{role} is still a placeholder")
+        if role not in person["roles"]:
+            gaps.append(f"{role} is not a role held by that person")
+    if release:
+        try:
+            decision = platform.policy.get("P5")
+        except KeyError:
+            decision = None
+        if decision is None or decision.status != "decided":
+            gaps.append("which data classes may be used for training")
+    return gaps
+
+
+def require_programme(
+    platform: Any,
+    actor: str,
+    *,
+    release: bool,
+    actor_kind: str = "human",
+) -> None:
+    """Refuse a train or a release until the programme record can be judged."""
+    gaps = programme_gaps(platform, release=release)
+    if not gaps:
+        return
+    platform.audit.record(
+        actor=actor,
+        actor_kind=actor_kind,
+        action="programme.refused",
+        subject="project_brief",
+        outcome=AuditOutcome.DENIED,
+        details={"gaps": gaps, "release": release},
+    )
+    raise PermissionError("Still to record: " + "; ".join(gaps))
