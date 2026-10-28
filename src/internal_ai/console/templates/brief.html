@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Project brief{% endblock %}
+{% block crumb %}Brief{% endblock %}
+{% block content %}
+{{ m.page_head("Project brief", "What the model is for, how success is measured, what limits it, and who owns each part. The plan and every run are read against this.", "Project", status=("complete" if form.complete else "draft")) }}
+
+{% if not form.complete %}
+<div class="callout"><strong>Still to write:</strong> {{ form.missing | join("; ") }}.</div>
+{% endif %}
+
+{% if not can("write_brief") %}
+<section class="card">
+  <p class="muted">Writing the brief needs program_lead or ml_lead. You can read what is recorded here.</p>
+  {% if form.target %}<p>{{ form.target }}</p>{% else %}{{ m.empty("No brief yet", "A lead writes the target, metrics, constraints and owners before the plan means anything.", "/console/home", "Back to the overview") }}{% endif %}
+  {% if form.metrics %}<p class="muted small">{% for metric in form.metrics %}{{ metric.name }} {{ "≥" if metric.direction == "at_least" else "≤" }} {{ metric.threshold }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+</section>
+{% else %}
+<form method="post" action="/console/brief">
+  {{ m.csrf_field() }}
+
+  <section class="card">
+    <h2>The target</h2>
+    <p class="card-sub">One paragraph a new joiner could act on. If it cannot be written, the project is not ready for a plan.</p>
+    <div class="grid">
+      <label>What must it do? <textarea name="target" maxlength="600" placeholder="Answer support questions from resolved tickets, with a citation for every claim.">{{ form.target }}</textarea></label>
+      <label>What does it have to beat? <textarea name="quality_bar" maxlength="400" placeholder="Better recall than the keyword search agents use today, with no more than one wrong citation in twenty.">{{ form.quality_bar }}</textarea></label>
+      <label>Languages <input type="text" name="languages" maxlength="120" value="{{ form.languages }}" placeholder="English"></label>
+      <label>Context length (tokens) <input type="number" name="context_length" min="0" max="1000000" value="{{ form.context_length or '' }}" placeholder="512"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Success metrics</h2>
+    <p class="card-sub">A number and a direction, per use case. A metric without a threshold cannot judge a run.</p>
+    {% for index in [1, 2, 3] %}
+    {% set metric = form.metrics[index - 1] if form.metrics | length >= index else none %}
+    <div class="toolbar">
+      <label class="grow">Metric {{ index }} <input type="text" name="metric_name_{{ index }}" maxlength="80" value="{{ metric.name if metric else '' }}" placeholder="recall@10"></label>
+      <label>Direction
+        <select name="metric_direction_{{ index }}">
+          <option value="at_least"{{ ' selected' if metric and metric.direction == 'at_least' else '' }}>at least</option>
+          <option value="at_most"{{ ' selected' if metric and metric.direction == 'at_most' else '' }}>at most</option>
+        </select>
+      </label>
+      <label>Threshold <input type="text" name="metric_threshold_{{ index }}" maxlength="40" value="{{ metric.threshold if metric else '' }}" placeholder="0.70"></label>
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="card">
+    <h2>Constraints</h2>
+    <p class="card-sub">The limits a run has to fit inside. Budget also caps spend; the others keep the answer honest.</p>
+    <div class="grid">
+      <label>Budget (USD) <input type="number" name="budget_usd" min="0" step="0.01" value="{{ form.budget_usd or '' }}" placeholder="5000"></label>
+      <label>Timeline <input type="text" name="timeline" maxlength="120" value="{{ form.timeline }}" placeholder="Pilot by the end of Q1"></label>
+      <label>Deployment location <input type="text" name="deployment" maxlength="160" value="{{ form.deployment }}" placeholder="On-prem, support VLAN"></label>
+      <label>Latency target (ms) <input type="number" name="latency_ms" min="0" max="600000" value="{{ form.latency_ms or '' }}" placeholder="800"></label>
+      <label>Data restrictions <textarea name="data_restrictions" maxlength="400" placeholder="No customer records outside the EU region.">{{ form.data_restrictions }}</textarea></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Owners</h2>
+    <p class="card-sub">A person per part, chosen from the roster. A gate needs a name, and so does a plan.</p>
+    <div class="grid">
+      {% for role in roles %}
+      <label>{{ role.replace("_", " ") | title }} <input type="text" name="owner_{{ role }}" list="roster" maxlength="80" value="{{ form.owners.get(role, '') }}" placeholder="Who owns it"></label>
+      {% endfor %}
+    </div>
+    <datalist id="roster">{% for person in roster %}<option value="{{ person.name }}"></option>{% endfor %}</datalist>
+  </section>
+
+  <section class="card">
+    <h2>What it will not do</h2>
+    <p class="card-sub">The scope a reader can hold you to. "Not a general assistant" is an answer.</p>
+    <label>Non-goals <textarea name="non_goals" maxlength="400" placeholder="Not a general chat assistant; no answers without a cited source.">{{ form.non_goals }}</textarea></label>
+  </section>
+
+  <p class="head-actions"><button type="submit" class="primary">Save the brief</button></p>
+</form>
+{% endif %}
+{% endblock %}

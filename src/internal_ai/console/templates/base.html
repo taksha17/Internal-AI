@@ -14,8 +14,8 @@
 {{ m.sprite() }}
 {% if actor %}<a class="skip" href="#main">Skip to content</a>{% endif %}
 {% if actor %}
-{% set nav_icons = {"Home": "home", "Inbox": "inbox", "Approvals": "check-circle", "Data": "database", "Datasets": "layers", "Eval sets": "clipboard", "Models": "cube", "Jobs": "activity", "Ask": "chat", "Plan": "map", "Audit": "list", "Admin": "users"} %}
-{% set nav_groups = {"Workspace": ["Home", "Data", "Datasets", "Eval sets", "Models"], "Runs": ["Jobs", "Ask", "Plan"], "Governance": ["Inbox", "Approvals", "Audit", "Admin"]} %}
+{% set nav_icons = {"Home": "home", "Brief": "clipboard", "Inbox": "inbox", "Approvals": "check-circle", "Data": "database", "Datasets": "layers", "Eval sets": "clipboard", "Models": "cube", "Jobs": "activity", "Ask": "chat", "Plan": "map", "Audit": "list", "Admin": "users"} %}
+{% set nav_groups = {"Workspace": ["Home", "Brief", "Data", "Datasets", "Eval sets", "Models"], "Runs": ["Jobs", "Ask", "Plan"], "Governance": ["Inbox", "Approvals", "Audit", "Admin"]} %}
 {% set nav_by_label = dict(nav) %}
 <aside class="rail">
   <a class="brand" href="/console/home">

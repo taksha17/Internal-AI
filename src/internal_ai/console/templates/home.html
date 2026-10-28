@@ -50,6 +50,30 @@
   </div>
 </div>
 
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>Project brief</h2>
+      <p class="card-sub">The target, the metric threshold and the owners every run is judged against.</p>
+    </div>
+    <span class="badge {{ 'badge-approved' if brief.complete else 'badge-pending' }}">{{ "complete" if brief.complete else (brief.missing | length) ~ " gap" ~ ("s" if (brief.missing | length) != 1 else "") }}</span>
+    <a class="quiet-link" href="/console/brief">{{ "Open" if brief.complete else "Write it" }} {{ m.icon("arrow-right") }}</a>
+  </div>
+  {% if brief.complete %}
+  {% call m.data_table([("Target",), ("Success metric",), ("Timeline",), ("Deployment",)]) %}
+    <tr>
+      <td class="row-title">{{ brief.target }}<br><span class="row-sub">{{ brief.languages }} · {{ brief.context_length }} tokens · quality bar {{ brief.quality_bar }}</span></td>
+      <td>{% for metric in brief.metrics %}{{ metric.name }} {{ "≥" if metric.direction == "at_least" else "≤" }} {{ metric.threshold }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+      <td>{{ brief.timeline }}</td>
+      <td>{{ brief.deployment }}<br><span class="row-sub">≤{{ brief.latency_ms }} ms latency · data {{ brief.data_restrictions }}</span></td>
+    </tr>
+  {% endcall %}
+  <p class="muted small">Owners: {% for role, person in brief.owners.items() %}{{ role }} {{ person }}{% if not loop.last %} · {% endif %}{% endfor %}{% if brief.updated_at %} · updated {{ brief.updated_at | when }}{% endif %}</p>
+  {% else %}
+  <p class="callout">Still to record: {{ brief.missing | join("; ") }}. Without it a run has no target to miss and no owner to ask.</p>
+  {% endif %}
+</section>
+
 <div class="grid-2">
   <section class="card">
     <div class="card-head">

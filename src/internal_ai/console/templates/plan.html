@@ -3,6 +3,9 @@
 {% block title %}Plan{% endblock %}
 {% block content %}
 {{ m.page_head("Plan and tasks", "The orchestrator turns a goal into tasks for role agents. A lead submits and approves the plan; agents then work it, and every gate still waits for a person.", "Runs") }}
+{% if not brief.complete %}
+<p class="callout">This plan has no complete project brief yet: still to record {{ brief.missing | join("; ") }}. <a href="/console/brief">Write the brief</a> so tasks are judged against a target and a metric rather than only finishing.</p>
+{% endif %}
 {% if can("submit_plan") %}
 <div class="grid">
   <form method="post" action="/console/plan" class="stack card">

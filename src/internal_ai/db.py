@@ -242,6 +242,13 @@ CREATE TABLE IF NOT EXISTS kv (
     value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS project_brief (
+    id TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS alerts (
     id TEXT PRIMARY KEY,
     kind TEXT NOT NULL,

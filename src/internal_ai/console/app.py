@@ -29,6 +29,7 @@ from markupsafe import Markup
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from internal_ai import brief
 from internal_ai.console import find as finder
 from internal_ai.console import inbox, lists
 from internal_ai.context import Platform
@@ -69,6 +70,7 @@ REFUSALS = (
 
 NAV = [
     ("Home", "/console/home"),
+    ("Brief", "/console/brief"),
     ("Inbox", "/console/inbox"),
     ("Approvals", "/console/approvals"),
     ("Data", "/console/sources"),
@@ -187,6 +189,35 @@ def _number(raw: str, kind: type, default: Any) -> Any:
 
 def _groups(raw: str) -> list[str]:
     return sorted({item.strip() for item in (raw or "").split(",") if item.strip()})
+
+
+def brief_from_form(form: dict[str, str]) -> brief.ProjectBrief:
+    metrics = []
+    for index in (1, 2, 3):
+        name = (form.get(f"metric_name_{index}") or "").strip()
+        threshold = (form.get(f"metric_threshold_{index}") or "").strip()
+        if name or threshold:
+            metrics.append(
+                brief.Metric(
+                    name=name,
+                    threshold=threshold,
+                    direction=form.get(f"metric_direction_{index}", "at_least"),
+                )
+            )
+    return brief.ProjectBrief(
+        target=(form.get("target") or "").strip(),
+        languages=(form.get("languages") or "").strip(),
+        context_length=_number(form.get("context_length", ""), int, 0),
+        quality_bar=(form.get("quality_bar") or "").strip(),
+        metrics=metrics,
+        budget_usd=_number(form.get("budget_usd", ""), float, 0.0),
+        timeline=(form.get("timeline") or "").strip(),
+        deployment=(form.get("deployment") or "").strip(),
+        data_restrictions=(form.get("data_restrictions") or "").strip(),
+        latency_ms=_number(form.get("latency_ms", ""), int, 0),
+        owners={role: (form.get(f"owner_{role}") or "").strip() for role in brief.OWNER_ROLES},
+        non_goals=(form.get("non_goals") or "").strip(),
+    )
 
 
 def when(value: Any) -> Markup:
@@ -338,6 +369,7 @@ def mount_console(
             "kill": governance.kill_switch_state(platform),
             "flashes": pop_flashes(ctx),
             "path": ctx.request.url.path,
+            "brief": brief.load(platform.store),
             "waiting": waiting,
             "inbox": len(waiting.yours),
             "attention": waiting.count,
@@ -551,6 +583,37 @@ def mount_console(
             budget=platform.budget.all_status(),
             jobs=jobs,
             alerts=alerts,
+        )
+
+    @app.get("/console/brief", include_in_schema=False)
+    def brief_page(request: Request) -> Response:
+        ctx = context(request)
+        return render(
+            ctx,
+            "brief.html",
+            form=brief.load(ctx.platform.store),
+            roster=PeopleRegistry(ctx.platform.store).list_people(),
+            roles=brief.OWNER_ROLES,
+        )
+
+    @app.post("/console/brief", include_in_schema=False)
+    async def brief_save(request: Request) -> Response:
+        ctx = context(request)
+        payload = await posted(ctx)
+        try:
+            parsed = brief_from_form(payload)
+        except ValueError as exc:
+            flash(ctx, "error", message(exc))
+            return redirect("/console/brief")
+        return await act(
+            ctx,
+            "/console/brief",
+            lambda: brief.save(ctx.platform.store, ctx.platform.audit, ctx.actor, parsed),
+            lambda saved: (
+                "brief saved"
+                if saved.complete
+                else "brief saved; still missing " + ", ".join(saved.missing)
+            ),
         )
 
     @app.get("/console/inbox", include_in_schema=False)
