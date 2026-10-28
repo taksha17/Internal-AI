@@ -713,6 +713,19 @@ class Store:
         row = self.conn.execute("SELECT * FROM datasets WHERE id = ?", (dataset_id,)).fetchone()
         return self._row_to_dataset(row) if row else None
 
+    def update_dataset_tokens(
+        self, dataset_id: str, token_count: int, stats: dict[str, Any]
+    ) -> None:
+        """Record a token count measured with the trained tokenizer.
+
+        The record text and the content hash do not change: only the count and the
+        stats that say how it was counted.
+        """
+        self.conn.execute(
+            "UPDATE datasets SET token_count = ?, stats = ? WHERE id = ?",
+            (token_count, _json(stats), dataset_id),
+        )
+
     def count_audit(
         self,
         actor: str | None = None,

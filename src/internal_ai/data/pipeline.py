@@ -175,6 +175,9 @@ class DataPipeline:
         for record in records:
             record.tokens = max(1, len(record.text) // 4)
         token_count = sum(record.tokens for record in records)
+        # No tokenizer exists yet at build time. The count is a planning estimate
+        # until ``measure_token_count`` replaces it after the tokenizer is trained.
+        token_count_kind = "estimate"
         record_hashes = sorted(record.fingerprint() for record in records)
         # Labels define the artifact as much as the text does, but only when the
         # data brought them: a dataset built without any keeps the hash it had.
@@ -211,7 +214,7 @@ class DataPipeline:
             token_count=token_count,
             created_at=now_iso(),
             lineage=lineage,
-            stats={"steps": steps},
+            stats={"steps": steps, "token_count_kind": token_count_kind},
             released=False,
             parent_version=None,
         )
@@ -228,12 +231,46 @@ class DataPipeline:
                 "content_hash": dataset.content_hash,
                 "records": dataset.record_count,
                 "tokens": dataset.token_count,
+                "token_count_kind": token_count_kind,
                 "lineage_coverage": "100%",
             },
         )
         return PipelineResult(
             dataset=dataset, records=records, stats={"steps": steps}, lineage=lineage
         )
+
+    def measure_token_count(
+        self, dataset_id: str, tokenizer: Any, actor: str = "data_engineer"
+    ) -> dict[str, Any]:
+        """Replace the character-based estimate with the tokenizer's own count.
+
+        The estimate at build time is ``len(text) // 4``, which is close enough to
+        plan with and wrong enough to plan a run on. Once the tokenizer is trained
+        the exact count can be measured, and the dataset says which one it holds.
+        """
+        dataset = self.store.get_dataset(dataset_id)
+        if dataset is None:
+            raise KeyError(f"unknown dataset: {dataset_id}")
+        rows = self.store.dataset_records(dataset_id)
+        counted = sum(len(tokenizer.encode(row["payload"])) for row in rows)
+        stats = dict(dataset.stats)
+        stats["token_count_kind"] = "measured"
+        stats["token_count_estimate"] = dataset.token_count
+        stats["tokenizer_hash"] = content_hash(tokenizer.vocab)
+        self.store.update_dataset_tokens(dataset_id, counted, stats)
+        result = {
+            "dataset_id": dataset_id,
+            "tokens": counted,
+            "estimate": dataset.token_count,
+            "tokenizer_hash": stats["tokenizer_hash"],
+        }
+        self.audit.record(
+            actor=actor,
+            action="dataset.tokens_measured",
+            subject=dataset_id,
+            details=result,
+        )
+        return result
 
     def run_pii_audit(self, dataset_id: str, sample_size: int | None = 50) -> dict[str, Any]:
         """Sampled check that no PII survived scrubbing (NFR: Privacy).
@@ -289,8 +326,8 @@ class DataPipeline:
         audit_result = self.run_pii_audit(dataset_id, sample_size=None)
         if not audit_result["passed"]:
             raise PermissionError(
-                f"PII audit found {audit_result['critical_findings']} critical findings; "
-                "the dataset cannot be released"
+                f"release audit found {audit_result['critical_findings']} critical finding(s) "
+                "(personal data or a secret); the dataset cannot be released"
             )
         self.store.release_dataset(dataset_id)
         released = self.store.get_dataset(dataset_id)

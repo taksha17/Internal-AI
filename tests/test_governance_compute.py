@@ -191,7 +191,7 @@ def test_release_is_blocked_when_pii_survives(platform, corpus_path, monkeypatch
             dirty["record_key"],
         ),
     )
-    with pytest.raises(PermissionError, match="PII audit"):
+    with pytest.raises(PermissionError, match="release audit"):
         pipeline.release(result.dataset_id, "ml_lead", gate_approved=True)
 
 
@@ -243,7 +243,7 @@ def test_release_reads_a_record_a_one_row_sample_would_miss(platform) -> None:
         ],
     )
     pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
-    with pytest.raises(PermissionError, match="PII audit"):
+    with pytest.raises(PermissionError, match="release audit"):
         pipeline.release(dataset.id, "ml_lead", gate_approved=True)
 
 

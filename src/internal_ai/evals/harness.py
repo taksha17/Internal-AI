@@ -294,18 +294,18 @@ class EvalHarness:
             checks["contamination"] = contamination
         elif relevant_doc_ids:
             checks["contamination"] = {
-                "passed": True,
-                "note": "no training corpus supplied, contamination check skipped",
+                "passed": False,
+                "note": (
+                    "no training corpus was supplied, so overlap between the eval set "
+                    "and training data could not be ruled out"
+                ),
             }
         else:
             checks["contamination"] = {
                 "passed": False,
                 "note": "eval set has no relevance labels, contamination check could not run",
             }
-        checks["permission_leak"] = {
-            "passed": True,
-            "note": "permission enforcement is verified by the retrieval service tests",
-        }
+        checks["permission_leak"] = permission_probe(corpus_records, relevant_doc_ids)
         return checks
 
     def record_report(
@@ -335,6 +335,47 @@ class EvalHarness:
             details={"model_id": model_id, "passed": report.passed},
         )
         return report
+
+
+def permission_probe(corpus_records: list[Record], relevant_doc_ids: set[str]) -> dict[str, Any]:
+    """Ask the serving permission rule whether an eval document leaks.
+
+    A check that cannot fail is not a check. This uses ``Principal.can_read`` -
+    the same rule the retrieval service applies - and fails on three things: a
+    document with no access list (readable by everyone), a labelled document a
+    stranger can still read, and a document nobody can read, which would make the
+    eval measure something no user could ever reach.
+    """
+    from internal_ai.serving.service import Principal
+
+    labelled = [record for record in corpus_records if record.record_key in relevant_doc_ids]
+    if not labelled:
+        return {
+            "passed": False,
+            "note": "no labelled document to probe",
+            "probed": 0,
+        }
+    unscoped = [record.record_key for record in labelled if not record.acl]
+    stranger = Principal(user_id="eval-probe", groups=frozenset())
+    readable = [
+        record.record_key
+        for record in labelled
+        if stranger.can_read(record.acl, record.sensitivity)
+    ]
+    granted = frozenset(group for record in labelled for group in record.acl)
+    insider = Principal(user_id="eval-probe", groups=granted)
+    unreachable = [
+        record.record_key
+        for record in labelled
+        if not insider.can_read(record.acl, record.sensitivity)
+    ]
+    return {
+        "passed": not unscoped and not readable and not unreachable,
+        "probed": len(labelled),
+        "without_access_list": unscoped[:5],
+        "readable_without_a_grant": readable[:5],
+        "unreachable_with_every_grant": unreachable[:5],
+    }
 
 
 def json_safe(items: list[dict[str, Any]]) -> list[dict[str, Any]]:

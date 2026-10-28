@@ -9,7 +9,7 @@
 <div class="grid">
   <section class="card">
     <h2>What is in it</h2>
-    <p>{{ view.records }} records, {{ dataset.token_count }} tokens. You can read {{ view.visible_records }} of them.</p>
+    <p>{{ view.records }} records, {{ dataset.token_count }} tokens {% if dataset.stats.get("token_count_kind") == "measured" %}(measured with the dataset tokenizer){% else %}(estimated from characters until a tokenizer is trained){% endif %}. You can read {{ view.visible_records }} of them.</p>
     {% if view.records < 500 %}
     <p class="callout">Small corpora answer best with keyword search. Training a model is optional here and only helps once the data grows past a few hundred records.</p>
     {% endif %}

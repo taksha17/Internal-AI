@@ -140,6 +140,11 @@ def train_tokenizer_for(
         subject=dataset_id,
         details={"vocab_size": tokenizer.vocab_size, "coverage": coverage},
     )
+    measured = DataPipeline(
+        platform.store, platform.audit, platform.settings.root
+    ).measure_token_count(dataset_id, tokenizer, actor=actor)
+    coverage["tokens"] = measured["tokens"]
+    coverage["token_count_estimate"] = measured["estimate"]
     return tokenizer, coverage
 
 

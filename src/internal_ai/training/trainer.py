@@ -31,6 +31,8 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise ImportError("PyTorch is required for training") from exc
 
+TOKENS_PER_PARAMETER_FLOOR = 20
+
 
 @dataclass(slots=True)
 class TrainConfig:
@@ -83,6 +85,7 @@ class TrainingOutcome:
     warnings: list[str] = field(default_factory=list)
     estimate: dict[str, Any] = field(default_factory=dict)
     reproducibility: dict[str, Any] = field(default_factory=dict)
+    token_budget: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -264,6 +267,7 @@ class Trainer:
         )
 
         estimate = self._estimate(config, parameters, total_tokens)
+        token_budget = self._token_budget(dataset_id, parameters)
         reproducibility = {
             "commit": _git_commit(self.root),
             "config": config.to_dict(),
@@ -290,8 +294,17 @@ class Trainer:
                 "estimate": estimate.to_dict(),
                 "parameters": parameters,
                 "dataset_id": dataset_id,
+                "token_budget": token_budget,
             },
         )
+        if not token_budget["meets_floor"]:
+            self.audit.record(
+                actor=actor,
+                action="train.token_budget_short",
+                subject=run_id,
+                outcome=AuditOutcome.REQUESTED,
+                details=token_budget,
+            )
         if estimate.estimated_cost_usd > config.cost_cap_usd:
             self.audit.record(
                 actor=actor,
@@ -319,6 +332,7 @@ class Trainer:
                 ],
                 estimate=estimate.to_dict(),
                 reproducibility=reproducibility,
+                token_budget=token_budget,
             )
 
         start_step = 0
@@ -338,6 +352,7 @@ class Trainer:
         model.train()
         alerts: list[str] = []
         warnings: list[str] = []
+
         loss_history: list[float] = []
         ema_loss: float | None = None
         spike_streak = 0
@@ -470,6 +485,7 @@ class Trainer:
             warnings=warnings,
             estimate=estimate.to_dict(),
             reproducibility=reproducibility,
+            token_budget=token_budget,
         )
 
     def _contrastive_loss(
@@ -492,6 +508,26 @@ class Trainer:
 
         warmup = max(config.warmup_steps, config.steps // 10)
         return cosine_schedule(step, config.steps, config.learning_rate, warmup)
+
+    def _token_budget(self, dataset_id: str, parameters: int) -> dict[str, Any]:
+        """Tokens in the corpus against the parameters that will learn from them.
+
+        Twenty tokens per parameter is the PRD's planning floor, not a promise of
+        quality; a run below it is recorded as short rather than refused, because a
+        small demonstration is a legitimate thing to run.
+        """
+        dataset = self.store.get_dataset(dataset_id)
+        tokens = dataset.token_count if dataset else 0
+        measured = bool(dataset and dataset.stats.get("token_count_kind") == "measured")
+        per_parameter = round(tokens / parameters, 2) if parameters else 0.0
+        return {
+            "dataset_tokens": tokens,
+            "parameters": parameters,
+            "tokens_per_parameter": per_parameter,
+            "floor": TOKENS_PER_PARAMETER_FLOOR,
+            "meets_floor": tokens >= TOKENS_PER_PARAMETER_FLOOR * parameters,
+            "count_kind": "measured" if measured else "estimate",
+        }
 
     def _estimate(self, config: TrainConfig, parameters: int, tokens: int) -> CostEstimate:
         if config.device == "cpu":
