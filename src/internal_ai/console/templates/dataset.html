@@ -37,6 +37,11 @@
       <form method="post" action="/console/datasets/{{ dataset.id }}/split" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="primary">Split</button></form>
       {% endif %}
     </li>
+    <li>Drop duplicate copies into a new version.
+      {% if can("build_dataset") %}
+      <form method="post" action="/console/datasets/{{ dataset.id }}/dedup" class="inline-form">{{ m.csrf_field() }}<button type="submit">Drop duplicate copies into a new version</button></form>
+      {% endif %}
+    </li>
     <li class="{{ 'done' if dataset.released else '' }}">Release, after a PII audit and a dataset_release gate.
       {% if view.release_gate %}{{ m.gate_box(release_gate) }}{% endif %}
       {% if view.has_splits and not dataset.released and can("release_dataset") %}

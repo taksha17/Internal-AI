@@ -21,7 +21,12 @@ HUMAN_APPROVER_ROLES: dict[GateType, tuple[str, ...]] = {
 }
 
 EVIDENCE_REQUIREMENTS: dict[GateType, tuple[str, ...]] = {
-    GateType.NEW_DATA_SOURCE: ("source_description", "sensitivity_class", "purpose"),
+    GateType.NEW_DATA_SOURCE: (
+        "source_description",
+        "sensitivity_class",
+        "purpose",
+        "legal_status",
+    ),
     GateType.DATASET_RELEASE: ("quality_report", "pii_audit_sample", "lineage"),
     GateType.EVAL_SET_FREEZE: ("coverage_analysis", "leakage_check"),
     GateType.TRAINING_RUN_COST: ("design_memo", "cost_estimate", "success_criteria"),

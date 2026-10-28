@@ -23,7 +23,14 @@ from internal_ai.domain import AuditOutcome
 from internal_ai.ids import content_hash, new_id, now_iso
 from internal_ai.store import Store
 from internal_ai.training.cost import CostEstimate, estimate_cpu_run, estimate_gpu_run
-from internal_ai.training.model import PAD_ID, TinyTransformer, TransformerConfig, build_model
+from internal_ai.training.model import (
+    PAD_ID,
+    TinyTransformer,
+    TransformerConfig,
+    build_model,
+    non_finite_parameters,
+    spec_violations,
+)
 
 try:
     import torch
@@ -278,6 +285,9 @@ class Trainer:
             causal=config.objective == "causal",
         )
         model = build_model(model_config, seed=config.seed)
+        blocked = self._refuse_mis_wired(run_id, actor, model, model_config, metrics_path)
+        if blocked is not None:
+            return blocked
         parameters = model.parameter_count()
         optimizer = torch.optim.AdamW(
             model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
@@ -358,6 +368,10 @@ class Trainer:
         if resume and last_checkpoint.exists():
             state = torch.load(last_checkpoint, weights_only=True)
             model.load_state_dict(state["model_state"])
+            broken = self._refuse_mis_wired(run_id, actor, model, model_config, metrics_path)
+            if broken is not None:
+                broken.alerts.append(f"resume refused from checkpoint step {state['step']}")
+                return broken
             optimizer.load_state_dict(state["optimizer_state"])
             start_step = int(state["step"])
             resumed_from = start_step
@@ -394,7 +408,14 @@ class Trainer:
             else:
                 _, loss = model(inputs, targets)
             if not torch.isfinite(loss):
-                alerts.append(f"divergence detected: non-finite loss at step {step}")
+                if not loss_history:
+                    alerts.append(
+                        f"the first loss is not finite at step {step} "
+                        f"({float(loss.detach())}): the model is mis-wired, the inputs are out of "
+                        "range, or the learning rate is too high"
+                    )
+                else:
+                    alerts.append(f"divergence detected: non-finite loss at step {step}")
                 break
             loss.backward()
             grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
@@ -506,6 +527,51 @@ class Trainer:
             reproducibility=reproducibility,
             token_budget=token_budget,
             resumed_from=resumed_from,
+        )
+
+    def _refuse_mis_wired(
+        self,
+        run_id: str,
+        actor: str,
+        model: TinyTransformer,
+        config: TransformerConfig,
+        metrics_path: Path,
+    ) -> TrainingOutcome | None:
+        """A model that does not match its spec, or holds a NaN, never trains.
+
+        Shapes and finite weights cost milliseconds to check and are expensive to
+        discover from a finished run that produced a model nobody can trust.
+        """
+        violations = spec_violations(model, config)
+        non_finite = non_finite_parameters(model)
+        if not violations and not non_finite:
+            return None
+        self.audit.record(
+            actor=actor,
+            action="train.model_spec_failed",
+            subject=run_id,
+            outcome=AuditOutcome.DENIED,
+            details={
+                "violations": violations,
+                "non_finite": non_finite,
+                "spec": config.to_dict(),
+                "parameters": model.parameter_count(),
+            },
+        )
+        alerts = list(violations)
+        if non_finite:
+            alerts.append("non-finite weights: " + ", ".join(non_finite))
+        return TrainingOutcome(
+            run_id=run_id,
+            status="blocked_by_spec",
+            steps=0,
+            tokens_seen=0,
+            final_loss=float("nan"),
+            cost_usd=0.0,
+            checkpoint_path="",
+            metrics_path=str(metrics_path),
+            model_path="",
+            alerts=alerts,
         )
 
     def _contrastive_loss(

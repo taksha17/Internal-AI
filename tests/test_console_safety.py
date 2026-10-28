@@ -142,6 +142,7 @@ def test_one_person_cannot_cover_every_approver_role(platform: Platform) -> None
             "source_description": "notes",
             "sensitivity_class": "internal",
             "purpose": "learn the flow",
+            "legal_status": "internal",
         },
     )
     governance.decide_gate(platform, both, gate.id, True, note="I hold both roles")
