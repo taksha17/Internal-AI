@@ -161,6 +161,26 @@ class Trainer:
                 batches.append(chunk)
         return batches
 
+    @staticmethod
+    def _batch_position(batches: list[Any], index: int) -> dict[str, Any]:
+        """Which batch a step reads, named by where it sits and what it holds.
+
+        The position is a function of the step today, but a resumed run is only
+        continuing the same data if the batch it reads next is the one the
+        checkpoint left off before. Naming both lets a resume prove that rather
+        than assume it.
+        """
+        batch = batches[index % len(batches)]
+        rows = [
+            [
+                int(token)
+                for part in (item if isinstance(item, tuple) else (item,))
+                for token in part
+            ]
+            for item in batch
+        ]
+        return {"batch_index": index % len(batches), "batch_hash": content_hash(rows)}
+
     def _pair_batches(
         self, pairs: list[dict[str, str]], tokenizer: Tokenizer, config: TrainConfig
     ) -> list[list[tuple[list[int], list[int]]]]:
@@ -372,14 +392,20 @@ class Trainer:
             if broken is not None:
                 broken.alerts.append(f"resume refused from checkpoint step {state['step']}")
                 return broken
-            optimizer.load_state_dict(state["optimizer_state"])
             start_step = int(state["step"])
+            refused = self._refuse_moved_data(
+                run_id, actor, state.get("data_position") or {}, batches, start_step, metrics_path
+            )
+            if refused is not None:
+                return refused
+            position = self._batch_position(batches, start_step)
+            optimizer.load_state_dict(state["optimizer_state"])
             resumed_from = start_step
             self.audit.record(
                 actor=actor,
                 action="train.resumed",
                 subject=run_id,
-                details={"from_step": start_step},
+                details={"from_step": start_step, **position},
             )
 
         model.train()
@@ -396,8 +422,8 @@ class Trainer:
         step_costs: list[float] = []
 
         while step < config.steps:
-            batch_index = step % len(batches)
-            batch = batches[batch_index]
+            position = self._batch_position(batches, step)
+            batch = batches[position["batch_index"]]
             inputs, targets, _ = self._make_batch(batch, config)
             lr = self._lr(config, step)
             for group in optimizer.param_groups:
@@ -467,6 +493,8 @@ class Trainer:
                     metrics_path,
                     {
                         "step": step,
+                        "batch_index": position["batch_index"],
+                        "batch_hash": position["batch_hash"],
                         "loss": round(loss_value, 6),
                         "ema_loss": round(ema_loss or 0.0, 6),
                         "grad_norm": round(float(grad_norm), 6),
@@ -478,11 +506,27 @@ class Trainer:
                     },
                 )
             if (step + 1) % config.checkpoint_interval == 0 or step + 1 == config.steps:
-                self._checkpoint(checkpoint_dir, model, optimizer, step + 1, config, dataset_hash)
+                self._checkpoint(
+                    checkpoint_dir,
+                    model,
+                    optimizer,
+                    step + 1,
+                    config,
+                    dataset_hash,
+                    data_position=self._batch_position(batches, step + 1),
+                )
             step += 1
 
         checkpoint_path = str(checkpoint_dir / "latest.pt")
-        self._checkpoint(checkpoint_dir, model, optimizer, step, config, dataset_hash)
+        self._checkpoint(
+            checkpoint_dir,
+            model,
+            optimizer,
+            step,
+            config,
+            dataset_hash,
+            data_position=self._batch_position(batches, step),
+        )
         model_path = model_dir / f"{run_id}.pt"
         torch.save(
             {
@@ -527,6 +571,49 @@ class Trainer:
             reproducibility=reproducibility,
             token_budget=token_budget,
             resumed_from=resumed_from,
+        )
+
+    def _refuse_moved_data(
+        self,
+        run_id: str,
+        actor: str,
+        recorded: dict[str, Any],
+        batches: list[Any],
+        start_step: int,
+        metrics_path: Path,
+    ) -> TrainingOutcome | None:
+        """Resume only onto the batch the checkpoint left off before.
+
+        A run continued on different data is a different run wearing the same id,
+        which is how a broken resume reads as a successful one.
+        """
+        if not recorded:
+            return None
+        expected = self._batch_position(batches, start_step)
+        if recorded == expected:
+            return None
+        self.audit.record(
+            actor=actor,
+            action="train.resume_position_mismatch",
+            subject=run_id,
+            outcome=AuditOutcome.DENIED,
+            details={"recorded": recorded, "expected": expected, "step": start_step},
+        )
+        return TrainingOutcome(
+            run_id=run_id,
+            status="blocked_by_data_position",
+            steps=0,
+            tokens_seen=0,
+            final_loss=float("nan"),
+            cost_usd=0.0,
+            checkpoint_path="",
+            metrics_path=str(metrics_path),
+            model_path="",
+            alerts=[
+                f"step {start_step} resumes on batch {expected['batch_index']} "
+                f"({expected['batch_hash']}) but the checkpoint was written before batch "
+                f"{recorded.get('batch_index')} ({recorded.get('batch_hash')})"
+            ],
         )
 
     def _refuse_mis_wired(
@@ -645,6 +732,7 @@ class Trainer:
         step: int,
         config: TrainConfig,
         dataset_hash: str,
+        data_position: dict[str, Any] | None = None,
     ) -> None:
         payload = {
             "model_state": model.state_dict(),
@@ -652,6 +740,7 @@ class Trainer:
             "step": step,
             "config": config.to_dict(),
             "dataset_hash": dataset_hash,
+            "data_position": data_position or {},
             "commit": _git_commit(self.root),
         }
         torch.save(payload, checkpoint_dir / "latest.pt")
