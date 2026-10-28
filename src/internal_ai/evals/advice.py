@@ -27,6 +27,17 @@ CHECK_ACTIONS: dict[str, str] = {
         "personal data. Scrub the dataset and release a new version before training again."
     ),
     "permission_leak": "The permission check did not pass. Settle that before reading the score.",
+    "retrieval_memorisation": (
+        "The memorisation check did not pass: the encoder maps a document and its own "
+        "opening line onto almost the same vector, so it is reproducing the text rather "
+        "than encoding its meaning. More varied documents change this; a longer run at "
+        "this corpus size does not."
+    ),
+    "instruction_payload": (
+        "The instruction check did not pass: a document the evaluation rests on carries "
+        "instructions aimed at the model. Remove the text from the corpus and release a "
+        "new dataset version before training again."
+    ),
 }
 
 # Reported for context, never a reason to refuse on its own.
@@ -52,13 +63,33 @@ def failed_checks(report: Any) -> list[str]:
     )
 
 
+def memorised_documents(checks: dict[str, Any], limit: int = 5) -> list[str]:
+    """The documents a failed memorisation check named, so they can be found."""
+    result = checks.get("retrieval_memorisation") or {}
+    if _value(result, "passed", True):
+        return []
+    flagged = list(_value(result, "flagged", ()) or ())
+    if not flagged:
+        return []
+    named = [
+        f"{item.get('document', '?')} at {float(item.get('similarity', 0.0)):.3f}"
+        for item in flagged[:limit]
+    ]
+    line = "Documents the encoder cannot separate from their own opening line: "
+    line += ", ".join(named)
+    if len(flagged) > len(named):
+        line += f", and {len(flagged) - len(named)} more"
+    return [line + "."]
+
+
 def retrieval_advice(report: Any, records: int, tokens: int) -> list[str]:
     """Why a retrieval run did not pass, and what would change it."""
     if report is None or _value(report, "passed", False):
         return []
     failed = [name for name in failed_checks(report) if name != "brief_targets"]
     if failed:
-        return [CHECK_ACTIONS.get(name, f"The {name} check did not pass.") for name in failed]
+        lines = [CHECK_ACTIONS.get(name, f"The {name} check did not pass.") for name in failed]
+        return lines + memorised_documents(_value(report, "checks", {}) or {})
     targets = (_value(report, "checks", {}) or {}).get("brief_targets") or {}
     if isinstance(targets, dict) and targets.get("passed") is False:
         lines = [
