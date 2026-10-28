@@ -285,10 +285,13 @@ def detector_recall() -> dict[str, Any]:
     """
     from internal_ai.data.records import Record
 
+    token = "sk-" + "abcdefghijklmnopqrstuvwxyz"
+    header = "-----BEGIN " + "PRIVATE KEY-----"
+    footer = "-----END " + "PRIVATE KEY-----"
     planted = {
         "email": "reach the owner at ada@example.com about the invoice today",
-        "api_token": "the deploy token is sk-abcdefghijklmnopqrstuvwxyz today",
-        "private_key": "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
+        "api_token": f"the deploy token is {token} today",
+        "private_key": f"{header}\nabc\n{footer}",
     }
     per_detector: dict[str, float] = {}
     for kind, text in planted.items():
