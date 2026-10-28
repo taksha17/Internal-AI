@@ -66,6 +66,14 @@ class Tokenizer:
             symbols[best_index : best_index + 2] = [symbols[best_index] + symbols[best_index + 1]]
         return symbols
 
+    def whitespace_ids(self) -> set[int]:
+        return {index for token, index in self.vocab.items() if token.isspace()}
+
+    def content_ids(self, ids: list[int]) -> list[int]:
+        """Word pieces. Spacing stays in encode so text round-trips; the model trains on words."""
+        skip = self.whitespace_ids()
+        return [item for item in ids if item not in skip]
+
     def decode(self, ids: list[int]) -> str:
         inverse = {index: token for token, index in self.vocab.items()}
         hidden = {"<pad>", "<bos>", "<eos>"}

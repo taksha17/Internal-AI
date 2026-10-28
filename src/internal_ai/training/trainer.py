@@ -143,7 +143,7 @@ class Trainer:
     ) -> list[list[int]]:
         sequences: list[list[int]] = []
         for record in records:
-            ids = tokenizer.encode(record.text, max_tokens=seq_len - 1)
+            ids = tokenizer.content_ids(tokenizer.encode(record.text))[: seq_len - 1]
             if len(ids) < 8:
                 continue
             sequences.append(ids)
@@ -167,8 +167,10 @@ class Trainer:
     ) -> list[list[tuple[list[int], list[int]]]]:
         encoded: list[tuple[list[int], list[int]]] = []
         for pair in pairs:
-            anchor = tokenizer.encode(pair["query"])[: max(config.seq_len // 2, 8)]
-            positive = tokenizer.encode(pair["document"])[: config.seq_len]
+            anchor = tokenizer.content_ids(tokenizer.encode(pair["query"]))[
+                : max(config.seq_len // 2, 8)
+            ]
+            positive = tokenizer.content_ids(tokenizer.encode(pair["document"]))[: config.seq_len]
             if len(anchor) < 3 or len(positive) < 8:
                 continue
             encoded.append((anchor, positive))
