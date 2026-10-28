@@ -1537,6 +1537,23 @@ def mount_console(
             cost_gate_usd=build.TRAINING_COST_GATE_USD,
         )
 
+    @app.post("/console/models/overfit", include_in_schema=False)
+    async def overfit_probe(request: Request) -> Response:
+        from internal_ai.training.overfit import overfit_check
+
+        ctx = context(request)
+        await posted(ctx)
+        return await act(
+            ctx,
+            "/console/models",
+            lambda: overfit_check(ctx.platform, ctx.actor),
+            lambda report: (
+                f"overfit check {'passed' if report['passed'] else 'failed'}: "
+                f"loss {report['first_loss']} to {report['final_loss']} in "
+                f"{report['steps']} steps on {report['corpus']} lines"
+            ),
+        )
+
     @app.post("/console/models/train", include_in_schema=False)
     async def model_train(request: Request) -> Response:
         ctx = context(request)

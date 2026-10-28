@@ -66,17 +66,57 @@ class PipelineResult:
 
 
 def _git_commit(root: Path) -> str:
-    try:
-        proc = subprocess.run(
-            ["git", "-C", str(root), "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return "unknown"
-    return proc.stdout.strip() or "unknown"
+    """The commit that built this dataset.
+
+    The data root is usually outside the checkout, so the package directory is
+    tried too: a build run against a temporary data directory still records the
+    code that produced it.
+    """
+    for candidate in (root, Path(__file__).resolve().parents[3]):
+        try:
+            proc = subprocess.run(
+                ["git", "-C", str(candidate), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip()
+    return "unknown"
+
+
+def sample_lineage(dataset: DatasetVersion, rows: list[Any], limit: int = 20) -> dict[str, Any]:
+    """Trace a sample of records back to their source, config and commit.
+
+    Lineage at dataset level can be present while a record points at a source the
+    lineage never saw; only reading the rows shows that. The sample is sorted by
+    record key so two runs of the check inspect the same rows.
+    """
+    sources = {entry.get("source_id"): entry for entry in dataset.lineage.get("sources", [])}
+    ordered = sorted(rows, key=lambda row: row["record_key"])[:limit]
+    failures: list[dict[str, str]] = []
+    for row in ordered:
+        source = sources.get(row["source_id"])
+        if source is None:
+            failures.append({"record": row["record_key"], "problem": "source missing from lineage"})
+        elif not source.get("content_hash"):
+            failures.append({"record": row["record_key"], "problem": "source has no content hash"})
+    checked = len(ordered)
+    traced = checked - len(failures)
+    config_hash = str(dataset.lineage.get("config_hash", ""))
+    commit = str(dataset.lineage.get("code_commit", "unknown"))
+    return {
+        "sampled": checked,
+        "traced": traced,
+        "coverage": round(traced / checked, 4) if checked else 0.0,
+        "failures": failures[:5],
+        "config_hash": config_hash,
+        "code_commit": commit,
+        "passed": bool(checked) and not failures and bool(config_hash) and commit != "unknown",
+    }
 
 
 class DataPipeline:
@@ -271,6 +311,22 @@ class DataPipeline:
             details=result,
         )
         return result
+
+    def trace_sample(
+        self, dataset_id: str, limit: int = 20, actor: str = "data_engineer"
+    ) -> dict[str, Any]:
+        dataset = self.store.get_dataset(dataset_id)
+        if dataset is None:
+            raise KeyError(f"unknown dataset: {dataset_id}")
+        report = sample_lineage(dataset, self.store.dataset_records(dataset_id), limit=limit)
+        self.audit.record(
+            actor=actor,
+            action="dataset.lineage_sampled",
+            subject=dataset_id,
+            outcome=AuditOutcome.SUCCESS if report["passed"] else AuditOutcome.FAILURE,
+            details=report,
+        )
+        return report
 
     def run_pii_audit(self, dataset_id: str, sample_size: int | None = 50) -> dict[str, Any]:
         """Sampled check that no PII survived scrubbing (NFR: Privacy).

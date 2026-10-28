@@ -27,6 +27,19 @@
 {% endif %}
 
 {% if can('train_model') %}
+<form method="post" action="/console/models/overfit" class="card">
+  {{ m.csrf_field() }}
+  <div class="card-head">
+    <div>
+      <h2>Check the training code learns</h2>
+      <p class="card-sub">Trains one tiny batch until it is memorised. If this cannot get the loss down, no longer run will: it is the cheapest proof the model is wired correctly.</p>
+    </div>
+    <button type="submit" class="btn-sm">Run the check</button>
+  </div>
+</form>
+{% endif %}
+
+{% if can('train_model') %}
 <form method="post" action="/console/models/classifier" class="stack card">
   {{ m.csrf_field() }}
   <h2>Train a classifier</h2>

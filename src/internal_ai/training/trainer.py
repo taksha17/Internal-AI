@@ -86,23 +86,33 @@ class TrainingOutcome:
     estimate: dict[str, Any] = field(default_factory=dict)
     reproducibility: dict[str, Any] = field(default_factory=dict)
     token_budget: dict[str, Any] = field(default_factory=dict)
+    resumed_from: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
 def _git_commit(root: Path) -> str:
-    try:
-        proc = subprocess.run(
-            ["git", "-C", str(root), "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return "unknown"
-    return proc.stdout.strip() or "unknown"
+    """The code commit this run used.
+
+    The data root is often outside the checkout, so the package's own directory is
+    tried as well: a run started in a temporary data directory still records the
+    commit of the code that executed it.
+    """
+    for candidate in (root, Path(__file__).resolve().parents[3]):
+        try:
+            proc = subprocess.run(
+                ["git", "-C", str(candidate), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip()
+    return "unknown"
 
 
 class Trainer:
@@ -223,8 +233,15 @@ class Trainer:
         actor: str = "ml_engineer",
         resume: bool = True,
         pairs: list[dict[str, str]] | None = None,
+        run_id: str | None = None,
     ) -> TrainingOutcome:
-        run_id = new_id("run")
+        """Train, or continue, one run.
+
+        ``run_id`` names the run directory. A caller that wants to resume a killed
+        run passes the id it started with; without it every call is a new run and
+        its checkpoint directory starts empty.
+        """
+        run_id = run_id or new_id("run")
         run_dir = self.artifacts_dir / "runs" / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
         metrics_path = run_dir / "metrics.jsonl"
@@ -336,12 +353,14 @@ class Trainer:
             )
 
         start_step = 0
+        resumed_from = 0
         last_checkpoint = checkpoint_dir / "latest.pt"
         if resume and last_checkpoint.exists():
             state = torch.load(last_checkpoint, weights_only=True)
             model.load_state_dict(state["model_state"])
             optimizer.load_state_dict(state["optimizer_state"])
             start_step = int(state["step"])
+            resumed_from = start_step
             self.audit.record(
                 actor=actor,
                 action="train.resumed",
@@ -486,6 +505,7 @@ class Trainer:
             estimate=estimate.to_dict(),
             reproducibility=reproducibility,
             token_budget=token_budget,
+            resumed_from=resumed_from,
         )
 
     def _contrastive_loss(
