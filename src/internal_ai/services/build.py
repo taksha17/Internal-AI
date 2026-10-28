@@ -710,6 +710,15 @@ def request_release(platform: Platform, actor: Actor, dataset_id: str) -> GateRe
     )
 
 
+def drop_duplicate_copies(platform: Platform, actor: Actor, dataset_id: str) -> Any:
+    """Build the next version without duplicate copies. The current version stays."""
+    from internal_ai.data.pipeline import DataPipeline
+
+    require(platform.audit, actor, Action.BUILD_DATASET, dataset_id)
+    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+    return pipeline.drop_duplicate_copies(dataset_id, actor.id)
+
+
 def release_dataset(platform: Platform, actor: Actor, dataset_id: str) -> Any:
     from internal_ai.brief import require_programme
     from internal_ai.data.pipeline import DataPipeline
