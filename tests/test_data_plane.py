@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 from internal_ai.data.splits import contamination_report
 from internal_ai.data.tokenizer import coverage_report, train_tokenizer
 from internal_ai.data.transforms import deduplicate, filter_quality, scrub_pii
@@ -56,6 +60,85 @@ def test_a_row_cannot_widen_access_or_mark_itself_readable(tmp_path, platform) -
     reader = Principal(user_id="ada", groups=frozenset({"engineering"}))
     assert reader.can_read(records[0].acl, records[0].sensitivity) is False
     assert reader.can_read(records[1].acl, records[1].sensitivity) is True
+
+
+def test_a_row_may_not_lower_the_sensitivity_of_its_source(tmp_path, platform) -> None:
+    from internal_ai.data.records import Source, ingest_source
+
+    path = tmp_path / "notes.jsonl"
+    path.write_text(
+        '{"text": "keep this private", "sensitivity": "internal"}\n'
+        '{"text": "reset the vpn", "sensitivity": "regulated"}\n',
+        encoding="utf-8",
+    )
+    records = ingest_source(
+        Source(
+            source_id="src_notes",
+            path=path,
+            sensitivity="confidential",
+            acl=["engineering"],
+            approved=True,
+        )
+    )
+    assert [record.sensitivity for record in records] == ["confidential", "regulated"]
+
+
+def test_a_tree_dataset_keeps_the_class_of_its_source(tmp_path, platform) -> None:
+    from internal_ai.data.tree import build_tree_index
+    from internal_ai.workflows import build_tree_corpus
+
+    folder = tmp_path / "docs"
+    folder.mkdir()
+    (folder / "note.txt").write_text("reset the vpn\n")
+    index = build_tree_index(folder, source_id="src_docs")
+    built = build_tree_corpus(platform, index, name="docs", sensitivity="confidential")
+    dataset = platform.store.get_dataset(built.dataset_id)
+    assert dataset is not None
+    rows = platform.store.dataset_records(built.dataset_id)
+    assert [row["sensitivity"] for row in rows] == ["confidential"]
+    assert dataset.lineage["sources"][0]["sensitivity"] == "confidential"
+
+
+def test_the_class_of_a_registered_source_reaches_its_dataset(
+    platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, enroll_person
+) -> None:
+    from internal_ai.services import build, governance
+    from internal_ai.services.jobs import JobRunner
+
+    root = tmp_path / "data"
+    root.mkdir()
+    (root / "notes.txt").write_text("reset the vpn\n")
+    monkeypatch.setenv("INTERNAL_AI_DATA_ROOTS", str(root))
+    owner = enroll_person(platform, "Dee Owner", ["data_owner"])
+    reviewer = enroll_person(platform, "Rae Reviewer", ["data_owner"])
+    compliance = enroll_person(platform, "Cleo Compliance", ["compliance"])
+    source = build.register_source(
+        platform, owner, str(root / "notes.txt"), "notes", "learn", ["engineering"]
+    )
+    platform.store.conn.execute(
+        "UPDATE data_sources SET sensitivity = ? WHERE id = ?", ("confidential", source["id"])
+    )
+    governance.decide_gate(
+        platform,
+        reviewer,
+        source["gate_id"],
+        approved=True,
+        note="the class was read from the scan",
+    )
+    governance.decide_gate(
+        platform, compliance, source["gate_id"], approved=True, note="classified confidential"
+    )
+
+    result = build.build_dataset(
+        platform, owner, JobRunner(platform, synchronous=True), source["id"]
+    )
+
+    assert result["state"] == "succeeded", result.get("error")
+    dataset_id = result["result"]["dataset_id"]
+    dataset = platform.store.get_dataset(dataset_id)
+    assert dataset is not None
+    assert dataset.lineage["sources"][0]["sensitivity"] == "confidential"
+    assert platform.store.dataset_records(dataset_id) == []
 
 
 def test_a_password_assignment_is_scrubbed_and_blocks_release_if_it_remains() -> None:

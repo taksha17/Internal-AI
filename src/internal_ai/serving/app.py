@@ -26,6 +26,8 @@ from internal_ai.serving.service import (
 )
 from internal_ai.training.embedder import TorchEmbedder
 
+MEMORISATION_SAMPLE = 200
+
 
 class SearchRequest(BaseModel):
     query: str
@@ -113,6 +115,15 @@ def create_serving_app(
                 detail={"error": "no model is in service", "reasons": reasons},
             )
         raise HTTPException(status_code=404, detail="no embedding model is registered")
+
+    def memorisation_sources(platform: Platform) -> list[str]:
+        """Text an answer must not recite: the served model's corpus, sampled evenly."""
+        model = served_model(platform.store, app.state.router)
+        if model is None or not model.dataset_ids:
+            return []
+        rows = platform.store.dataset_records(model.dataset_ids[0])
+        step = max(len(rows) // MEMORISATION_SAMPLE, 1)
+        return [row["payload"] for row in rows[::step][:MEMORISATION_SAMPLE]]
 
     def embedder_for(model_path: str) -> TorchEmbedder:
         embedders: dict[str, TorchEmbedder] = app.state.embedders
@@ -253,7 +264,13 @@ def create_serving_app(
         hits = [AskHit(item.path, item.line) for item in request.hits]
         excerpts = [item.text for item in request.hits]
         try:
-            result = cited_answer(LocalRunnerAdapter(), request.question, hits, excerpts)
+            result = cited_answer(
+                LocalRunnerAdapter(),
+                request.question,
+                hits,
+                excerpts,
+                training_texts=memorisation_sources(get_platform()),
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         latency = (time.monotonic() - started) * 1000
