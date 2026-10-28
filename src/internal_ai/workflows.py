@@ -175,6 +175,19 @@ def train_embedding_model(
         )
         for row in rows
     ]
+    validation = [
+        Record(
+            id=row["id"],
+            record_key=row["record_key"],
+            text=row["payload"],
+            source_id=row["source_id"],
+            sensitivity=row["sensitivity"],
+            acl=row["acl"],
+            tokens=row["tokens"],
+            meta=row["meta"],
+        )
+        for row in platform.store.dataset_records_by_split(dataset_id, "validation")
+    ]
     from internal_ai.training.ownership import require_released_dataset
 
     dataset = require_released_dataset(platform.store.get_dataset(dataset_id))
@@ -195,6 +208,7 @@ def train_embedding_model(
         dataset_hash=dataset.content_hash if dataset else "unknown",
         actor=actor,
         pairs=pairs,
+        validation_records=validation,
     )
 
 

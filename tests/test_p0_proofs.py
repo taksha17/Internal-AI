@@ -320,3 +320,58 @@ def test_a_checkpoint_whose_data_position_moved_is_refused(platform, corpus_path
     assert "deadbeef" in refusal.alerts[0]
     event = platform.store.list_audit(action="train.resume_position_mismatch")[0]
     assert event.details["recorded"]["batch_hash"] == "deadbeef"
+
+
+def test_a_held_out_loss_is_logged_during_the_run(platform, corpus_path: Path) -> None:
+    built = build_corpus(platform, [corpus_path], name="val-curve")
+    tokenizer, _coverage = train_tokenizer_for(platform, built.dataset_id, vocab_size=300)
+    dataset = platform.store.get_dataset(built.dataset_id)
+    assert dataset is not None
+    records = records_for(platform, built.dataset_id)
+    config = tiny_config(6)
+    config.eval_interval = 2
+
+    outcome = trainer_for(platform).train(
+        config,
+        records[:9],
+        tokenizer,
+        dataset_id=built.dataset_id,
+        dataset_hash=dataset.content_hash,
+        resume=False,
+        run_id="run_val_curve",
+        validation_records=records[9:],
+    )
+
+    lines = [
+        json.loads(line)
+        for line in Path(outcome.metrics_path).read_text(encoding="utf-8").splitlines()
+    ]
+
+    measured = [line for line in lines if "val_loss" in line]
+    assert [line["step"] for line in measured] == [0, 2, 4]
+    assert all(line["val_loss"] == line["val_loss"] for line in measured), "no NaN"
+    assert "val_loss" not in next(line for line in lines if line["step"] == 1)
+
+
+def test_each_checkpoint_is_reloaded_and_measured_again(platform, corpus_path: Path) -> None:
+    built = build_corpus(platform, [corpus_path], name="reload")
+    tokenizer, _coverage = train_tokenizer_for(platform, built.dataset_id, vocab_size=300)
+    dataset = platform.store.get_dataset(built.dataset_id)
+    assert dataset is not None
+    records = records_for(platform, built.dataset_id)
+
+    trainer_for(platform).train(
+        tiny_config(4),
+        records[:9],
+        tokenizer,
+        dataset_id=built.dataset_id,
+        dataset_hash=dataset.content_hash,
+        resume=False,
+        run_id="run_reload",
+        validation_records=records[9:],
+    )
+
+    verified = platform.store.list_audit(action="train.checkpoint_verified")
+    assert verified, "a checkpoint is reloaded and compared"
+    assert all(event.details["delta"] <= 1e-5 for event in verified)
+    assert not platform.store.list_audit(action="train.checkpoint_mismatch")

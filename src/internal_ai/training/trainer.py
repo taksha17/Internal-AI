@@ -57,6 +57,7 @@ class TrainConfig:
     seed: int = 17
     checkpoint_interval: int = 25
     log_interval: int = 5
+    eval_interval: int = 10
     cost_cap_usd: float = 5.0
     device: str = "cpu"
     gpu_hour_usd: float = 2.0
@@ -261,6 +262,7 @@ class Trainer:
         resume: bool = True,
         pairs: list[dict[str, str]] | None = None,
         run_id: str | None = None,
+        validation_records: list[Record] | None = None,
     ) -> TrainingOutcome:
         """Train, or continue, one run.
 
@@ -284,6 +286,12 @@ class Trainer:
         if not sequences and not pairs:
             raise ValueError("no usable sequences in the dataset")
         batches = self.build_batches(sequences, config.batch_size, config.seed)
+        val_sequences = self.encode_records(validation_records or [], tokenizer, config.seq_len)
+        val_batches = (
+            self.build_batches(val_sequences, config.batch_size, config.seed + 1)
+            if val_sequences
+            else []
+        )
         if pairs and config.objective == "contrastive":
             batches = self._pair_batches(pairs, tokenizer, config)
         tokens_per_step = sum(
@@ -489,22 +497,23 @@ class Trainer:
                 break
 
             if step % config.log_interval == 0:
-                self._write_metric(
-                    metrics_path,
-                    {
-                        "step": step,
-                        "batch_index": position["batch_index"],
-                        "batch_hash": position["batch_hash"],
-                        "loss": round(loss_value, 6),
-                        "ema_loss": round(ema_loss or 0.0, 6),
-                        "grad_norm": round(float(grad_norm), 6),
-                        "learning_rate": lr,
-                        "tokens_per_second": round(throughput, 2),
-                        "tokens_seen": tokens_seen,
-                        "cost_usd": round(sum(step_costs), 6),
-                        "timestamp": now_iso(),
-                    },
-                )
+                line = {
+                    "step": step,
+                    "batch_index": position["batch_index"],
+                    "batch_hash": position["batch_hash"],
+                    "loss": round(loss_value, 6),
+                    "ema_loss": round(ema_loss or 0.0, 6),
+                    "grad_norm": round(float(grad_norm), 6),
+                    "learning_rate": lr,
+                    "tokens_per_second": round(throughput, 2),
+                    "tokens_seen": tokens_seen,
+                    "cost_usd": round(sum(step_costs), 6),
+                    "timestamp": now_iso(),
+                }
+                if val_batches and step % config.eval_interval == 0:
+                    val_loss = self._validation_loss(model, val_batches, config)
+                    line["val_loss"] = round(val_loss, 6)
+                self._write_metric(metrics_path, line)
             if (step + 1) % config.checkpoint_interval == 0 or step + 1 == config.steps:
                 self._checkpoint(
                     checkpoint_dir,
@@ -515,6 +524,19 @@ class Trainer:
                     dataset_hash,
                     data_position=self._batch_position(batches, step + 1),
                 )
+                if val_batches:
+                    alerts.extend(
+                        self._verify_checkpoint(
+                            run_id,
+                            actor,
+                            checkpoint_dir / "latest.pt",
+                            model,
+                            model_config,
+                            val_batches,
+                            config,
+                            step + 1,
+                        )
+                    )
             step += 1
 
         checkpoint_path = str(checkpoint_dir / "latest.pt")
@@ -572,6 +594,73 @@ class Trainer:
             token_budget=token_budget,
             resumed_from=resumed_from,
         )
+
+    def _validation_loss(
+        self, model: TinyTransformer, batches: list[Any], config: TrainConfig
+    ) -> float:
+        """Mean loss on held-out batches, with the model frozen and the noise fixed.
+
+        The masking is resampled under its own seed and the training stream is put
+        back afterwards, so the held-out number can be compared between steps and
+        between a model in memory and the same model reloaded from disk.
+        """
+        was_training = model.training
+        rng_state = torch.get_rng_state()
+        model.eval()
+        torch.manual_seed(config.seed + 991)
+        totals: list[float] = []
+        try:
+            with torch.no_grad():
+                for batch in batches:
+                    inputs, targets, _ = self._make_batch(batch, config)
+                    if config.objective == "contrastive":
+                        loss = self._contrastive_loss(model, inputs, targets, config)
+                    else:
+                        _, loss = model(inputs, targets)
+                    if loss is not None and torch.isfinite(loss):
+                        totals.append(float(loss.detach()))
+        finally:
+            model.train(was_training)
+            torch.set_rng_state(rng_state)
+        return sum(totals) / len(totals) if totals else float("nan")
+
+    def _verify_checkpoint(
+        self,
+        run_id: str,
+        actor: str,
+        path: Path,
+        model: TinyTransformer,
+        model_config: TransformerConfig,
+        val_batches: list[Any],
+        config: TrainConfig,
+        step: int,
+    ) -> list[str]:
+        """Reload a checkpoint and re-measure, so the file is shown to hold the model."""
+        in_memory = self._validation_loss(model, val_batches, config)
+        state = torch.load(path, weights_only=True)
+        reloaded = TinyTransformer(model_config)
+        reloaded.load_state_dict(state["model_state"])
+        restored = self._validation_loss(reloaded, val_batches, config)
+        delta = abs(in_memory - restored)
+        matches = delta <= 1e-5
+        self.audit.record(
+            actor=actor,
+            action="train.checkpoint_verified" if matches else "train.checkpoint_mismatch",
+            subject=run_id,
+            outcome=AuditOutcome.SUCCESS if matches else AuditOutcome.FAILURE,
+            details={
+                "step": step,
+                "val_loss": round(in_memory, 6),
+                "reloaded_val_loss": round(restored, 6),
+                "delta": round(delta, 8),
+            },
+        )
+        if matches:
+            return []
+        return [
+            f"the checkpoint at step {step} reloaded to val loss {restored:.4f} against "
+            f"{in_memory:.4f} in memory; the file does not hold the model"
+        ]
 
     def _refuse_moved_data(
         self,
