@@ -1552,6 +1552,10 @@ def mount_console(
                         dataset.token_count if dataset else 0,
                     ),
                     "service": out_of_service(platform.store, model),
+                    "builder": str(model.card.get("registered_by") or ""),
+                    "judge": report.judged_by if report else "",
+                    "self_judging": bool(report and report.judged_by)
+                    and report.judged_by == str(model.card.get("registered_by") or ""),
                     "progress": brief.progress_rows(
                         brief.load(platform.store),
                         platform.store.list_eval_reports(model.id),

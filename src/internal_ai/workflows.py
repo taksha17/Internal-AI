@@ -221,6 +221,7 @@ def evaluate_embedding_model(
     margin: float = 0.0,
     actor: str = "evaluation",
     model_id: str | None = None,
+    judged_by: str | None = None,
 ) -> dict[str, Any]:
     from internal_ai.brief import load as load_brief
     from internal_ai.evals.harness import EvalHarness
@@ -260,7 +261,9 @@ def evaluate_embedding_model(
         actor=actor,
         brief=load_brief(platform.store),
     )
-    report = harness.record_report(model_id or model_path.stem, eval_set_id, outcome, actor=actor)
+    report = harness.record_report(
+        model_id or model_path.stem, eval_set_id, outcome, actor=actor, judged_by=judged_by
+    )
     return {
         "report_id": report.id,
         "model_id": report.model_id,
@@ -302,6 +305,7 @@ def register_model(
         ],
         "trained_from_scratch": True,
         "pretrained_weights_used": False,
+        "registered_by": actor,
         "created_at": now_iso(),
     }
     model = ModelVersion(
@@ -342,6 +346,12 @@ def promote_model(
     if report is None:
         raise PermissionError(
             "model promotion requires a passing eval report on a frozen eval set (FR-15)"
+        )
+    builder = str(model.card.get("registered_by") or "")
+    if report.judged_by and report.judged_by in {builder, approver}:
+        raise PermissionError(
+            "the newest report was judged by the person who built or is approving this model; "
+            "a different ml_lead has to run that evaluation"
         )
     model.card["eval_results"] = report.metrics
     model.card["baseline_metrics"] = report.baseline_metrics

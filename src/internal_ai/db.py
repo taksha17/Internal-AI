@@ -223,7 +223,8 @@ CREATE TABLE IF NOT EXISTS eval_reports (
     baseline_metrics TEXT NOT NULL DEFAULT '{}',
     checks TEXT NOT NULL DEFAULT '{}',
     passed INTEGER NOT NULL DEFAULT 0,
-    notes TEXT NOT NULL DEFAULT ''
+    notes TEXT NOT NULL DEFAULT '',
+    judged_by TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS policy_decisions (
@@ -364,6 +365,11 @@ def init_db(conn: sqlite3.Connection) -> None:
     }
     if "expires_at" not in token_columns:
         conn.execute("ALTER TABLE api_tokens ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''")
+    report_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(eval_reports)").fetchall()
+    }
+    if "judged_by" not in report_columns:
+        conn.execute("ALTER TABLE eval_reports ADD COLUMN judged_by TEXT NOT NULL DEFAULT ''")
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('version', ?) "
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",

@@ -323,6 +323,7 @@ class EvalHarness:
         eval_set_id: str,
         outcome: EvalOutcome,
         actor: str = "evaluation",
+        judged_by: str | None = None,
     ) -> EvalReport:
         report = EvalReport(
             id=new_id("rep"),
@@ -334,6 +335,7 @@ class EvalHarness:
             checks=outcome.checks,
             passed=outcome.passed,
             notes=outcome.notes,
+            judged_by=judged_by or actor,
         )
         self.store.add_eval_report(report)
         self.audit.record(

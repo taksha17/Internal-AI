@@ -138,7 +138,8 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
         mo.post(f"/console/runs/{run['id']}/register")
         model = platform.store.list_models()[0]
 
-        page = mo.post(f"/console/models/{model.id}/evaluate", eval_set_id=eval_set.id)
+        mo.post(f"/console/models/{model.id}/evaluate", ok=False, eval_set_id=eval_set.id)
+        page = mia.post(f"/console/models/{model.id}/evaluate", eval_set_id=eval_set.id)
         assert "succeeded" in page
         report = build.latest_report(platform, model.id)
         assert report is not None
