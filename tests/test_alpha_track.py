@@ -102,6 +102,19 @@ def test_a_line_number_cannot_move_onto_another_file() -> None:
     assert score_answer(clean, HITS).passed is True
 
 
+def test_a_citation_to_a_file_that_was_never_a_hit_is_refused() -> None:
+    hits = [AskHit("app.ts", 10)]
+    report = score_answer("See src/app.ts at line 10.", hits)
+    assert report.passed is False
+    assert any("src/app.ts" in item for item in report.mismatches)
+
+
+def test_a_hit_path_that_prefixes_another_hit_is_not_a_false_failure() -> None:
+    hits = [AskHit("a/b.ts", 5), AskHit("a/b.ts.bak", 7)]
+    report = score_answer("See a/b.ts.bak at line 7.", hits)
+    assert report.passed is True, report.mismatches
+
+
 def test_streamed_lora_step_uses_rank_8_and_drops_the_matrix(tmp_path: Path) -> None:
     path = tmp_path / "layer.pt"
     torch.save({"w": torch.ones(6, 4)}, path)
