@@ -160,15 +160,51 @@ class JobRunner:
         ).fetchone()
         return _job_dict(row) if row else None
 
-    def list(self, limit: int = 50, kind: str | None = None) -> list[dict[str, Any]]:
+    def list(
+        self,
+        limit: int = 50,
+        kind: str | None = None,
+        state: str | None = None,
+        text: str | None = None,
+        offset: int = 0,
+        descending: bool = True,
+    ) -> list[dict[str, Any]]:
+        clauses, values = _job_filters(kind, state, text)
         query = "SELECT * FROM console_jobs"
-        values: tuple[Any, ...] = ()
-        if kind:
-            query += " WHERE kind = ?"
-            values = (kind,)
-        query += " ORDER BY created_at DESC, id DESC LIMIT ?"
-        rows = self.platform.store.conn.execute(query, (*values, limit)).fetchall()
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        order = "DESC" if descending else "ASC"
+        query += f" ORDER BY created_at {order}, id {order} LIMIT ? OFFSET ?"
+        rows = self.platform.store.conn.execute(query, (*values, limit, max(offset, 0))).fetchall()
         return [_job_dict(row) for row in rows]
+
+    def count(
+        self, kind: str | None = None, state: str | None = None, text: str | None = None
+    ) -> int:
+        clauses, values = _job_filters(kind, state, text)
+        query = "SELECT COUNT(*) AS total FROM console_jobs"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        row = self.platform.store.conn.execute(query, values).fetchone()
+        return int(row["total"])
+
+
+def _job_filters(
+    kind: str | None, state: str | None, text: str | None
+) -> tuple[list[str], list[Any]]:
+    clauses: list[str] = []
+    values: list[Any] = []
+    if kind:
+        clauses.append("kind = ?")
+        values.append(kind)
+    if state:
+        clauses.append("state = ?")
+        values.append(state)
+    if text:
+        clauses.append("(title LIKE ? OR id LIKE ? OR requested_by LIKE ?)")
+        like = f"%{text}%"
+        values.extend([like, like, like])
+    return clauses, values
 
 
 def _job_dict(row: Any) -> dict[str, Any]:

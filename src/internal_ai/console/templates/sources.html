@@ -92,7 +92,18 @@
 </section>
 
 <h2>Registered sources</h2>
-{% call m.data_table([("Source",), ("Approval",), ("Readers",), ("Dataset",), ("Actions",)]) %}
+<form class="toolbar" method="get" action="/console/sources">
+  <label class="grow">Search <input type="search" name="q" value="{{ q }}" placeholder="Name, path or id"></label>
+  <label>Approval
+    <select name="state">
+      <option value="">any</option>
+      {% for value in ["approved", "pending", "rejected", "withdrawn"] %}<option value="{{ value }}"{{ ' selected' if state == value else '' }}>{{ value }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit">Apply</button>
+  {% if q or state %}<a class="quiet-link" href="/console/sources">Clear</a>{% endif %}
+</form>
+{% call m.data_table([("Source", false, "name"), ("Approval", false, "state"), ("Readers",), ("Dataset",), ("Actions",)], table) %}
   {% for source in sources %}
   <tr>
     <td><strong>{{ source.name }}</strong> <span class="muted small">{{ source.id }}</span><br><code class="small">{{ source.path }}</code><br><span class="muted small">{{ source.purpose }}</span></td>
@@ -116,7 +127,12 @@
     </td>
   </tr>
   {% else %}
+  {% if q or state %}
+  {{ m.empty_row(5, "No sources match", "Clear the filter to see every registered source.", "/console/sources", "Clear the filter") }}
+  {% else %}
   {{ m.empty_row(5, "No sources yet", "Inspect a path above; what the scan finds is what the approver will see.", "#inspect", "Inspect a path") }}
+  {% endif %}
   {% endfor %}
 {% endcall %}
+{{ m.pager(table, "sources") }}
 {% endblock %}

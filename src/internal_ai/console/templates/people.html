@@ -11,7 +11,18 @@
 </div>
 {% endif %}
 {% set manage = can("manage_people") %}
-{% call m.data_table([("Person",), ("Roles",), ("Groups",), ("Account",)] + ([("Manage",)] if manage else [])) %}
+<form class="toolbar" method="get" action="/console/admin/people">
+  <label class="grow">Search <input type="search" name="q" value="{{ q }}" placeholder="Name, id, role or group"></label>
+  <label>Role
+    <select name="role">
+      <option value="">any role</option>
+      {% for name in roles %}<option value="{{ name }}"{{ ' selected' if role == name else '' }}>{{ name }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit">Apply</button>
+  {% if q or role %}<a class="quiet-link" href="/console/admin/people">Clear</a>{% endif %}
+</form>
+{% call m.data_table([("Person", false, "name"), ("Roles",), ("Groups",), ("Account",)] + ([("Manage",)] if manage else []), table) %}
   {% for person in people %}
   {% set account = accounts.get(person.id) %}
   <tr>
@@ -41,8 +52,11 @@
     </td>
     {% endif %}
   </tr>
+  {% else %}
+  {{ m.empty_row(4 + (1 if manage else 0), "No people match", "Clear the filter to see the whole roster.", "/console/admin/people", "Clear the filter") }}
   {% endfor %}
 {% endcall %}
+{{ m.pager(table, "people") }}
 {% if manage %}
 <form method="post" action="/console/admin/people" class="stack card">
   {{ m.csrf_field() }}

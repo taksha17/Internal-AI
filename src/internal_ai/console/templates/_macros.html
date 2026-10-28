@@ -43,17 +43,44 @@
 </div>
 {% endmacro %}
 
-{# A header is (label, numeric): every column announces itself to a screen
-   reader, and numbers line up on their last digit. #}
-{% macro data_table(headers) %}
+{# A header is (label, numeric, sort key, first direction). Every column
+   announces itself to a screen reader, numbers line up on their last digit,
+   and a column with a key carries the link that reorders the list. #}
+{% macro data_table(headers, table=None) %}
 <div class="table-wrap">
 <table class="data">
-  <thead><tr>{% for h in headers %}{% set label = h if h is string else h[0] %}{% set numeric = h is not string and h | length > 1 and h[1] %}<th scope="col"{% if numeric %} class="num"{% endif %}>{{ label }}</th>{% endfor %}</tr></thead>
+  <thead><tr>
+  {% for h in headers %}
+    {% set label = h if h is string else h[0] %}
+    {% set numeric = h is not string and h | length > 1 and h[1] %}
+    {% set key = h[2] if h is not string and h | length > 2 else "" %}
+    {% set first = h[3] if h is not string and h | length > 3 else "asc" %}
+    {% set sorted = table and key and table.sort == key %}
+    <th scope="col"{% if numeric %} class="num"{% endif %}{% if sorted %} aria-sort="{{ table.aria_sort(key) }}"{% endif %}>
+      {% if table and key %}<a class="sort{{ ' on' if sorted else '' }}" href="{{ table.sort_link(key, first) }}">{{ label }}<span class="sort-mark" aria-hidden="true">{% if sorted %}{{ "↑" if table.direction == "asc" else "↓" }}{% endif %}</span></a>{% else %}{{ label }}{% endif %}
+    </th>
+  {% endfor %}
+  </tr></thead>
   <tbody>
   {{ caller() }}
   </tbody>
 </table>
 </div>
+{% endmacro %}
+
+{% macro pager(table, noun="rows") %}
+{% if table %}
+<nav class="pager" aria-label="Pages">
+  {% if table.total == 0 %}<span class="muted small">Nothing to page</span>{% else %}<span class="muted small">{{ table.is_first() }}–{{ table.is_last() }} of {{ table.total }} {{ noun }}</span>{% endif %}
+  {% if table.pages > 1 %}
+  <span class="pager-links">
+    {% if table.page > 1 %}<a class="button btn-sm" href="{{ table.link(page=table.page - 1) }}" rel="prev">Previous</a>{% endif %}
+    <span class="muted small">Page {{ table.page }} of {{ table.pages }}</span>
+    {% if table.page < table.pages %}<a class="button btn-sm" href="{{ table.link(page=table.page + 1) }}" rel="next">Next</a>{% endif %}
+  </span>
+  {% endif %}
+</nav>
+{% endif %}
 {% endmacro %}
 
 {# An empty state names the next action; a blank table never does. #}

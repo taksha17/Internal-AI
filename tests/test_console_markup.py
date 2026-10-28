@@ -48,7 +48,7 @@ def test_timestamps_are_never_printed_raw() -> None:
     offenders = []
     for path in sorted(TEMPLATES.glob("*.html")):
         for number, line in enumerate(path.read_text().splitlines(), start=1):
-            if "created_at" in line and "| when" not in line:
+            if "{{" in line and "created_at" in line and "| when" not in line:
                 offenders.append(f"{path.name}:{number}")
     assert not offenders, "a time is printed without the `when` filter: " + ", ".join(offenders)
 

@@ -11,6 +11,12 @@
   <a href="/console/approvals?status={{ value }}" class="{{ 'active' if status == value else '' }}">{{ value }}</a>
   {% endfor %}
 </p>
+<form class="toolbar" method="get" action="/console/approvals">
+  <input type="hidden" name="status" value="{{ status }}">
+  <label class="grow">Search <input type="search" name="q" value="{{ q }}" placeholder="Title, subject or id"></label>
+  <button type="submit">Filter</button>
+  {% if q %}<a class="quiet-link" href="/console/approvals?status={{ status }}">Clear</a>{% endif %}
+</form>
 {% for gate in gates %}
 <div class="card">
   {{ m.gate_box(gate) }}
@@ -24,6 +30,10 @@
   {% endif %}
 </div>
 {% else %}
+{% if q %}
+{{ m.empty("No gates match", "Clear the filter to see every gate in this tab.", "/console/approvals?status=" ~ status, "Clear the filter") }}
+{% else %}
 {{ m.empty("No gates in this state", "Switch the tab above, or request one for a budget increase or a costly run.", "/console/gates/new", "Request a gate") }}
+{% endif %}
 {% endfor %}
 {% endblock %}

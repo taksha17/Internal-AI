@@ -7,17 +7,26 @@
 <p class="{{ 'callout' if verify.ok else 'refusal' }}">
   {% if verify.ok %}The hash chain is intact across {{ verify.checked }} events.{% else %}The hash chain is broken at event {{ verify.broken_at_seq }}: {{ verify.reason }}.{% endif %}
 </p>
-<form method="get" action="/console/audit" class="inline-form card">
-  <label>Actor <input type="text" name="actor" value="{{ actor_filter }}"></label>
-  <label>Action <input type="text" name="action" value="{{ action_filter }}"></label>
+<form method="get" action="/console/audit" class="toolbar">
+  <label class="grow">Actor <input type="search" name="actor" value="{{ actor_filter }}" placeholder="person id or agent"></label>
+  <label class="grow">Action <input type="search" name="action" value="{{ action_filter }}" placeholder="for example gate.decided"></label>
+  <label>Window
+    <select name="window">
+      <option value="">everything</option>
+      {% for span, label in [("24h", "last 24 hours"), ("7d", "last 7 days"), ("30d", "last 30 days")] %}
+      <option value="{{ span }}"{{ ' selected' if window == span else '' }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
   <button type="submit">Filter</button>
-  {% if actor_filter or action_filter %}<a class="quiet-link" href="/console/audit">Clear</a>{% endif %}
+  {% if actor_filter or action_filter or window %}<a class="quiet-link" href="/console/audit">Clear</a>{% endif %}
 </form>
-{% call m.data_table([("#", true), ("When",), ("Actor",), ("Action",), ("Subject",), ("Outcome",)]) %}
+{% call m.data_table([("#", true, "seq", "desc"), ("When",), ("Actor",), ("Action",), ("Subject",), ("Outcome",)], table) %}
   {% for event in events %}
   <tr class="{{ 'warn' if event.outcome != 'success' else '' }}"><td class="num">{{ event.seq }}</td><td>{{ event.created_at | when }}</td><td>{{ event.actor }} <span class="muted small">{{ event.actor_kind }}</span></td><td>{{ event.action }}</td><td>{{ event.subject }}</td><td>{{ m.status_badge(event.outcome) }}</td></tr>
   {% else %}
   {{ m.empty_row(6, "No events match", "Clear the filter to see the whole chain.", "/console/audit", "Show everything") }}
   {% endfor %}
 {% endcall %}
+{{ m.pager(table, "events") }}
 {% endblock %}

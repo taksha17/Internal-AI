@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Search{% endblock %}
+{% block crumb %}Search{% endblock %}
+{% block content %}
+{{ m.page_head(
+  "Search" if not term else "Search: " ~ term,
+  "Datasets, models, jobs, eval sets, sources, gates and people. Only what your own pages show: never a dataset record, an evidence body or an account." if term else "One box for the whole console. Names and ids, across every kind of artifact the console holds.",
+  "Find"
+) }}
+<form class="toolbar" method="get" action="/console/search">
+  <label class="grow">Search <input type="search" name="q" value="{{ q }}" placeholder="Dataset, model, job, gate, person or id" autofocus></label>
+  <button type="submit">Search</button>
+  {% if term %}<a class="quiet-link" href="/console/search">Clear</a>{% endif %}
+</form>
+
+{% if not term %}
+{{ m.empty("Type a name or an id", "A dataset name, a job id, a person, a gate subject — the results are grouped by kind.", "/console/datasets", "Browse datasets") }}
+{% elif not groups %}
+<div class="card">
+  {{ m.empty("Nothing matches", "No artifact carries that name or id. Try fewer characters, or the id from the audit log.", "/console/audit", "Search the audit log") }}
+</div>
+{% else %}
+{% for group in groups %}
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>{{ group.label }}</h2>
+      <p class="card-sub">{{ group.total }} match{{ "es" if group.total != 1 }}{% if group.total > group.hits | length %}, showing the first {{ group.hits | length }}{% endif %}.</p>
+    </div>
+    {% if group.total > group.hits | length %}<a class="quiet-link" href="{{ group.more }}">See all {{ group.total }} {{ m.icon("arrow-right") }}</a>{% endif %}
+  </div>
+  <ul class="plain">
+    {% for hit in group.hits %}
+    <li>
+      <a href="{{ hit.href }}">{{ hit.title }}</a>
+      {{ m.status_badge(hit.status) }}
+      <span class="muted small">{{ hit.meta }}</span>
+      <span class="spacer"></span>
+      {% if hit.created_at %}<span class="muted small">{{ hit.created_at | when }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endfor %}
+{% endif %}
+{% endblock %}

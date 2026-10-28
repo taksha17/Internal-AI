@@ -4,11 +4,27 @@
 {% block crumb %}Jobs{% endblock %}
 {% block content %}
 {{ m.page_head("Jobs", "Long steps run as jobs. Each one passed the kill switch and budget checks before it started.", "Runs") }}
-{% call m.data_table([("Job",), ("Started by",), ("State",), ("Cap", true), ("Started",)]) %}
+<form class="toolbar" method="get" action="/console/jobs">
+  <label class="grow">Search <input type="search" name="q" value="{{ q }}" placeholder="Title, id or person"></label>
+  <label>State
+    <select name="state">
+      <option value="">any state</option>
+      {% for choice in states %}<option value="{{ choice }}"{{ ' selected' if choice == state else '' }}>{{ choice }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit">Apply</button>
+  {% if q or state %}<a class="quiet-link" href="/console/jobs">Clear</a>{% endif %}
+</form>
+{% call m.data_table([("Job",), ("Started by",), ("State",), ("Cap", true), ("Started", false, "created_at", "desc")], table) %}
   {% for job in jobs %}
   <tr><td class="row-title"><a href="/console/jobs/{{ job.id }}">{{ job.title }}</a></td><td>{{ job.requested_by }}</td><td>{{ m.status_badge(job.state) }}</td><td class="num">${{ "%.2f" % job.cost_cap_usd }}</td><td>{{ job.created_at | when }}</td></tr>
   {% else %}
+  {% if q or state %}
+  {{ m.empty_row(5, "No jobs match", "Clear the filter to see every run.", "/console/jobs", "Clear the filter") }}
+  {% else %}
   {{ m.empty_row(5, "No jobs yet", "Building a dataset, training a tokenizer or starting a run creates one.", "/console/sources", "Start with data") }}
+  {% endif %}
   {% endfor %}
 {% endcall %}
+{{ m.pager(table, "jobs") }}
 {% endblock %}

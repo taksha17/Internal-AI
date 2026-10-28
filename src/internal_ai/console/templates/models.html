@@ -98,6 +98,17 @@
   {% endcall %}
 </section>
 
+<form class="toolbar" method="get" action="/console/models">
+  <label class="grow">Find a model <input type="search" name="q" value="{{ q }}" placeholder="Name, id or status"></label>
+  <label>Status
+    <select name="state">
+      <option value="">any status</option>
+      {% for value in ["candidate", "promoted"] %}<option value="{{ value }}"{{ ' selected' if state == value else '' }}>{{ value }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit">Apply</button>
+  {% if q or state %}<a class="quiet-link" href="/console/models">Clear</a>{% endif %}
+</form>
 {% for row in models %}
 {% set model = row.model %}
 <section class="card">
@@ -129,4 +140,9 @@
   {% endif %}
 </section>
 {% endfor %}
+{% if not models %}
+{% if q or state %}{{ m.empty("No models match", "Clear the filter to see every version.", "/console/models", "Clear the filter") }}
+{% else %}{{ m.empty("No models yet", "A model is trained from a released dataset and its tokenizer, above.", "/console/datasets", "Open datasets") }}{% endif %}
+{% endif %}
+{{ m.pager(models_table, "models") }}
 {% endblock %}

@@ -54,6 +54,10 @@
 {% if actor %}
 <header class="topbar">
   <p class="crumbs">Console <span aria-hidden="true">/</span> <strong>{% block crumb %}Overview{% endblock %}</strong></p>
+  <form class="search" method="get" action="/console/search" role="search">
+    <label class="sr-only" for="console-search">Search names and ids</label>
+    <input id="console-search" type="search" name="q" placeholder="Search id or name" autocomplete="off">
+  </form>
   <div class="top-actions">
     <span class="env-pill"><span class="env-dot" aria-hidden="true"></span>Local · no external calls</span>
     <details class="kill{{ ' is-engaged' if kill.engaged else '' }}"{% if kill.engaged %} open{% endif %}>

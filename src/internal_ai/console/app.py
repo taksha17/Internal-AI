@@ -29,6 +29,8 @@ from markupsafe import Markup
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from internal_ai.console import find as finder
+from internal_ai.console import lists
 from internal_ai.context import Platform
 from internal_ai.data.suggest import suggest_model_types
 from internal_ai.domain import GateStatus, GateType, TaskState
@@ -552,6 +554,17 @@ def mount_console(
             alerts=alerts,
         )
 
+    @app.get("/console/search", include_in_schema=False)
+    def search_page(request: Request, q: str = "") -> Response:
+        ctx = context(request)
+        return render(
+            ctx,
+            "search.html",
+            q=q,
+            term=q.strip(),
+            groups=finder.search(ctx.platform, get_jobs(), q),
+        )
+
     @app.post("/console/kill-switch", include_in_schema=False)
     async def kill_switch(request: Request) -> Response:
         ctx = context(request)
@@ -588,13 +601,26 @@ def mount_console(
     # ----------------------------------------------------------- approvals
 
     @app.get("/console/approvals", include_in_schema=False)
-    def approvals(request: Request, status: str = "pending") -> Response:
+    def approvals(request: Request, status: str = "pending", q: str = "") -> Response:
         ctx = context(request)
         chosen = status if status in ("pending", "approved", "rejected", "all") else "pending"
         gates = ctx.platform.store.list_gates(status=None if chosen == "all" else chosen)
         views = [gate_view(ctx.platform, ctx.actor, gate) for gate in gates]
+        if q:
+            views = [
+                view
+                for view in views
+                if lists.matches(
+                    q,
+                    view["title"],
+                    view["subject"],
+                    view["id"],
+                    view["gate_type"],
+                    view["requested_by"],
+                )
+            ]
         views.sort(key=lambda item: (not item["can_decide"], item["created_at"]), reverse=False)
-        return render(ctx, "approvals.html", gates=views, status=chosen)
+        return render(ctx, "approvals.html", gates=views, status=chosen, q=q)
 
     @app.post("/console/approvals/{gate_id}", include_in_schema=False)
     async def decide(request: Request, gate_id: str) -> Response:
@@ -661,19 +687,46 @@ def mount_console(
 
     @app.get("/console/audit", include_in_schema=False)
     def audit_page(
-        request: Request, actor: str = "", action: str = "", limit: int = 100
+        request: Request,
+        actor: str = "",
+        action: str = "",
+        window: str = "",
+        dir: str = "",
+        page: int = 1,
     ) -> Response:
         ctx = context(request)
+        per = lists.AUDIT_PER_PAGE
+        direction = "asc" if dir == "asc" else "desc"
+        cut = lists.since(window)
         events = ctx.platform.audit.recent(
-            limit=max(1, min(limit, 500)), action=action or None, actor=actor or None
+            limit=per,
+            offset=(max(page, 1) - 1) * per,
+            action=action or None,
+            actor=actor or None,
+            since=cut,
+            descending=direction == "desc",
+        )
+        table = lists.window(
+            events,
+            total=ctx.platform.store.count_audit(
+                actor=actor or None, action=action or None, since=cut
+            ),
+            path="/console/audit",
+            sort="seq",
+            direction=direction,
+            page=page,
+            per_page=per,
+            filters={"actor": actor, "action": action, "window": window},
         )
         return render(
             ctx,
             "audit.html",
-            events=events,
+            table=table,
+            events=table.rows,
             verify=ctx.platform.audit.verify().to_dict(),
             actor_filter=actor,
             action_filter=action,
+            window=window,
         )
 
     # ----------------------------------------------------------------- plan
@@ -1001,15 +1054,58 @@ def mount_console(
 
     @app.get("/console/sources", include_in_schema=False)
     def sources_page(
-        request: Request, inspect: str = "", guided: str = "", intent: str = ""
+        request: Request,
+        inspect: str = "",
+        guided: str = "",
+        intent: str = "",
+        q: str = "",
+        state: str = "",
+        sort: str = "",
+        dir: str = "",
+        page: int = 1,
     ) -> Response:
         ctx = context(request)
         run = start_inspection(ctx, inspect) if inspect.strip() else None
         plan = guided_steps(ctx.platform, ctx.actor, guided, intent) if guided.strip() else None
+        found = [
+            item
+            for item in build.list_sources(ctx.platform)
+            if (
+                not q
+                or lists.matches(
+                    q,
+                    item["name"],
+                    item["id"],
+                    item["path"],
+                    item["purpose"],
+                    *item["acl"],
+                )
+            )
+            and (not state or ("withdrawn" if item["withdrawn"] else item["gate_status"]) == state)
+        ]
+        table = lists.build(
+            found,
+            path="/console/sources",
+            sorters={
+                "name": lambda item: item["name"].casefold(),
+                "state": lambda item: (
+                    "withdrawn" if item["withdrawn"] else item["gate_status"],
+                    item["name"].casefold(),
+                ),
+            },
+            default_sort="name",
+            sort=sort,
+            direction=dir,
+            page=page,
+            filters={"q": q, "state": state},
+        )
         return render(
             ctx,
             "sources.html",
-            sources=build.list_sources(ctx.platform),
+            sources=table.rows,
+            table=table,
+            q=q,
+            state=state,
             roots=build.data_roots(ctx.platform),
             inspection=run.result if run else None,
             suggestions=suggestions_for(run.result) if run else [],
@@ -1146,18 +1242,42 @@ def mount_console(
     # ------------------------------------------------------------- datasets
 
     @app.get("/console/datasets", include_in_schema=False)
-    def datasets_page(request: Request) -> Response:
+    def datasets_page(
+        request: Request,
+        q: str = "",
+        state: str = "",
+        sort: str = "",
+        dir: str = "",
+        page: int = 1,
+    ) -> Response:
         ctx = context(request)
-        datasets = ctx.platform.store.list_datasets()
         rows = [
             {
                 "dataset": item,
                 "tokenizer": build.tokenizer_path(ctx.platform, item.id) is not None,
                 "has_splits": "splits" in item.stats,
             }
-            for item in datasets
+            for item in ctx.platform.store.list_datasets()
+            if (not q or lists.matches(q, item.name, item.id))
+            and (state != "released" or item.released)
+            and (state != "draft" or not item.released)
         ]
-        return render(ctx, "datasets.html", rows=rows)
+        table = lists.build(
+            rows,
+            path="/console/datasets",
+            sorters={
+                "name": lambda row: (row["dataset"].name.casefold(), row["dataset"].version),
+                "records": lambda row: row["dataset"].record_count,
+                "released": lambda row: (row["dataset"].released, row["dataset"].name.casefold()),
+            },
+            default_sort="name",
+            sort=sort,
+            direction=dir,
+            page=page,
+            filters={"q": q, "state": state},
+            first_dirs={"records": "desc"},
+        )
+        return render(ctx, "datasets.html", rows=table.rows, table=table, q=q, state=state)
 
     @app.get("/console/datasets/{dataset_id}", include_in_schema=False)
     def dataset_page(request: Request, dataset_id: str) -> Response:
@@ -1257,10 +1377,23 @@ def mount_console(
     # ------------------------------------------------------------ eval sets
 
     @app.get("/console/evals", include_in_schema=False)
-    def evals_page(request: Request) -> Response:
+    def evals_page(
+        request: Request,
+        q: str = "",
+        state: str = "",
+        sort: str = "",
+        dir: str = "",
+        page: int = 1,
+    ) -> Response:
         ctx = context(request)
         rows = []
         for eval_set in ctx.platform.store.list_eval_sets():
+            if q and not lists.matches(q, eval_set.name, eval_set.id):
+                continue
+            if state == "frozen" and not eval_set.frozen:
+                continue
+            if state == "open" and eval_set.frozen:
+                continue
             gate = build.gate_for(ctx.platform, GateType.EVAL_SET_FREEZE, eval_set.id)
             rows.append(
                 {
@@ -1269,7 +1402,20 @@ def mount_console(
                     "gate": gate_view(ctx.platform, ctx.actor, gate) if gate else None,
                 }
             )
-        return render(ctx, "evals.html", rows=rows)
+        table = lists.build(
+            rows,
+            path="/console/evals",
+            sorters={
+                "name": lambda row: (row["set"].name.casefold(), row["set"].version),
+                "frozen": lambda row: (row["set"].frozen, row["set"].name.casefold()),
+            },
+            default_sort="name",
+            sort=sort,
+            direction=dir,
+            page=page,
+            filters={"q": q, "state": state},
+        )
+        return render(ctx, "evals.html", rows=table.rows, table=table, q=q, state=state)
 
     @app.post("/console/evals/{eval_set_id}/{step}", include_in_schema=False)
     async def eval_action(request: Request, eval_set_id: str, step: str) -> Response:
@@ -1300,7 +1446,14 @@ def mount_console(
     # --------------------------------------------------------------- models
 
     @app.get("/console/models", include_in_schema=False)
-    def models_page(request: Request) -> Response:
+    def models_page(
+        request: Request,
+        q: str = "",
+        state: str = "",
+        sort: str = "",
+        dir: str = "",
+        page: int = 1,
+    ) -> Response:
         ctx = context(request)
         platform = ctx.platform
         registered_runs = {model.card.get("run_id") for model in platform.store.list_models()}
@@ -1310,6 +1463,10 @@ def mount_console(
         ]
         models = []
         for model in platform.store.list_models():
+            if q and not lists.matches(q, model.name, model.id, model.status):
+                continue
+            if state and str(model.status) != state:
+                continue
             gate = build.gate_for(platform, GateType.MODEL_PROMOTION, model.id)
             report = build.latest_report(platform, model.id)
             first_dataset = model.dataset_ids[0] if model.dataset_ids else ""
@@ -1338,6 +1495,19 @@ def mount_console(
             classifiers.append(
                 {"run": job, "report": report, "advice": advice.classifier_advice(report)}
             )
+        table = lists.build(
+            models,
+            path="/console/models",
+            sorters={
+                "name": lambda row: (row["model"].name.casefold(), row["model"].version),
+                "status": lambda row: (str(row["model"].status), row["model"].name.casefold()),
+            },
+            default_sort="name",
+            sort=sort,
+            direction=dir,
+            page=page,
+            filters={"q": q, "state": state},
+        )
         return render(
             ctx,
             "models.html",
@@ -1352,7 +1522,10 @@ def mount_console(
             classifiers=classifiers,
             encoders=build.classifier_encoders(platform),
             runs=runs,
-            models=models,
+            models=table.rows,
+            models_table=table,
+            q=q,
+            state=state,
             frozen_sets=[item for item in platform.store.list_eval_sets() if item.frozen],
             cost_gate_usd=build.TRAINING_COST_GATE_USD,
         )
@@ -1477,9 +1650,45 @@ def mount_console(
     # ----------------------------------------------------------------- jobs
 
     @app.get("/console/jobs", include_in_schema=False)
-    def jobs_page(request: Request) -> Response:
+    def jobs_page(
+        request: Request,
+        state: str = "",
+        q: str = "",
+        dir: str = "",
+        page: int = 1,
+    ) -> Response:
         ctx = context(request)
-        return render(ctx, "jobs.html", jobs=get_jobs().list(limit=100))
+        choices = ("queued", "running", "succeeded", "failed")
+        chosen = state if state in choices else ""
+        per = lists.PER_PAGE
+        direction = "asc" if dir == "asc" else "desc"
+        runner = get_jobs()
+        rows = runner.list(
+            limit=per,
+            state=chosen or None,
+            text=q or None,
+            offset=(max(page, 1) - 1) * per,
+            descending=direction == "desc",
+        )
+        table = lists.window(
+            rows,
+            total=runner.count(state=chosen or None, text=q or None),
+            path="/console/jobs",
+            sort="created_at",
+            direction=direction,
+            page=page,
+            per_page=per,
+            filters={"state": chosen, "q": q},
+        )
+        return render(
+            ctx,
+            "jobs.html",
+            jobs=table.rows,
+            table=table,
+            states=list(choices),
+            state=chosen,
+            q=q,
+        )
 
     @app.get("/console/jobs/{job_id}", include_in_schema=False)
     def job_page(request: Request, job_id: str) -> Response:
@@ -1535,30 +1744,78 @@ def mount_console(
 
     # ---------------------------------------------------------------- admin
 
+    def people_rows(
+        ctx: Ctx,
+        q: str = "",
+        role: str = "",
+        sort: str = "",
+        direction: str = "",
+        page: int = 1,
+    ) -> lists.Table:
+        people = [
+            person
+            for person in PeopleRegistry(ctx.platform.store).list_people()
+            if (
+                not q
+                or lists.matches(
+                    q,
+                    person["name"],
+                    person["id"],
+                    person["title"],
+                    *person["roles"],
+                    *person["groups"],
+                )
+            )
+            and (not role or role in person["roles"])
+        ]
+        return lists.build(
+            people,
+            path="/console/admin/people",
+            sorters={"name": lambda person: person["name"].casefold()},
+            default_sort="name",
+            sort=sort,
+            direction=direction,
+            page=page,
+            filters={"q": q, "role": role},
+        )
+
     @app.get("/console/admin/people", include_in_schema=False)
-    def people_page(request: Request) -> Response:
+    def people_page(
+        request: Request,
+        q: str = "",
+        role: str = "",
+        sort: str = "",
+        dir: str = "",
+        page: int = 1,
+    ) -> Response:
         ctx = context(request)
+        table = people_rows(ctx, q, role, sort, dir, page)
         accounts = {item["person_id"]: item for item in ctx.identity.list_accounts()}
-        people = PeopleRegistry(ctx.platform.store).list_people()
         return render(
             ctx,
             "people.html",
-            people=people,
+            people=table.rows,
             accounts=accounts,
-            roles=[role.name for role in all_roles()],
+            roles=[item.name for item in all_roles()],
             one_time=None,
+            table=table,
+            q=q,
+            role=role,
         )
 
     def one_time_page(ctx: Ctx, person_id: str, password: str) -> HTMLResponse:
+        table = people_rows(ctx)
         accounts = {item["person_id"]: item for item in ctx.identity.list_accounts()}
-        people = PeopleRegistry(ctx.platform.store).list_people()
         return render(
             ctx,
             "people.html",
-            people=people,
+            people=table.rows,
             accounts=accounts,
-            roles=[role.name for role in all_roles()],
+            roles=[item.name for item in all_roles()],
             one_time={"person": person_id, "password": password},
+            table=table,
+            q="",
+            role="",
         )
 
     @app.post("/console/admin/people", include_in_schema=False)

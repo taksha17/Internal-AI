@@ -3,6 +3,18 @@
 {% block title %}Eval sets{% endblock %}
 {% block content %}
 {{ m.page_head("Eval sets", "An eval set is the exam a model sits. Its answers must come only from the held-out test split, and once frozen nobody, human or agent, can change it. A change means a new version and a new approval.", "Workspace") }}
+<form class="toolbar" method="get" action="/console/evals">
+  <label class="grow">Search <input type="search" name="q" value="{{ q }}" placeholder="Name or id"></label>
+  <label>State
+    <select name="state">
+      <option value="">any state</option>
+      <option value="frozen"{{ ' selected' if state == 'frozen' else '' }}>frozen</option>
+      <option value="open"{{ ' selected' if state == 'open' else '' }}>open</option>
+    </select>
+  </label>
+  <button type="submit">Apply</button>
+  {% if q or state %}<a class="quiet-link" href="/console/evals">Clear</a>{% endif %}
+</form>
 {% for row in rows %}
 <section class="card">
   <h2>{{ row.set.name }} v{{ row.set.version }} {{ m.status_badge("frozen" if row.set.frozen else "open") }}</h2>
@@ -27,6 +39,11 @@
   </div>
 </section>
 {% else %}
+{% if q or state %}
+{{ m.empty("No eval sets match", "Clear the filter to see every exam.", "/console/evals", "Clear the filter") }}
+{% else %}
 {{ m.empty("No eval sets yet", "An eval set is created from a split dataset, and then frozen.", "/console/datasets", "Open datasets") }}
+{% endif %}
 {% endfor %}
+{{ m.pager(table, "eval sets") }}
 {% endblock %}

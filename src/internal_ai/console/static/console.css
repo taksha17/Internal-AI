@@ -368,6 +368,23 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .card table { border: 0; }
 .card thead th:first-child, .card thead th:last-child, .card tbody tr:last-child td:first-child, .card tbody tr:last-child td:last-child { border-radius: 0; }
 
+/* ---------- list toolbars, sortable heads, paging ---------- */
+.toolbar { display: flex; align-items: flex-end; gap: 0.6rem; flex-wrap: wrap; margin: 0 0 0.8rem; padding: 0.55rem 0.65rem; border: 1px solid var(--line); border-radius: var(--control-radius); background: var(--card); }
+.toolbar label { gap: 0.18rem; font-size: 0.76rem; }
+.toolbar input, .toolbar select { min-height: 2rem; height: 2rem; padding: 0.2rem 0.55rem; font-size: 0.85rem; }
+.toolbar .grow { flex: 1 1 13rem; }
+.toolbar button { min-height: 2rem; padding: 0 0.8rem; font-size: 0.82rem; }
+.toolbar .quiet-link { margin: 0 0 0.35rem; }
+th a.sort { display: inline-flex; align-items: center; gap: 0.22rem; color: inherit; text-decoration: none; }
+th a.sort:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 0.16em; }
+th a.sort.on { color: var(--ink); }
+.sort-mark { font-size: 0.72rem; line-height: 1; opacity: 0.8; }
+.pager { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; flex-wrap: wrap; margin: 0.65rem 0 0; max-width: none; }
+.pager-links { display: inline-flex; align-items: center; gap: 0.55rem; }
+.search { display: flex; margin: 0; flex: 1 1 12rem; max-width: 18rem; }
+.search input { width: 100%; min-height: 2.1rem; padding: 0.28rem 0.6rem; font-size: 0.85rem; background: var(--card); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
 /* ---------- lists and tabs ---------- */
 .muted { color: var(--muted); }
 .small { font-size: 0.8rem; }

@@ -508,7 +508,10 @@ class Store:
         actor: str | None = None,
         action: str | None = None,
         subject: str | None = None,
+        since: str | None = None,
         limit: int = 100,
+        offset: int = 0,
+        descending: bool = True,
     ) -> list[AuditEvent]:
         query = "SELECT * FROM audit_events WHERE 1=1"
         params: list[Any] = []
@@ -521,8 +524,11 @@ class Store:
         if subject:
             query += " AND subject = ?"
             params.append(subject)
-        query += " ORDER BY seq DESC LIMIT ?"
-        params.append(limit)
+        if since:
+            query += " AND created_at >= ?"
+            params.append(since)
+        query += f" ORDER BY seq {'DESC' if descending else 'ASC'} LIMIT ? OFFSET ?"
+        params.extend([limit, max(offset, 0)])
         return [
             AuditEvent(
                 id=row["id"],
@@ -706,6 +712,29 @@ class Store:
     def get_dataset(self, dataset_id: str) -> DatasetVersion | None:
         row = self.conn.execute("SELECT * FROM datasets WHERE id = ?", (dataset_id,)).fetchone()
         return self._row_to_dataset(row) if row else None
+
+    def count_audit(
+        self,
+        actor: str | None = None,
+        action: str | None = None,
+        subject: str | None = None,
+        since: str | None = None,
+    ) -> int:
+        query = "SELECT COUNT(*) AS total FROM audit_events WHERE 1=1"
+        params: list[Any] = []
+        if actor:
+            query += " AND actor = ?"
+            params.append(actor)
+        if action:
+            query += " AND action = ?"
+            params.append(action)
+        if subject:
+            query += " AND subject = ?"
+            params.append(subject)
+        if since:
+            query += " AND created_at >= ?"
+            params.append(since)
+        return int(self.conn.execute(query, params).fetchone()["total"])
 
     def list_datasets(self, name: str | None = None) -> list[DatasetVersion]:
         query = "SELECT * FROM datasets"

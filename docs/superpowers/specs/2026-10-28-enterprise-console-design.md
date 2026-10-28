@@ -208,9 +208,40 @@ offers the next step, and the error page (including the anonymous redirect).
 Not in this phase: search, filters, sort, paging, the Inbox page, CSV export,
 row-level depth, an explicit density switch, and the command palette.
 
+## What landed (Phase 2)
+
+- `console/lists.py`: a `Table` whose filter, order and page live in the URL.
+  Sort headers are links that flip direction and reset to page 1; `aria-sort`
+  says which way the column is ordered; `pager` reports "1–25 of 120" and
+  clamps a page past the end instead of showing an empty table.
+- `console/find.py`: one search over datasets, models, jobs, eval sets,
+  sources, gates and people, grouped by kind, five hits each with a "see all"
+  link into the filtered list. It reads the rows the pages already read — names,
+  ids, states, never a dataset record, an evidence body or an account — and a
+  test proves a record payload is unreachable from it.
+- Filters, order and paging: Jobs (state, text), Datasets (state, text, sort by
+  name/records/released), Models (status, text, the model list only), Eval sets
+  (frozen/open, text), Sources (approval state, text), People (role, text),
+  Approvals (text), Audit (actor, action, window, newest/oldest).
+  `Store.list_audit` grew `since`, `offset` and `descending`; `JobRunner` grew
+  `text`, `state`, `offset`, `descending` and `count`, so both page in SQL rather
+  than in memory.
+- A search field in the top bar on every signed-in page, plus `/console/search`
+  with a readable empty state.
+- Guarded by `tests/test_console_find.py`: a dataset, model, person and job are
+  found by name or id; a record body is not; filters narrow; sorting reorders
+  and announces itself; page 2 of 30 rows holds the last five and a page past
+  the end clamps; the audit log pages through the chain in both directions.
+
+Limits worth naming: datasets, models, eval sets, sources and people are sorted
+and paged in memory because their routes already load the rows; that is the next
+thing to move into SQL when any of them outgrows a page. Search scans the most
+recent 200 jobs. There are no saved views, and the command palette stays out
+until there is a reason to add a client script.
+
 ## Open
 
 - Density default: operator-dense as above, or keep the previous airiness and
   make compact a choice?
 - Whether the Phase 2 search lives in the top bar on every page or on its own
-  route linked from it.
+  route linked from it. It currently does both.

@@ -4,7 +4,19 @@
 {% block crumb %}Datasets{% endblock %}
 {% block content %}
 {{ m.page_head("Datasets", "A dataset version is built from an approved source. Split it, release it through its gate, and train a tokenizer on its training split.", "Workspace") }}
-{% call m.data_table([("Dataset",), ("Records", true), ("Split",), ("Released",), ("Tokenizer",)]) %}
+<form class="toolbar" method="get" action="/console/datasets">
+  <label class="grow">Search <input type="search" name="q" value="{{ q }}" placeholder="Name or id"></label>
+  <label>State
+    <select name="state">
+      <option value="">any state</option>
+      <option value="released"{{ ' selected' if state == 'released' else '' }}>released</option>
+      <option value="draft"{{ ' selected' if state == 'draft' else '' }}>draft</option>
+    </select>
+  </label>
+  <button type="submit">Apply</button>
+  {% if q or state %}<a class="quiet-link" href="/console/datasets">Clear</a>{% endif %}
+</form>
+{% call m.data_table([("Dataset", false, "name"), ("Records", true, "records", "desc"), ("Split",), ("Released", false, "released"), ("Tokenizer",)], table) %}
   {% for row in rows %}
   <tr>
     <td><a href="/console/datasets/{{ row.dataset.id }}">{{ row.dataset.name }} v{{ row.dataset.version }}</a> <span class="muted small">{{ row.dataset.id }}</span></td>
@@ -14,7 +26,12 @@
     <td>{{ "yes" if row.tokenizer else "no" }}</td>
   </tr>
   {% else %}
+  {% if q or state %}
+  {{ m.empty_row(5, "No datasets match", "Clear the filter to see every version.", "/console/datasets", "Clear the filter") }}
+  {% else %}
   {{ m.empty_row(5, "No datasets yet", "A dataset is built from a source a data owner approved.", "/console/sources", "Approve a source") }}
+  {% endif %}
   {% endfor %}
 {% endcall %}
+{{ m.pager(table, "datasets") }}
 {% endblock %}
