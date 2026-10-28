@@ -564,7 +564,12 @@ def build_dataset(platform: Platform, actor: Actor, runner: JobRunner, source_id
 
             index = build_tree_index(Path(source["path"]), source_id=source_id)
             built = build_tree_corpus(
-                platform, index, name=source["name"], version=version, acl=source["acl"]
+                platform,
+                index,
+                name=source["name"],
+                version=version,
+                acl=source["acl"],
+                sensitivity=source["sensitivity"],
             )
         else:
             from internal_ai.data.pipeline import DataPipeline, PipelineConfig
@@ -576,7 +581,7 @@ def build_dataset(platform: Platform, actor: Actor, runner: JobRunner, source_id
                     Source(
                         source_id=source_id,
                         path=Path(source["path"]),
-                        sensitivity="internal",
+                        sensitivity=source["sensitivity"],
                         acl=source["acl"],
                         approved=True,
                         owner=source["requested_by"],
@@ -1067,6 +1072,15 @@ def evaluate_model(
             eval_set_id,
             "evaluation runs against frozen eval sets only; freeze this set first",
         )
+    if actor.id == str(model.card.get("registered_by") or ""):
+        raise deny(
+            platform.audit,
+            actor,
+            "evaluate_model",
+            model_id,
+            "a builder cannot judge their own model; ask another ml_lead to run this "
+            "evaluation on the frozen set",
+        )
     dataset_id = model.dataset_ids[0]
     token_file = Path(model.card.get("tokenizer_path") or "")
     if not token_file.exists():
@@ -1082,6 +1096,7 @@ def evaluate_model(
             margin=margin,
             actor=EVAL_AGENT,
             model_id=model_id,
+            judged_by=actor.id,
         )
 
     return runner.submit(
@@ -1264,6 +1279,11 @@ def request_promotion(
     if report is None:
         raise ValueError(
             "evaluate the model against a frozen eval set first, and the report must pass"
+        )
+    if report.judged_by and report.judged_by == str(model.card.get("registered_by") or ""):
+        raise ValueError(
+            "the newest report was run by the person who built this model; a different "
+            "ml_lead has to evaluate it before a promotion is requested"
         )
     if not red_team_results.strip():
         raise ValueError("describe the red-team results: memorisation, PII and permission tests")

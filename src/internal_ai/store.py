@@ -960,8 +960,8 @@ class Store:
         self.conn.execute(
             """
             INSERT INTO eval_reports (id, model_id, eval_set_id, created_at, metrics,
-                                      baseline_metrics, checks, passed, notes)
-            VALUES (?,?,?,?,?,?,?,?,?)
+                                      baseline_metrics, checks, passed, notes, judged_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 report.id,
@@ -973,6 +973,7 @@ class Store:
                 _json(report.checks),
                 int(report.passed),
                 report.notes,
+                report.judged_by,
             ),
         )
         return report
@@ -1002,6 +1003,7 @@ class Store:
             checks=_loads(row["checks"], {}),
             passed=bool(row["passed"]),
             notes=row["notes"],
+            judged_by=row["judged_by"],
         )
 
     # ---------------------------------------------------------------- policy
