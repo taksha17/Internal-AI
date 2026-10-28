@@ -371,6 +371,7 @@ def mount_console(
             "flashes": pop_flashes(ctx),
             "path": ctx.request.url.path,
             "brief": brief.load(platform.store),
+            "programme_gaps": brief.programme_gaps(platform, release=True),
             "waiting": waiting,
             "inbox": len(waiting.yours),
             "attention": waiting.count,

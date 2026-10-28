@@ -157,8 +157,10 @@ def train_embedding_model(
     split: str = "train",
     pair_mode: str = "paraphrase",
 ) -> TrainingOutcome:
+    from internal_ai.brief import require_programme
     from internal_ai.training.trainer import Trainer
 
+    require_programme(platform, actor, release=False)
     rows = platform.store.dataset_records_by_split(dataset_id, split)
     if not rows:
         rows = platform.store.dataset_records(dataset_id)
@@ -519,10 +521,12 @@ def train_classifier_model(
     split: str = "train",
 ) -> ClassifierOutcome:
     """Train a task classifier over frozen from-scratch encoder embeddings."""
+    from internal_ai.brief import require_programme
     from internal_ai.data.labels import build_labeled_dataset
     from internal_ai.training.classifier import ClassifierTrainer
     from internal_ai.training.ownership import require_released_dataset
 
+    require_programme(platform, actor, release=False)
     require_released_dataset(platform.store.get_dataset(dataset_id))
     rows = platform.store.dataset_records_by_split(dataset_id, split)
     if not rows:
