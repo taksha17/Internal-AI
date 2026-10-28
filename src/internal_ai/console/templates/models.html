@@ -131,6 +131,15 @@
   <p>Latest evaluation {{ m.status_badge("passed" if row.report.passed else "failed") }} on {{ row.report.eval_set_id }}:
     {% for key, value in row.report.metrics | dictsort %}{{ key }} {{ "%.3f" % value }} (baseline {{ "%.3f" % (row.report.baseline_metrics.get(key, 0)) }}) · {% endfor %}</p>
     {% if row.report.notes %}<p class="muted">{{ row.report.notes }}</p>{% endif %}
+    {% set targets = row.report.checks.get("brief_targets") %}
+    {% if targets and targets.targets %}
+    <ul class="plain">
+      {% for target in targets.targets %}
+      <li>{{ m.status_badge("passed" if target.met else ("unmeasured" if target.met is none else "failed")) }} {{ target.name }} {{ "at most" if target.direction == "at_most" else "at least" }} {{ target.threshold }}{% if target.measured is not none %}, measured {{ "%.3f" % target.measured }}{% endif %}{% if target.note %} — {{ target.note }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+    <p class="muted small">{{ targets.note }}{% if not targets.passed %} · <a href="/console/brief">Open the brief</a>{% endif %}</p>
+    {% endif %}
     {% if row.advice %}<ul class="advice-list">{% for line in row.advice %}<li>{{ line }}</li>{% endfor %}</ul>{% endif %}
   {% endif %}
   {% if can("evaluate_model") %}

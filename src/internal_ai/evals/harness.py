@@ -13,6 +13,7 @@ from typing import Any, Protocol
 import numpy as np
 
 from internal_ai.audit import AuditLog
+from internal_ai.brief import ProjectBrief, describe_verdict
 from internal_ai.data.records import Record
 from internal_ai.data.splits import contamination_report
 from internal_ai.data.transforms import PII_PATTERNS
@@ -150,6 +151,7 @@ class EvalHarness:
         top_k: int = 10,
         margin: float = 0.0,
         actor: str = "evaluation",
+        brief: ProjectBrief | None = None,
     ) -> EvalOutcome:
         queries = [str(item["query"]) for item in eval_set.items]
         doc_ids = [record.record_key for record in corpus_records]
@@ -201,6 +203,9 @@ class EvalHarness:
                 else "baseline carries lexical signal on this eval set"
             ),
         }
+        targets = brief_targets(brief, metrics)
+        if targets is not None:
+            checks["brief_targets"] = targets
         beats_baseline = metrics["recall_at_10"] >= baseline_metrics["recall_at_10"] + margin
         passed = beats_baseline and all(check["passed"] for check in checks.values())
         notes = (
@@ -208,6 +213,10 @@ class EvalHarness:
             if beats_baseline
             else "model does not beat the keyword-search baseline by the required margin"
         )
+        if targets is not None and not targets["passed"]:
+            notes += "; short of the brief: " + "; ".join(
+                describe_verdict(verdict) for verdict in targets["targets"] if not verdict["met"]
+            )
         outcome = EvalOutcome(
             passed=passed,
             metrics=metrics,
@@ -335,6 +344,34 @@ class EvalHarness:
             details={"model_id": model_id, "passed": report.passed},
         )
         return report
+
+
+def brief_targets(brief: ProjectBrief | None, metrics: dict[str, float]) -> dict[str, Any] | None:
+    """The brief's own bars, judged by this run's numbers.
+
+    ``None`` when the brief records no metric, so a company that has not written
+    one is not silently failed by a check it never asked for.
+    """
+    if brief is None:
+        return None
+    verdicts = brief.metric_verdicts(metrics)
+    if not verdicts:
+        return None
+    missed = [verdict for verdict in verdicts if verdict["met"] is False]
+    unknown = [verdict for verdict in verdicts if verdict["met"] is None]
+    if missed:
+        note = "this run did not reach the bar the project brief sets"
+    elif unknown:
+        note = "the brief names a bar this evaluation could not measure"
+    else:
+        note = "every metric the project brief records is met"
+    return {
+        "passed": not missed and not unknown,
+        "targets": verdicts,
+        "missed": [verdict["name"] for verdict in missed],
+        "unmeasured": [verdict["name"] for verdict in unknown],
+        "note": note,
+    }
 
 
 def permission_probe(corpus_records: list[Record], relevant_doc_ids: set[str]) -> dict[str, Any]:

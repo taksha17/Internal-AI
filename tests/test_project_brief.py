@@ -9,12 +9,16 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import numpy as np
 from conftest import enroll, session_csrf, sign_in
 from fastapi.testclient import TestClient
 
 from internal_ai import brief
 from internal_ai.api import create_app
+from internal_ai.data.records import Record
 from internal_ai.domain import AuditOutcome
+from internal_ai.evals.advice import retrieval_advice
+from internal_ai.evals.harness import EvalHarness
 
 FLASH = re.compile(r'class="flash flash-(?P<kind>ok|error)"[^>]*>(?P<body>[^<]*)')
 
@@ -126,3 +130,100 @@ def test_writing_the_brief_is_refused_to_a_role_that_does_not_hold_it(tmp_path: 
 
         read_only = client.get("/console/brief").text
         assert "needs program_lead or ml_lead" in read_only
+
+
+class HashEmbedder:
+    """Deterministic stand-in, so the brief comparison is what is under test."""
+
+    def embed(self, texts: list[str]) -> np.ndarray:
+        vectors = []
+        for text in texts:
+            vector = np.zeros(8, dtype=float)
+            for index, char in enumerate(text):
+                vector[index % 8] += (ord(char) % 13) / 13
+            vectors.append(vector / (np.linalg.norm(vector) or 1.0))
+        return np.array(vectors)
+
+
+def record(key: str, text: str) -> Record:
+    return Record(
+        id=key,
+        record_key=key,
+        text=text,
+        source_id="src",
+        acl=["engineering"],
+        sensitivity="internal",
+    )
+
+
+def run_eval(platform, target: brief.Metric | None):
+    harness = EvalHarness(platform.store, platform.audit)
+    corpus = [record("a", "how do I reset my vpn on the laptop")]
+    eval_set = harness.create_eval_set("brief", [{"query": "reset vpn", "relevant_ids": ["a"]}])
+    project = brief.ProjectBrief()
+    if target is not None:
+        project.metrics = [target]
+    return harness.evaluate_retrieval(
+        HashEmbedder(),
+        eval_set,
+        corpus,
+        training_records=[record("b", "quarterly invoice reconciliation runbook")],
+        brief=project,
+    )
+
+
+def test_a_threshold_is_read_the_way_people_write_it() -> None:
+    assert brief.parse_threshold("0.70") == 0.70
+    assert brief.parse_threshold("≥ 0.7") == 0.7
+    assert brief.parse_threshold("at least 0.85") == 0.85
+    assert brief.parse_threshold("70%", 0.42) == 0.70
+    assert brief.parse_threshold("0,65") == 0.65
+    assert brief.parse_threshold("better than search") is None
+
+
+def test_a_run_that_misses_the_brief_is_told_so(platform) -> None:
+    # 1.01 is above any metric's ceiling, so the miss does not depend on how the
+    # stand-in embedder happens to rank a one-document corpus.
+    outcome = run_eval(
+        platform, brief.Metric(name="recall@10", threshold="1.01", direction="at_least")
+    )
+    check = outcome.checks["brief_targets"]
+    assert check["passed"] is False
+    assert check["missed"] == ["recall@10"]
+    assert check["targets"][0]["measured"] is not None
+    assert outcome.passed is False
+    assert "short of the brief" in outcome.notes
+    assert "recall@10 at least 1.01" in outcome.notes
+
+    advice = retrieval_advice(
+        {"passed": False, "metrics": outcome.metrics, "checks": outcome.checks},
+        records=1,
+        tokens=10,
+    )
+    assert any("brief sets a bar this run did not reach" in line for line in advice)
+
+
+def test_a_run_that_meets_the_brief_says_nothing_about_it(platform) -> None:
+    outcome = run_eval(
+        platform, brief.Metric(name="recall@10", threshold="0.0", direction="at_least")
+    )
+    check = outcome.checks["brief_targets"]
+    assert check["passed"] is True
+    assert check["note"] == "every metric the project brief records is met"
+    assert "short of the brief" not in outcome.notes
+
+
+def test_a_metric_the_evaluation_never_measured_cannot_pass_the_brief(platform) -> None:
+    outcome = run_eval(
+        platform, brief.Metric(name="accuracy", threshold="0.9", direction="at_least")
+    )
+    check = outcome.checks["brief_targets"]
+    assert check["passed"] is False
+    assert check["unmeasured"] == ["accuracy"]
+    assert "does not measure accuracy" in outcome.notes
+    assert outcome.passed is False
+
+
+def test_no_brief_metric_means_no_verdict_at_all(platform) -> None:
+    outcome = run_eval(platform, None)
+    assert "brief_targets" not in outcome.checks

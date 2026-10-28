@@ -10,6 +10,7 @@ nobody can judge.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -21,6 +22,10 @@ from internal_ai.store import Store
 
 OWNER_ROLES = ("ml_lead", "data_engineer", "infra", "evaluation", "security")
 DIRECTIONS = ("at_least", "at_most")
+THRESHOLD = re.compile(
+    r"^\s*(?:>=\s*|at\s+least\s+|at\s+most\s+|>=|<=|>|<|≥|≤)?\s*(-?\d+(?:[.,]\d+)?)\s*(%?)\s*$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(slots=True)
@@ -80,6 +85,44 @@ class ProjectBrief:
     def complete(self) -> bool:
         return not self.missing
 
+    def metric_verdicts(self, measured: dict[str, float]) -> list[dict[str, Any]]:
+        """Each metric the brief records, read against what an evaluation measured.
+
+        A threshold that is not a number and a metric the evaluation never
+        measured are verdicts too, with `met` left open. Silently passing them
+        would let a report claim the brief was met when nothing checked it.
+        """
+        by_key = {metric_key(name): float(value) for name, value in measured.items()}
+        verdicts: list[dict[str, Any]] = []
+        for metric in self.metrics:
+            if not metric.name:
+                continue
+            value = by_key.get(metric_key(metric.name))
+            threshold = parse_threshold(metric.threshold, value)
+            if value is None:
+                note = f"this evaluation does not measure {metric.name}"
+            elif threshold is None:
+                note = f"the threshold {metric.threshold!r} is not a number"
+            else:
+                note = ""
+            if value is None or threshold is None:
+                met: bool | None = None
+            elif metric.direction == "at_most":
+                met = value <= threshold
+            else:
+                met = value >= threshold
+            verdicts.append(
+                {
+                    "name": metric.name,
+                    "threshold": metric.threshold,
+                    "direction": metric.direction,
+                    "measured": None if value is None else round(value, 6),
+                    "met": met,
+                    "note": note,
+                }
+            )
+        return verdicts
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "target": self.target,
@@ -115,6 +158,41 @@ class ProjectBrief:
             updated_at=str(payload.get("updated_at", "")),
             updated_by=str(payload.get("updated_by", "")),
         )
+
+
+def metric_key(name: str) -> str:
+    """`recall@10`, `Recall@10` and `recall_at_10` are the same metric."""
+    return re.sub(r"[^a-z0-9]", "", name.lower().replace("@", "_at_"))
+
+
+def parse_threshold(text: str, measured: float | None = None) -> float | None:
+    """A threshold as a number in the units the measurement uses.
+
+    People write `0.70`, `70%`, `≥ 0.7` and `at least 0.7` for the same bar, and
+    a percentage only means a fraction when the metric is one.
+    """
+    match = THRESHOLD.match(text or "")
+    if match is None:
+        return None
+    value = float(match.group(1).replace(",", "."))
+    if match.group(2):
+        return value / 100 if (measured is None or measured <= 1.5) else value
+    return value
+
+
+def describe_verdict(verdict: dict[str, Any]) -> str:
+    """One metric in the words a person would say out loud."""
+    asked = (
+        f"{verdict['name']} {'at most' if verdict['direction'] == 'at_most' else 'at least'} "
+        f"{verdict['threshold']}"
+    )
+    if verdict["note"]:
+        return f"{asked}: {verdict['note']}"
+    measured = float(verdict["measured"])
+    if verdict["met"]:
+        return f"{asked} — measured {measured:.3f}"
+    side = "above" if verdict["direction"] == "at_most" else "below"
+    return f"{asked} — measured {measured:.3f}, {side} the bar"
 
 
 def load(store: Store) -> ProjectBrief:

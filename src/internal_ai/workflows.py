@@ -208,6 +208,7 @@ def evaluate_embedding_model(
     actor: str = "evaluation",
     model_id: str | None = None,
 ) -> dict[str, Any]:
+    from internal_ai.brief import load as load_brief
     from internal_ai.evals.harness import EvalHarness
 
     harness = EvalHarness(platform.store, platform.audit)
@@ -237,7 +238,13 @@ def evaluate_embedding_model(
     ]
     embedder = TorchEmbedder(model_path, tokenizer)
     outcome = harness.evaluate_retrieval(
-        embedder, eval_set, corpus, training_records=training_records, margin=margin, actor=actor
+        embedder,
+        eval_set,
+        corpus,
+        training_records=training_records,
+        margin=margin,
+        actor=actor,
+        brief=load_brief(platform.store),
     )
     report = harness.record_report(model_id or model_path.stem, eval_set_id, outcome, actor=actor)
     return {

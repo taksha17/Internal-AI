@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from internal_ai.brief import describe_verdict
 from internal_ai.data.suggest import GENERATE_RECORDS
 
 # A run can fail its safety checks while scoring well, so the score is not the
@@ -55,9 +56,21 @@ def retrieval_advice(report: Any, records: int, tokens: int) -> list[str]:
     """Why a retrieval run did not pass, and what would change it."""
     if report is None or _value(report, "passed", False):
         return []
-    failed = failed_checks(report)
+    failed = [name for name in failed_checks(report) if name != "brief_targets"]
     if failed:
         return [CHECK_ACTIONS.get(name, f"The {name} check did not pass.") for name in failed]
+    targets = (_value(report, "checks", {}) or {}).get("brief_targets") or {}
+    if isinstance(targets, dict) and targets.get("passed") is False:
+        lines = [
+            f"The project brief sets a bar this run did not reach: {describe_verdict(verdict)}."
+            for verdict in targets.get("targets", [])
+            if not verdict.get("met")
+        ]
+        lines.append(
+            "Either the model is short of the target or the evaluation does not test "
+            "what the brief asks; settle which before promotion."
+        )
+        return lines
 
     metrics = _value(report, "metrics", {}) or {}
     baseline = _value(report, "baseline_metrics", {}) or {}
