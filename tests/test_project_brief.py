@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 import numpy as np
+import pytest
 from conftest import enroll, session_csrf, sign_in
 from fastapi.testclient import TestClient
 
@@ -227,3 +228,108 @@ def test_a_metric_the_evaluation_never_measured_cannot_pass_the_brief(platform) 
 def test_no_brief_metric_means_no_verdict_at_all(platform) -> None:
     outcome = run_eval(platform, None)
     assert "brief_targets" not in outcome.checks
+
+
+def test_a_classifier_is_judged_by_the_same_recorded_bar(platform, tmp_path: Path) -> None:
+    torch = pytest.importorskip("torch")
+    from internal_ai.data.labels import build_labeled_dataset
+    from internal_ai.data.pipeline import DataPipeline, PipelineConfig
+    from internal_ai.data.records import Source
+    from internal_ai.data.tokenizer import train_tokenizer
+    from internal_ai.training.classifier import ClassifierConfig, ClassifierTrainer
+    from internal_ai.training.model import TinyTransformer, TransformerConfig
+    from internal_ai.workflows import evaluate_classifier_model
+
+    texts = [
+        "invoice reconciliation failed for the emea account today",
+        "shipment tracking stalled for the amer warehouse queue",
+    ] * 6
+    labels = ["billing", "fulfilment"] * 6
+    table = "ticket,description,label\n" + "".join(
+        f"{index},{text},{label}\n"
+        for index, (text, label) in enumerate(zip(texts, labels, strict=True))
+    )
+    path = tmp_path / "tickets.csv"
+    path.write_text(table, encoding="utf-8")
+    built = DataPipeline(platform.store, platform.audit, tmp_path).run(
+        [
+            Source(
+                source_id="src_cls",
+                path=path,
+                acl=["engineering"],
+                approved=True,
+                owner="tester",
+                text_field="description",
+                label_field="label",
+            )
+        ],
+        PipelineConfig(name="cls"),
+        label_field="label",
+    )
+    tokenizer = train_tokenizer(texts, vocab_size=200)
+    records = [
+        Record(
+            id=row["id"],
+            record_key=row["record_key"],
+            text=row["payload"],
+            source_id=row["source_id"],
+            acl=row["acl"],
+            sensitivity=row["sensitivity"],
+            meta=row["meta"],
+        )
+        for row in platform.store.dataset_records(built.dataset.id)
+    ]
+    labelled = build_labeled_dataset(records)
+    assert {item["label"] for item in labelled} == {"billing", "fulfilment"}
+    config = TransformerConfig(
+        vocab_size=tokenizer.vocab_size,
+        d_model=32,
+        n_heads=2,
+        n_layers=2,
+        d_ff=64,
+        max_seq_len=64,
+    )
+    encoder_path = tmp_path / "encoder.pt"
+    torch.save(
+        {
+            "model_state": TinyTransformer(config).state_dict(),
+            "model_config": config.to_dict(),
+        },
+        encoder_path,
+    )
+    trained = ClassifierTrainer(
+        platform.store, platform.audit, platform.budget, tmp_path / "artifacts", root=tmp_path
+    ).train(
+        ClassifierConfig(epochs=5),
+        encoder_path,
+        tokenizer,
+        labelled,
+        [item["label"] for item in labelled],
+    )
+
+    lead = enroll(platform, "Lena Lead", ["program_lead"])
+    brief.save(
+        platform.store,
+        platform.audit,
+        lead,
+        brief.ProjectBrief(
+            metrics=[brief.Metric(name="accuracy", threshold="1.01", direction="at_least")]
+        ),
+    )
+    missed = evaluate_classifier_model(
+        platform, Path(trained.model_path), tokenizer, built.dataset.id
+    )
+    assert missed["brief_targets"]["missed"] == ["accuracy"]
+    assert "short of the brief" in missed["notes"]
+    assert missed["passed"] is False
+
+    brief.save(
+        platform.store,
+        platform.audit,
+        lead,
+        brief.ProjectBrief(
+            metrics=[brief.Metric(name="accuracy", threshold="0.0", direction="at_least")]
+        ),
+    )
+    met = evaluate_classifier_model(platform, Path(trained.model_path), tokenizer, built.dataset.id)
+    assert met["brief_targets"]["passed"] is True

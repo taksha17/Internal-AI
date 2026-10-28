@@ -576,8 +576,10 @@ def evaluate_classifier_model(
     majority class, and the rule agreement is reported as a reference figure.
     A true rules-versus-model comparison needs independently labelled data.
     """
+    from internal_ai.brief import describe_verdict
+    from internal_ai.brief import load as load_brief
     from internal_ai.data.labels import build_labeled_dataset, label_counts
-    from internal_ai.evals.harness import EvalHarness
+    from internal_ai.evals.harness import EvalHarness, brief_targets
     from internal_ai.training.classifier import predict_classifier
 
     rows = platform.store.dataset_records_by_split(dataset_id, split)
@@ -621,6 +623,15 @@ def evaluate_classifier_model(
         if decision
         else "classifier does not beat the majority-class baseline or misses the floor"
     )
+    targets = brief_targets(load_brief(platform.store), outcome.metrics)
+    if targets is not None:
+        outcome.checks["brief_targets"] = targets
+        if not targets["passed"]:
+            decision = False
+            outcome.passed = False
+            outcome.notes += "; short of the brief: " + "; ".join(
+                describe_verdict(verdict) for verdict in targets["targets"] if not verdict["met"]
+            )
     report = harness.record_report(
         f"classifier:{model_path.stem}",
         f"classifier::{dataset_id}",
@@ -642,6 +653,7 @@ def evaluate_classifier_model(
         "per_class": per_class,
         "baseline_per_class": baseline_per_class,
         "label_distribution": counts,
+        "brief_targets": targets,
         "notes": outcome.notes,
     }
 

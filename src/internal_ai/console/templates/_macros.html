@@ -115,6 +115,19 @@
 </ol>
 {% endmacro %}
 
+{# The project brief's own bars, as a report met or missed them. Both model
+   kinds render this, so a reader compares like with like. #}
+{% macro brief_targets_row(targets) %}
+{% if targets and targets.targets %}
+<ul class="plain">
+  {% for target in targets.targets %}
+  <li>{{ status_badge("passed" if target.met else ("unmeasured" if target.met is none else "failed")) }} {{ target.name }} {{ "at most" if target.direction == "at_most" else "at least" }} {{ target.threshold }}{% if target.measured is not none %}, measured {{ "%.3f" % target.measured }}{% endif %}{% if target.note %} — {{ target.note }}{% endif %}</li>
+  {% endfor %}
+</ul>
+<p class="muted small">{{ targets.note }}{% if not targets.passed %} · <a href="/console/brief">Open the brief</a>{% endif %}</p>
+{% endif %}
+{% endmacro %}
+
 {% macro gate_box(gate) %}
 <div class="gate" id="gate-{{ gate.id }}">
   <div class="gate-stripe" aria-hidden="true"></div>
