@@ -148,6 +148,76 @@ def train_tokenizer_for(
     return tokenizer, coverage
 
 
+def _embedding_parameters(config: TrainConfig, tokenizer: Tokenizer) -> int:
+    from internal_ai.training.model import TransformerConfig, count_parameters
+
+    return count_parameters(
+        TransformerConfig(
+            vocab_size=tokenizer.vocab_size,
+            d_model=config.d_model,
+            n_heads=config.n_heads,
+            n_layers=config.n_layers,
+            d_ff=config.d_ff,
+            max_seq_len=config.max_seq_len,
+            dropout=config.dropout,
+            causal=config.objective == "causal",
+        )
+    )
+
+
+def _encoder_parameters(path: Path) -> int:
+    import torch
+
+    payload = torch.load(path, weights_only=True, map_location="cpu")
+    return sum(int(tensor.numel()) for tensor in payload["model_state"].values())
+
+
+def require_token_budget(platform: Platform, dataset: Any, actor: str, parameters: int) -> None:
+    """Refuse an estimate, and a measured corpus below the tokens-per-parameter floor."""
+    from internal_ai.brief import load as load_brief
+    from internal_ai.brief import metric_key, parse_threshold
+    from internal_ai.domain import AuditOutcome
+    from internal_ai.training.trainer import TOKENS_PER_PARAMETER_FLOOR
+
+    kind = str(dataset.stats.get("token_count_kind", ""))
+    floor = float(TOKENS_PER_PARAMETER_FLOOR)
+    for metric in load_brief(platform.store).metrics:
+        if metric_key(metric.name) != "tokensperparameter":
+            continue
+        parsed = parse_threshold(metric.threshold)
+        if parsed is not None:
+            floor = max(floor, parsed)
+    tokens = int(dataset.token_count)
+    ratio = round(tokens / parameters, 4) if parameters else 0.0
+    stats = dict(dataset.stats)
+    stats["parameter_count"] = parameters
+    stats["tokens_per_parameter"] = ratio
+    platform.store.conn.execute(
+        "UPDATE datasets SET stats = ? WHERE id = ?",
+        (json.dumps(stats, sort_keys=True), dataset.id),
+    )
+    if kind != "measured":
+        platform.audit.record(
+            actor=actor,
+            action="train.token_budget",
+            subject=dataset.id,
+            outcome=AuditOutcome.DENIED,
+            details={"token_count_kind": kind or "estimate", "parameters": parameters},
+        )
+        raise PermissionError(f"token count for {dataset.id} is still an estimate")
+    if ratio < floor:
+        platform.audit.record(
+            actor=actor,
+            action="train.token_budget",
+            subject=dataset.id,
+            outcome=AuditOutcome.DENIED,
+            details={"tokens": tokens, "parameters": parameters, "floor": floor},
+        )
+        raise PermissionError(
+            f"{tokens} tokens and {parameters} parameters are below {floor:g} tokens per parameter"
+        )
+
+
 def train_embedding_model(
     platform: Platform,
     dataset_id: str,
@@ -157,8 +227,10 @@ def train_embedding_model(
     split: str = "train",
     pair_mode: str = "paraphrase",
 ) -> TrainingOutcome:
+    from internal_ai.brief import require_programme
     from internal_ai.training.trainer import Trainer
 
+    require_programme(platform, actor, release=False)
     rows = platform.store.dataset_records_by_split(dataset_id, split)
     if not rows:
         rows = platform.store.dataset_records(dataset_id)
@@ -178,6 +250,8 @@ def train_embedding_model(
     from internal_ai.training.ownership import require_released_dataset
 
     dataset = require_released_dataset(platform.store.get_dataset(dataset_id))
+    train_config = config or TrainConfig()
+    require_token_budget(platform, dataset, actor, _embedding_parameters(train_config, tokenizer))
     trainer = Trainer(
         platform.store,
         platform.audit,
@@ -185,7 +259,6 @@ def train_embedding_model(
         platform.settings.artifacts_dir,
         root=platform.settings.root,
     )
-    train_config = config or TrainConfig()
     pairs = build_pair_dataset(platform, dataset_id, split=split, mode=pair_mode)
     return trainer.train(
         train_config,
@@ -519,11 +592,14 @@ def train_classifier_model(
     split: str = "train",
 ) -> ClassifierOutcome:
     """Train a task classifier over frozen from-scratch encoder embeddings."""
+    from internal_ai.brief import require_programme
     from internal_ai.data.labels import build_labeled_dataset
     from internal_ai.training.classifier import ClassifierTrainer
     from internal_ai.training.ownership import require_released_dataset
 
-    require_released_dataset(platform.store.get_dataset(dataset_id))
+    require_programme(platform, actor, release=False)
+    dataset = require_released_dataset(platform.store.get_dataset(dataset_id))
+    require_token_budget(platform, dataset, actor, _encoder_parameters(encoder_path))
     rows = platform.store.dataset_records_by_split(dataset_id, split)
     if not rows:
         rows = platform.store.dataset_records(dataset_id)
