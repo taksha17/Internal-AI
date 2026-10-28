@@ -30,7 +30,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from internal_ai.console import find as finder
-from internal_ai.console import lists
+from internal_ai.console import inbox, lists
 from internal_ai.context import Platform
 from internal_ai.data.suggest import suggest_model_types
 from internal_ai.domain import GateStatus, GateType, TaskState
@@ -69,6 +69,7 @@ REFUSALS = (
 
 NAV = [
     ("Home", "/console/home"),
+    ("Inbox", "/console/inbox"),
     ("Approvals", "/console/approvals"),
     ("Data", "/console/sources"),
     ("Datasets", "/console/datasets"),
@@ -330,18 +331,16 @@ def mount_console(
 
     def render(ctx: Ctx, name: str, status_code: int = 200, **data: Any) -> HTMLResponse:
         platform = ctx.platform
-        pending = [
-            gate
-            for gate in platform.store.list_gates(status=str(GateStatus.PENDING))
-            if governance.can_decide(platform, ctx.actor, gate)[0]
-        ]
+        waiting = inbox.collect(platform, ctx.actor, get_jobs())
         values = {
             "actor": ctx.actor,
             "csrf": ctx.session.csrf_token,
             "kill": governance.kill_switch_state(platform),
             "flashes": pop_flashes(ctx),
             "path": ctx.request.url.path,
-            "inbox": len(pending),
+            "waiting": waiting,
+            "inbox": len(waiting.yours),
+            "attention": waiting.count,
             "can": lambda action: allowed(ctx.actor, Action(action)),
             "why": lambda action: reason(Action(action)),
         }
@@ -554,6 +553,11 @@ def mount_console(
             alerts=alerts,
         )
 
+    @app.get("/console/inbox", include_in_schema=False)
+    def inbox_page(request: Request) -> Response:
+        ctx = context(request)
+        return render(ctx, "inbox.html")
+
     @app.get("/console/search", include_in_schema=False)
     def search_page(request: Request, q: str = "") -> Response:
         ctx = context(request)
@@ -590,10 +594,13 @@ def mount_console(
     @app.post("/console/alerts/{alert_id}/acknowledge", include_in_schema=False)
     async def acknowledge(request: Request, alert_id: str) -> Response:
         ctx = context(request)
-        await posted(ctx)
+        form = await posted(ctx)
+        back = form.get("back", "/console/home")
+        if not back.startswith("/console/"):
+            back = "/console/home"
         return await act(
             ctx,
-            "/console/home",
+            back,
             lambda: governance.acknowledge_alert(ctx.platform, ctx.actor, alert_id),
             "alert acknowledged",
         )

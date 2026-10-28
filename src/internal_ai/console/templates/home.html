@@ -93,6 +93,7 @@
       <p class="card-sub">Approvals waiting on you, and open alerts. Nothing here decides itself.</p>
     </div>
     {% if inbox or alerts %}<span class="badge badge-failed">{{ inbox + (alerts | length) }} open</span>{% endif %}
+    <a class="quiet-link" href="/console/inbox">Open the inbox {{ m.icon("arrow-right") }}</a>
   </div>
   {% if inbox or alerts %}
   {% call m.data_table([("Item",), ("Type",), ("Waiting on",)]) %}

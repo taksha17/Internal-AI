@@ -413,6 +413,7 @@ def test_every_signed_in_page_keeps_the_brand_and_the_kill_switch(tmp_path: Path
         sign_in(client, lead.name)
         pages = [
             "/console/home",
+            "/console/inbox",
             "/console/approvals",
             "/console/sources",
             "/console/datasets",

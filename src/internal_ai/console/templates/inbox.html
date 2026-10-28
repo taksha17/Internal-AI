@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Inbox{% endblock %}
+{% block crumb %}Inbox{% endblock %}
+{% block content %}
+{{ m.page_head("Inbox", "Work waiting on a person: gates you can decide, alerts nobody has read, and runs that failed this week. Nothing here decides itself.", "Work") }}
+
+{% if waiting.empty %}
+{{ m.empty("Nothing is waiting", "A gate, an alert or a failed run appears here the moment it needs someone.", "/console/home", "Back to the overview") }}
+{% else %}
+
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>Needs your decision</h2>
+      <p class="card-sub">A gate is a human decision. You cannot decide one you asked for, so those appear below.</p>
+    </div>
+    <span class="badge {{ 'badge-pending' if waiting.yours else 'badge-approved' }}">{{ waiting.yours | length }} waiting</span>
+  </div>
+  {% call m.data_table([("Gate",), ("Type",), ("Asked by",), ("Waiting since",), ("Action",)]) %}
+    {% for gate in waiting.yours %}
+    <tr>
+      <td class="row-title"><a href="/console/approvals#gate-{{ gate.id }}">{{ gate.title }}</a><br><span class="row-sub">{{ gate.id }} · subject {{ gate.subject }}</span></td>
+      <td>{{ gate.gate_type }}</td>
+      <td>{{ gate.requested_by }}</td>
+      <td>{{ gate.created_at | when }}</td>
+      <td><a class="button btn-sm" href="/console/approvals#gate-{{ gate.id }}">Review</a></td>
+    </tr>
+    {% else %}
+    {{ m.empty_row(5, "No gate needs you right now", "A gate you asked for is decided by someone else, and shows below.", "/console/approvals", "See every gate") }}
+    {% endfor %}
+  {% endcall %}
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>Blocked on someone else</h2>
+      <p class="card-sub">Gates that hold a build until a person with the named role decides. Waiting is the step, not a failure.</p>
+    </div>
+    <span class="badge {{ 'badge-pending' if waiting.blocked else 'badge-approved' }}">{{ waiting.blocked | length }} blocked</span>
+  </div>
+  {% call m.data_table([("Gate",), ("Type",), ("Waiting on",), ("Asked by",), ("Waiting since",)]) %}
+    {% for gate in waiting.blocked %}
+    <tr>
+      <td class="row-title">{{ gate.title }}<br><span class="row-sub">subject {{ gate.subject }}{% if gate.requested_by == actor.id %} · you asked for this one{% endif %}</span></td>
+      <td>{{ gate.gate_type }}</td>
+      <td>{{ gate.required_approvers | join(" or ") }}</td>
+      <td>{{ gate.requested_by }}</td>
+      <td>{{ gate.created_at | when }}</td>
+    </tr>
+    {% else %}
+    {{ m.empty_row(5, "Nothing is blocked on another role", "A gate waiting on a role you do not hold shows here.", "/console/approvals", "See every gate") }}
+    {% endfor %}
+  {% endcall %}
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>Open alerts</h2>
+      <p class="card-sub">Spend pressure, repeated failures and odd data access. Acknowledging records who read it; it does not change what happened.</p>
+    </div>
+    <span class="badge {{ 'badge-failed' if waiting.alerts else 'badge-approved' }}">{{ waiting.alerts | length }} open</span>
+  </div>
+  {% call m.data_table([("Alert",), ("Subject",), ("Raised",), ("Action",)]) %}
+    {% for alert in waiting.alerts %}
+    <tr>
+      <td class="row-title">{{ m.status_badge(alert.severity) }} {{ alert.message }}<br><span class="row-sub">{{ alert.kind }}</span></td>
+      <td>{{ alert.subject }}</td>
+      <td>{{ alert.created_at | when }}</td>
+      <td>
+        <form method="post" action="/console/alerts/{{ alert.id }}/acknowledge" class="inline-form">
+          {{ m.csrf_field() }}
+          <input type="hidden" name="back" value="/console/inbox">
+          <button type="submit" class="btn-sm">Acknowledge</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    {{ m.empty_row(4, "No open alerts", "The graders run with the build, so a regression raises one.", "/console/home", "Back to the overview") }}
+    {% endfor %}
+  {% endcall %}
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>Failed runs</h2>
+      <p class="card-sub">Runs that stopped with an error in the last week. The job page carries the full error and what the run was asked to do.</p>
+    </div>
+    <span class="badge {{ 'badge-failed' if waiting.failed else 'badge-approved' }}">{{ waiting.failed_total }} failed</span>
+  </div>
+  {% call m.data_table([("Run",), ("Kind",), ("Failed",), ("Action",)]) %}
+    {% for job in waiting.failed %}
+    <tr>
+      <td class="row-title"><a href="/console/jobs/{{ job.id }}">{{ job.title }}</a>{% if job.error %}<br><span class="row-sub">{{ job.error.strip().split("\n")[0] }}</span>{% endif %}</td>
+      <td>{{ job.kind }}</td>
+      <td>{{ job.finished_at | when }}</td>
+      <td><a class="button btn-sm" href="/console/jobs/{{ job.id }}">Open</a></td>
+    </tr>
+    {% else %}
+    {{ m.empty_row(4, "No recent failures", "A run that stops with an error lands here with its message.", "/console/jobs", "See all jobs") }}
+    {% endfor %}
+  {% endcall %}
+  {% if waiting.failed_total > waiting.failed | length or waiting.older_failures %}
+  <p class="muted small">
+    {% if waiting.failed_total > waiting.failed | length %}{{ waiting.failed | length }} of {{ waiting.failed_total }} this week shown.{% endif %}
+    {% if waiting.older_failures %}{{ waiting.older_failures }} older failure{{ "s" if waiting.older_failures != 1 }} stay on <a href="/console/jobs?state=failed">Jobs</a>.{% endif %}
+  </p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

@@ -18,6 +18,7 @@ from internal_ai.api import create_app
 TEMPLATES = Path(__file__).resolve().parents[1] / "src" / "internal_ai" / "console" / "templates"
 PAGES = [
     "/console/home",
+    "/console/inbox",
     "/console/approvals",
     "/console/sources",
     "/console/datasets",

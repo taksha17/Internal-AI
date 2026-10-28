@@ -14,8 +14,8 @@
 {{ m.sprite() }}
 {% if actor %}<a class="skip" href="#main">Skip to content</a>{% endif %}
 {% if actor %}
-{% set nav_icons = {"Home": "home", "Approvals": "check-circle", "Data": "database", "Datasets": "layers", "Eval sets": "clipboard", "Models": "cube", "Jobs": "activity", "Ask": "chat", "Plan": "map", "Audit": "list", "Admin": "users"} %}
-{% set nav_groups = {"Workspace": ["Home", "Data", "Datasets", "Eval sets", "Models"], "Runs": ["Jobs", "Ask", "Plan"], "Governance": ["Approvals", "Audit", "Admin"]} %}
+{% set nav_icons = {"Home": "home", "Inbox": "inbox", "Approvals": "check-circle", "Data": "database", "Datasets": "layers", "Eval sets": "clipboard", "Models": "cube", "Jobs": "activity", "Ask": "chat", "Plan": "map", "Audit": "list", "Admin": "users"} %}
+{% set nav_groups = {"Workspace": ["Home", "Data", "Datasets", "Eval sets", "Models"], "Runs": ["Jobs", "Ask", "Plan"], "Governance": ["Inbox", "Approvals", "Audit", "Admin"]} %}
 {% set nav_by_label = dict(nav) %}
 <aside class="rail">
   <a class="brand" href="/console/home">
@@ -29,7 +29,7 @@
       {% for label in labels %}
       {% set href = nav_by_label[label] %}
       {% set here = path.startswith(href) %}
-      <a href="{{ href }}" class="{{ 'active' if here else '' }}"{% if here %} aria-current="page"{% endif %}>{{ m.icon(nav_icons.get(label, "home")) }}<span class="nav-label">{{ label }}</span>{% if label == "Approvals" and inbox %}<span class="count">{{ inbox }}</span>{% endif %}</a>
+      <a href="{{ href }}" class="{{ 'active' if here else '' }}"{% if here %} aria-current="page"{% endif %}>{{ m.icon(nav_icons.get(label, "home")) }}<span class="nav-label">{{ label }}</span>{% if label == "Inbox" and attention %}<span class="count">{{ attention }}</span>{% endif %}</a>
       {% endfor %}
     </div>
     {% endfor %}

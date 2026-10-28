@@ -239,6 +239,27 @@ thing to move into SQL when any of them outgrows a page. Search scans the most
 recent 200 jobs. There are no saved views, and the command palette stays out
 until there is a reason to add a client script.
 
+## What landed (Inbox)
+
+- `console/inbox.py` is the one collector. `Waiting` holds the gates this person
+  may decide, the gates blocked on another role, unacknowledged alerts, and the
+  failed runs of the last week. The rail badge and `/console/inbox` read it, so
+  they count the same thing: `len(yours) + len(alerts) + failed_total`.
+- `/console/inbox` has one card per kind, each with its own count and an empty
+  state that names the next step. A gate you may decide links to
+  `/console/approvals#gate-<id>`, and `gate_box` now carries that id, so the
+  review lands on the gate rather than the top of the list. Acknowledging an
+  alert posts `back=/console/inbox` and returns there.
+- The rail gains `Inbox` above `Approvals`, with the count. Approvals keeps no
+  count of its own; Home's "Needs attention" card links into the inbox.
+- A failure older than seven days is not counted and not listed, because nobody
+  can clear it; the card says how many older failures stay on Jobs, which gained
+  a state filter in Phase 2 for exactly this link.
+- Guarded by `tests/test_console_inbox.py`: a gate is theirs or someone else's by
+  role, a requester never sees their own gate as decidable, a person without the
+  role gets the refusal rather than a decision form, the badge equals the three
+  cards, acknowledging returns to the inbox, and a month-old failure stays out.
+
 ## Open
 
 - Density default: operator-dense as above, or keep the previous airiness and
