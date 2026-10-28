@@ -1417,6 +1417,17 @@ def mount_console(
         ),
     )
     dataset_action(
+        "dedup",
+        lambda ctx, dataset_id, form: build.drop_duplicate_copies(
+            ctx.platform, ctx.actor, dataset_id
+        ),
+        lambda created: (
+            f"version {created.version} keeps {created.record_count} records; "
+            "the previous version was not changed and still needs its own release"
+        ),
+        lambda created: f"/console/datasets/{created.id}",
+    )
+    dataset_action(
         "release",
         lambda ctx, dataset_id, form: build.release_dataset(ctx.platform, ctx.actor, dataset_id),
         "dataset released; it is now immutable",

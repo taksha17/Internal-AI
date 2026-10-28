@@ -155,6 +155,42 @@ def deduplicate(
     return kept, stats
 
 
+def duplicate_report(
+    records: list[Record],
+    threshold: int = 12,
+    jaccard_threshold: float = 0.8,
+    residual_max: float = 0.01,
+) -> dict[str, Any]:
+    """Count exact copies and the near-duplicate residual the release gate uses.
+
+    Exact groups always fail a release. Near copies are the same SimHash pass
+    ``deduplicate`` already runs, and they fail only above ``residual_max``.
+    """
+    seen: dict[str, str] = {}
+    grouped: set[str] = set()
+    groups = 0
+    pairs: list[list[str]] = []
+    for record in records:
+        digest = record.fingerprint()
+        prior = seen.get(digest)
+        if prior is None:
+            seen[digest] = record.record_key
+            continue
+        if digest not in grouped:
+            groups += 1
+            grouped.add(digest)
+        if len(pairs) < 5:
+            pairs.append([prior, record.record_key])
+    _, stats = deduplicate(records, threshold=threshold, jaccard_threshold=jaccard_threshold)
+    return {
+        "exact_duplicate_groups": groups,
+        "near_duplicate_pairs": stats["near_duplicates_removed"],
+        "residual_rate": stats["duplicate_rate"],
+        "pairs": pairs,
+        "residual_max": residual_max,
+    }
+
+
 # ----------------------------------------------------------------------- scrub
 
 PII_PATTERNS: dict[str, re.Pattern[str]] = {

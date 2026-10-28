@@ -12,6 +12,7 @@ from internal_ai.audit import AuditLog
 from internal_ai.data.records import EXCLUDED_SENSITIVITY, Record, Source, ingest_source
 from internal_ai.data.transforms import (
     deduplicate,
+    duplicate_report,
     filter_quality,
     normalize,
     scrub_pii,
@@ -29,6 +30,7 @@ class PipelineConfig:
     max_chars: int = 200_000
     dedup_threshold: int = 12
     dedup_jaccard: float = 0.8
+    dedup_residual_max: float = 0.01
     allowed_languages: tuple[str, ...] = ("en",)
     excluded_sensitivity: tuple[str, ...] = EXCLUDED_SENSITIVITY
     min_alpha_ratio: float = 0.55
@@ -44,6 +46,7 @@ class PipelineConfig:
             "max_chars": self.max_chars,
             "dedup_threshold": self.dedup_threshold,
             "dedup_jaccard": self.dedup_jaccard,
+            "dedup_residual_max": self.dedup_residual_max,
             "allowed_languages": list(self.allowed_languages),
             "excluded_sensitivity": list(self.excluded_sensitivity),
             "min_alpha_ratio": self.min_alpha_ratio,
@@ -371,6 +374,120 @@ class DataPipeline:
         )
         return result.to_dict()
 
+    def _dataset_records(self, dataset_id: str) -> list[Record]:
+        return [
+            Record(
+                id=row["id"],
+                record_key=row["record_key"],
+                text=row["payload"],
+                source_id=row["source_id"],
+                sensitivity=row["sensitivity"],
+                acl=row["acl"],
+                tokens=row["tokens"],
+                meta=row["meta"],
+            )
+            for row in self.store.dataset_records(dataset_id)
+        ]
+
+    def _store_stats(self, dataset_id: str, key: str, value: dict[str, Any]) -> None:
+        dataset = self.store.get_dataset(dataset_id)
+        if dataset is None:
+            return
+        stats = dict(dataset.stats)
+        stats[key] = value
+        for name in (
+            "exact_duplicate_groups",
+            "near_duplicate_pairs",
+            "residual_rate",
+        ):
+            if name in value:
+                stats[name] = value[name]
+        self.store.conn.execute(
+            "UPDATE datasets SET stats = ? WHERE id = ?",
+            (json.dumps(stats, sort_keys=True, default=str), dataset_id),
+        )
+
+    def _duplicate_gate(self, dataset: DatasetVersion) -> dict[str, Any]:
+        config = dataset.lineage.get("config", {})
+        report = duplicate_report(
+            self._dataset_records(dataset.id),
+            threshold=int(config.get("dedup_threshold", 12)),
+            jaccard_threshold=float(config.get("dedup_jaccard", 0.8)),
+            residual_max=float(config.get("dedup_residual_max", 0.01)),
+        )
+        self._store_stats(dataset.id, "duplicate_gate", report)
+        return report
+
+    def drop_duplicate_copies(self, dataset_id: str, actor: str) -> DatasetVersion:
+        """A new version with exact and near copies removed. The source version stays."""
+        dataset = self.store.get_dataset(dataset_id)
+        if dataset is None:
+            raise KeyError(f"unknown dataset: {dataset_id}")
+        records = self._dataset_records(dataset_id)
+        config = dataset.lineage.get("config", {})
+        kept, stats = deduplicate(
+            records,
+            threshold=int(config.get("dedup_threshold", 12)),
+            jaccard_threshold=float(config.get("dedup_jaccard", 0.8)),
+        )
+        if len(kept) == len(records):
+            raise ValueError("no duplicate copies to drop")
+        fresh = [
+            Record(
+                id=new_id("rec"),
+                record_key=record.record_key,
+                text=record.text,
+                source_id=record.source_id,
+                sensitivity=record.sensitivity,
+                acl=list(record.acl),
+                tokens=record.tokens,
+                meta=dict(record.meta),
+            )
+            for record in kept
+        ]
+        lineage = dict(dataset.lineage)
+        steps = list(lineage.get("steps", []))
+        steps.append({"step": "deduplicate", **stats})
+        lineage["steps"] = steps
+        lineage["parent"] = dataset.id
+        created = DatasetVersion(
+            id=new_id("ds"),
+            name=dataset.name,
+            version=dataset.version + 1,
+            content_hash=content_hash(
+                {"parent": dataset.id, "records": sorted(item.fingerprint() for item in fresh)}
+            ),
+            record_count=len(fresh),
+            token_count=sum(item.tokens for item in fresh),
+            created_at=now_iso(),
+            lineage=lineage,
+            stats={
+                "steps": steps,
+                "token_count_kind": dataset.stats.get("token_count_kind", "estimate"),
+                "exact_duplicate_groups": stats["exact_duplicates_removed"],
+                "near_duplicate_pairs": stats["near_duplicates_removed"],
+                "residual_rate": stats["duplicate_rate"],
+            },
+            released=False,
+            parent_version=dataset.id,
+        )
+        before = self.store.get_dataset(dataset_id)
+        self.store.add_dataset(created)
+        self.store.add_dataset_records(created.id, [item.to_row() for item in fresh])
+        after = self.store.get_dataset(dataset_id)
+        if before is None or after is None or before.released != after.released:
+            raise RuntimeError("dropping copies changed the source version")
+        if after.record_count != before.record_count:
+            raise RuntimeError("dropping copies changed the source version")
+        self.audit.record(
+            actor=actor,
+            actor_kind="human",
+            action="dataset.duplicates_dropped",
+            subject=created.id,
+            details={"parent": dataset.id, "records": created.record_count, **stats},
+        )
+        return created
+
     def _exclusion_audit(self, dataset_id: str, actor: str) -> dict[str, Any]:
         from internal_ai.data.governance import exclusion_audit
 
@@ -422,6 +539,17 @@ class DataPipeline:
         dataset = self.store.get_dataset(dataset_id)
         if dataset is None:
             raise KeyError(f"unknown dataset: {dataset_id}")
+        duplicates = self._duplicate_gate(dataset)
+        if duplicates["exact_duplicate_groups"]:
+            shown = "; ".join(f"{left} = {right}" for left, right in duplicates["pairs"])
+            raise PermissionError(
+                f"{duplicates['exact_duplicate_groups']} exact duplicate groups; {shown}"
+            )
+        if duplicates["residual_rate"] > duplicates["residual_max"]:
+            raise PermissionError(
+                "near-duplicate residual "
+                f"{duplicates['residual_rate']} is above {duplicates['residual_max']}"
+            )
         exclusion = self._exclusion_audit(dataset_id, actor)
         if not exclusion["passed"]:
             named = sorted(
