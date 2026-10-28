@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 WORD_PATTERN = re.compile(r"\w+|[^\w\s]", re.UNICODE)
+PIECE_PATTERN = re.compile(r"\s+|\w+|[^\w\s]", re.UNICODE)
 
 SPECIAL_TOKENS = ("<pad>", "<unk>", "<bos>", "<eos>")
 
@@ -35,9 +36,11 @@ class Tokenizer:
     def encode(self, text: str, max_tokens: int | None = None) -> list[int]:
         unk = self.vocab.get("<unk>", 0)
         tokens: list[int] = []
-        for word in WORD_PATTERN.findall(text):
-            symbols = self._encode_word(word)
-            tokens.extend(self.vocab.get(symbol, unk) for symbol in symbols)
+        for piece in PIECE_PATTERN.findall(text):
+            if piece.isspace():
+                tokens.extend(self.vocab.get(char, unk) for char in piece)
+            else:
+                tokens.extend(self.vocab.get(symbol, unk) for symbol in self._encode_word(piece))
             if max_tokens is not None and len(tokens) >= max_tokens:
                 return tokens[:max_tokens]
         return tokens
@@ -65,9 +68,8 @@ class Tokenizer:
 
     def decode(self, ids: list[int]) -> str:
         inverse = {index: token for token, index in self.vocab.items()}
-        pieces = [inverse.get(item, "<unk>") for item in ids]
-        text = " ".join(pieces)
-        return re.sub(r"\s+([.,!?;:)\]}])", r"\1", text)
+        hidden = {"<pad>", "<bos>", "<eos>"}
+        return "".join(token for item in ids if (token := inverse.get(item, "<unk>")) not in hidden)
 
     def save(self, path: Path) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -132,6 +134,10 @@ def train_tokenizer(
     for char, _count in sorted(char_counts.items(), key=lambda item: (-item[1], item[0])):
         if char not in vocab:
             vocab[char] = len(vocab)
+    for text in texts:
+        for char in text:
+            if char.isspace() and char not in vocab:
+                vocab[char] = len(vocab)
 
     words: list[tuple[str, ...]] = []
     freqs: list[int] = []

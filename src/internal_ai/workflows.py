@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -129,7 +130,13 @@ def train_tokenizer_for(
         by_source.setdefault(row["source_id"], []).append(row["payload"])
     coverage = coverage_report(tokenizer, by_source, jargon=jargon)
     path = platform.settings.models_dir / f"tokenizer-{dataset_id}.json"
+    digest_path = path.with_suffix(".sha256")
+    if digest_path.is_file():
+        raise PermissionError(
+            f"tokenizer for {dataset_id} is frozen; train it on a new dataset version"
+        )
     tokenizer.save(path)
+    digest_path.write_text(hashlib.sha256(path.read_bytes()).hexdigest() + "\n", encoding="utf-8")
     coverage["tokenizer_path"] = str(path)
     coverage["dataset_id"] = dataset_id
     coverage["trained_on_split"] = "train"
@@ -170,6 +177,18 @@ def _encoder_parameters(path: Path) -> int:
 
     payload = torch.load(path, weights_only=True, map_location="cpu")
     return sum(int(tensor.numel()) for tensor in payload["model_state"].values())
+
+
+def require_frozen_tokenizer(path: Path) -> str:
+    """The sha256 written beside the tokenizer. A changed file is not the one that was trained."""
+    sidecar = path.with_suffix(".sha256")
+    if not path.is_file() or not sidecar.is_file():
+        raise PermissionError(f"tokenizer {path.name} is not frozen")
+    expected = sidecar.read_text(encoding="utf-8").strip()
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    if actual != expected:
+        raise PermissionError(f"tokenizer {path.name} hash does not match the freeze")
+    return actual
 
 
 def require_token_budget(platform: Platform, dataset: Any, actor: str, parameters: int) -> None:
@@ -252,6 +271,9 @@ def train_embedding_model(
     dataset = require_released_dataset(platform.store.get_dataset(dataset_id))
     train_config = config or TrainConfig()
     require_token_budget(platform, dataset, actor, _embedding_parameters(train_config, tokenizer))
+    if not train_config.vocab_rationale.strip():
+        raise PermissionError("say why this vocabulary size was chosen")
+    require_frozen_tokenizer(platform.settings.models_dir / f"tokenizer-{dataset_id}.json")
     trainer = Trainer(
         platform.store,
         platform.audit,

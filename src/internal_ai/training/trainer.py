@@ -67,6 +67,7 @@ class TrainConfig:
     d_ff: int = 512
     dropout: float = 0.1
     max_seq_len: int = 256
+    vocab_rationale: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

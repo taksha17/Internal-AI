@@ -19,6 +19,7 @@
   <label>Cost cap (USD) <input type="number" name="cost_cap_usd" value="2" min="0.01" step="0.01">
     <span class="muted small">Above ${{ "%.0f" % cost_gate_usd }} the run needs an approved <a href="/console/gates/new?gate_type=training_run_above_threshold">training cost gate</a> with subject <code>dataset_id:model_name</code>. The run is refused if any budget has less left than this cap.</span></label>
   <label>Training pairs <select name="pair_mode"><option value="paraphrase">paraphrase</option><option value="title">title</option></select></label>
+  <label>Why this vocabulary size <input type="text" name="vocab_rationale" required maxlength="300" placeholder="600 tokens covers the ticket jargon"></label>
   <button type="submit" class="primary">Start training</button>
   {% else %}
   <p class="muted">Release a dataset first.</p>

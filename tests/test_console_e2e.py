@@ -141,6 +141,7 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
             name="tickets-embed",
             steps="80",
             cost_cap_usd="1",
+            vocab_rationale="600 tokens covers the ticket jargon in this sample",
         )
         assert "succeeded" in page
         run = app.state.jobs.list(kind="train_model")[0]
