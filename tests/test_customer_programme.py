@@ -130,3 +130,26 @@ def test_feedback_closes_the_loop(platform) -> None:
         )
     )
     assert _by_name(platform)["The loop"]["done"] is True
+
+
+def test_the_board_prints_hours_and_leaves_a_large_size_waiting(platform) -> None:
+    from internal_ai.compute.advise import advise_dataset
+
+    platform.store.add_dataset(
+        DatasetVersion(
+            id="ds_hours",
+            name="corpus",
+            version=1,
+            content_hash="abc",
+            record_count=1,
+            token_count=200_000_000,
+            created_at=now_iso(),
+            stats={"token_count_kind": "measured"},
+        )
+    )
+    advise_dataset(platform, "ds_hours")
+    stage = _by_name(platform)["Compute"]
+    assert stage["done"] is True
+    text = " ".join(stage["lines"])
+    assert "small" in text and "runnable" in text
+    assert "7b" in text and "waiting" in text
