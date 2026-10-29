@@ -574,6 +574,13 @@ def promote_model(
             "the newest report was judged by the person who built or is approving this model; "
             "a different ml_lead has to run that evaluation"
         )
+    if report.checks.get("safety", {}).get("passed") is False:
+        raise PermissionError("the safety probe failed; this model cannot be promoted")
+    drop = report.checks.get("recall_drop")
+    if isinstance(drop, int | float) and drop > 0.05:
+        raise PermissionError(
+            "the supervised run dropped recall@10 by more than 0.05 against the previous candidate"
+        )
     model.card["eval_results"] = report.metrics
     model.card["baseline_metrics"] = report.baseline_metrics
     model.card["eval_report_id"] = report.id
