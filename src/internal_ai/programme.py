@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from internal_ai.brief import programme_gaps
@@ -30,6 +31,7 @@ def customer_stages(platform: Platform) -> list[dict[str, Any]]:
             "/console/jobs",
             _compute_known(platform),
             "record what this corpus needs",
+            _compute_lines(platform),
         ),
         _stage(
             4,
@@ -97,13 +99,21 @@ def customer_stages(platform: Platform) -> list[dict[str, Any]]:
     ]
 
 
-def _stage(number: int, name: str, href: str, done: bool, waiting: str) -> dict[str, Any]:
+def _stage(
+    number: int,
+    name: str,
+    href: str,
+    done: bool,
+    waiting: str,
+    lines: list[str] | None = None,
+) -> dict[str, Any]:
     return {
         "n": number,
         "name": name,
         "href": href,
         "done": done,
         "waiting": "" if done else waiting,
+        "lines": lines or [],
     }
 
 
@@ -115,6 +125,22 @@ def _legal_cleared(platform: Platform) -> bool:
         item.get("legal_status") in allowed and item.get("gate_status") == "approved"
         for item in list_sources(platform)
     )
+
+
+def _compute_lines(platform: Platform) -> list[str]:
+    """Hours for every advised size. A size that cannot run here stays on the row."""
+    stored = platform.store.conn.execute(
+        "SELECT value FROM kv WHERE key LIKE 'compute_advice:%' ORDER BY key"
+    ).fetchall()
+    lines: list[str] = []
+    for row in stored:
+        advice = json.loads(row["value"])
+        for size in advice.get("sizes", []):
+            state = "runnable" if size.get("runnable") else "waiting"
+            lines.append(
+                f"{size['size']} {size['planning_gpu_hours']} GPU-hours {size['machine']} {state}"
+            )
+    return lines
 
 
 def _compute_known(platform: Platform) -> bool:
