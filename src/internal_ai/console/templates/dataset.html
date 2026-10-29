@@ -44,6 +44,16 @@
     </li>
     <li class="{{ 'done' if dataset.released else '' }}">Release, after a PII audit and a dataset_release gate.
       {% if view.release_gate %}{{ m.gate_box(release_gate) }}{% endif %}
+      {% if language_sample and not dataset.released %}
+      <form method="post" action="/console/datasets/{{ dataset.id }}/language-review">{{ m.csrf_field() }}
+        {% for row in language_sample %}
+        <label>{{ row.record_key }}
+          <select name="mark_{{ row.id }}"><option value="correct">correct</option><option value="wrong">wrong</option></select>
+        </label>
+        {% endfor %}
+        <button type="submit">Save language review</button>
+      </form>
+      {% endif %}
       {% if view.has_splits and not dataset.released and can("release_dataset") %}
         {% if not view.release_gate or view.release_gate.status == "rejected" %}
         <form method="post" action="/console/datasets/{{ dataset.id }}/request-release" class="inline-form">{{ m.csrf_field() }}<button type="submit">Run PII audit and request release</button></form>

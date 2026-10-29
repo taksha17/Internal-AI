@@ -94,6 +94,9 @@ def test_release_refuses_an_excluded_class_and_records_a_clean_sample(platform) 
         "UPDATE dataset_records SET sensitivity = ? WHERE dataset_id = ? AND record_key = ?",
         ("internal", built.dataset_id, row["record_key"]),
     )
+    from internal_ai.data.language import accept_language_sample
+
+    accept_language_sample(platform.store, built.dataset_id)
     released = pipeline.release(built.dataset_id, "ml_lead", gate_approved=True)
     audit = released.stats["exclusion_audit"]
     assert audit["passed"] is True

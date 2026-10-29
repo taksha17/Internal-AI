@@ -65,6 +65,9 @@ def test_a_corpus_under_the_residual_cap_records_the_counts(platform) -> None:
         "UPDATE dataset_records SET payload = ? WHERE id = ?",
         (rows[0]["payload"] + "z", rows[1]["id"]),
     )
+    from internal_ai.data.language import accept_language_sample
+
+    accept_language_sample(platform.store, dataset_id)
     pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
     released = pipeline.release(dataset_id, "ml_lead", gate_approved=True)
     assert released.stats["exact_duplicate_groups"] == 0

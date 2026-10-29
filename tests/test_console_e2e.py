@@ -114,6 +114,12 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
         dana.post(f"/console/datasets/{dataset_id}/request-release")
         approve(platform, mo, GateType.DATASET_RELEASE, dataset_id)
         approve(platform, cora, GateType.DATASET_RELEASE, dataset_id)
+        from internal_ai.data.language import language_sample
+
+        marks = {
+            f"mark_{row['id']}": "correct" for row in language_sample(platform.store, dataset_id)
+        }
+        dex.post(f"/console/datasets/{dataset_id}/language-review", **marks)
         dana.post(f"/console/datasets/{dataset_id}/release")
         assert platform.store.get_dataset(dataset_id).released
 
