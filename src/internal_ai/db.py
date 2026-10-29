@@ -243,6 +243,15 @@ CREATE TABLE IF NOT EXISTS kv (
     value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS evidence (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    body TEXT NOT NULL,
+    signed_by TEXT NOT NULL,
+    signed_at TEXT NOT NULL,
+    subject TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS project_brief (
     id TEXT PRIMARY KEY,
     payload TEXT NOT NULL,
