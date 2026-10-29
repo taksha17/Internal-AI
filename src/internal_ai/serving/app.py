@@ -296,18 +296,41 @@ def create_serving_app(
                 )
 
             guardrail_violations = validate_output_guardrails(result.text)
+            try:
+                policy = guardrail_policy(model.config)
+            except ValueError as exc:
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+            details = {
+                "hits": len(hits),
+                "citation_passed": result.passed,
+                "model": result.model,
+                "guardrail_policy": policy,
+                "guardrail_violations": guardrail_violations,
+            }
+            if policy == GUARDRAIL_REFUSE and guardrail_violations:
+                log_request(
+                    get_platform().audit,
+                    principal,
+                    "/v1/answer",
+                    422,
+                    latency,
+                    details,
+                    question=request.question,
+                )
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "error": "answer withheld by guardrail policy",
+                        "violations": guardrail_violations,
+                    },
+                )
             log_request(
                 get_platform().audit,
                 principal,
                 "/v1/answer",
                 200,
                 latency,
-                {
-                    "hits": len(hits),
-                    "citation_passed": result.passed,
-                    "model": result.model,
-                    "guardrail_violations": guardrail_violations,
-                },
+                details,
                 question=request.question,
             )
             return {
@@ -320,6 +343,25 @@ def create_serving_app(
             }
 
     return app
+
+
+GUARDRAIL_WARN = "warn"
+GUARDRAIL_REFUSE = "refuse"
+GUARDRAIL_POLICIES = (GUARDRAIL_WARN, GUARDRAIL_REFUSE)
+
+
+def guardrail_policy(config: dict[str, Any]) -> str:
+    """What a model does with flagged text: warn and return it, or refuse it.
+
+    An unset policy warns, which is the behaviour before this choice existed. An
+    unrecognised policy fails closed instead of quietly falling back to warning.
+    """
+    policy = str(config.get("guardrail_policy", GUARDRAIL_WARN))
+    if policy not in GUARDRAIL_POLICIES:
+        raise ValueError(
+            f"unknown guardrail_policy {policy!r}; use one of {', '.join(GUARDRAIL_POLICIES)}"
+        )
+    return policy
 
 
 _GUARDRAIL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
