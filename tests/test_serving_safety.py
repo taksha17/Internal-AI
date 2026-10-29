@@ -50,6 +50,7 @@ def add_report(
     *,
     passed: bool,
     eval_set_id: str = "evs_held_out",
+    checks: dict | None = None,
 ) -> None:
     platform.store.add_eval_report(
         EvalReport(
@@ -59,6 +60,7 @@ def add_report(
             created_at=created_at,
             metrics={"recall_at_10": recall},
             baseline_metrics={"recall_at_10": 0.375},
+            checks=checks or {},
             passed=passed,
         )
     )
@@ -129,6 +131,46 @@ def test_a_report_on_an_unfrozen_set_is_not_evidence(platform) -> None:
     assert out_of_service(platform.store, platform.store.get_model("mdl_open")) is None
 
 
+def test_a_legacy_permission_note_keeps_a_passing_model_out_of_service(platform) -> None:
+    from internal_ai.serving.service import LEGACY_PERMISSION_NOTE
+
+    add_frozen_set(platform)
+    add_model(platform, "mdl_legacy", 1)
+    add_report(
+        platform,
+        "mdl_legacy",
+        "2026-01-02T00:00:00+00:00",
+        0.61,
+        passed=True,
+        checks={"permission_leak": {"passed": True, "note": LEGACY_PERMISSION_NOTE}},
+    )
+
+    assert out_of_service(platform.store, platform.store.get_model("mdl_legacy")) is not None
+    assert served_model(platform.store, ModelRouter(platform.store, platform.audit)) is None
+
+
+def test_a_passing_report_is_served_and_marked_active(tmp_path: Path) -> None:
+    from internal_ai.serving.app import create_serving_app
+
+    platform = Platform.create(root=tmp_path)
+    add_frozen_set(platform)
+    add_model(platform, "mdl_ok", 1)
+    add_report(platform, "mdl_ok", "2026-01-02T00:00:00+00:00", 0.61, passed=True)
+    platform.close()
+    app = create_serving_app(
+        root=tmp_path,
+        principals={
+            "k": Principal(user_id="alice", groups=frozenset({"engineering"}), api_key="k")
+        },
+    )
+    with TestClient(app) as client:
+        response = client.get("/v1/models", headers={"X-Internal-Key": "k"})
+
+    body = response.json()
+    assert body[0]["id"] == "mdl_ok"
+    assert body[0]["active"] is True
+
+
 def test_the_search_endpoint_says_why_nothing_is_in_service(tmp_path: Path) -> None:
     from internal_ai.serving.app import create_serving_app
 
@@ -149,7 +191,7 @@ def test_the_search_endpoint_says_why_nothing_is_in_service(tmp_path: Path) -> N
             "/v1/search", json={"query": "how do I reset my vpn"}, headers={"X-Internal-Key": "k"}
         )
 
-    assert response.status_code == 503
+    assert response.status_code == 409
     detail = response.json()["detail"]
-    assert detail["error"] == "no model is in service"
+    assert detail["error"] == "no model has a passing frozen report"
     assert "mdl_failed" in " ".join(detail["reasons"])

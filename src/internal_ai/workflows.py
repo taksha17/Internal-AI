@@ -469,6 +469,24 @@ def promote_model(
     return platform.store.get_model(model_id)
 
 
+def demote_model(platform: Platform, model_id: str, actor: str) -> ModelVersion:
+    """Return a promoted model to candidate. The weights stay on disk."""
+    model = platform.store.get_model(model_id)
+    if model is None:
+        raise KeyError(f"unknown model: {model_id}")
+    if model.status != "promoted":
+        raise ValueError(f"{model_id} is {model.status}, not promoted")
+    platform.store.set_model_status(model_id, "candidate")
+    platform.audit.record(
+        actor=actor,
+        actor_kind="human",
+        action="model.demoted",
+        subject=model_id,
+        details={"path": model.path},
+    )
+    return platform.store.get_model(model_id)
+
+
 def latest_frozen_pass(platform: Platform, model_id: str) -> Any:
     """The newest report counts only when it passed on a set that is still frozen.
 

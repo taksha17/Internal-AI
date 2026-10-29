@@ -134,6 +134,10 @@
   <p class="callout"><strong>Out of service.</strong> {{ row.service }}. Requests are answered by another version, or refused while none qualifies.</p>
   {% endif %}
   {% if row.report %}
+  {% if row.report.metrics.recall_at_10 is defined %}
+  <p>recall@10 {{ "%.3f" % row.report.metrics.recall_at_10 }} against a keyword baseline of {{ "%.3f" % row.report.baseline_metrics.get("recall_at_10", 0) }}.</p>
+  {% endif %}
+  {% if row.legacy_permission %}<p class="callout">The permission check on the newest report is the legacy note, not a probe.</p>{% endif %}
   <p>Latest evaluation {{ m.status_badge("passed" if row.report.passed else "failed") }} on {{ row.report.eval_set_id }}:
     {% for key, value in row.report.metrics | dictsort %}{{ key }} {{ "%.3f" % value }} (baseline {{ "%.3f" % (row.report.baseline_metrics.get(key, 0)) }}) · {% endfor %}</p>
     {% if row.report.notes %}<p class="muted">{{ row.report.notes }}</p>{% endif %}

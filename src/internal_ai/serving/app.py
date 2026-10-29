@@ -111,8 +111,8 @@ def create_serving_app(
         ]
         if reasons:
             raise HTTPException(
-                status_code=503,
-                detail={"error": "no model is in service", "reasons": reasons},
+                status_code=409,
+                detail={"error": "no model has a passing frozen report", "reasons": reasons},
             )
         raise HTTPException(status_code=404, detail="no embedding model is registered")
 
