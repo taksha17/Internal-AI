@@ -1620,6 +1620,11 @@ def mount_console(
                         dataset.token_count if dataset else 0,
                     ),
                     "service": out_of_service(platform.store, model),
+                    "legacy_permission": bool(
+                        report
+                        and (report.checks.get("permission_leak") or {}).get("note")
+                        == "permission enforcement is verified by the retrieval service tests"
+                    ),
                     "builder": str(model.card.get("registered_by") or ""),
                     "judge": report.judged_by if report else "",
                     "self_judging": bool(report and report.judged_by)

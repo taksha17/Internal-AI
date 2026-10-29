@@ -120,6 +120,9 @@ class RetrievalHit:
     source_id: str = ""
 
 
+LEGACY_PERMISSION_NOTE = "permission enforcement is verified by the retrieval service tests"
+
+
 def out_of_service(store: Store, model: ModelVersion) -> str | None:
     """Why a model must not answer a request, or ``None`` when it may.
 
@@ -136,6 +139,12 @@ def out_of_service(store: Store, model: ModelVersion) -> str | None:
     eval_set = store.get_eval_set(newest.eval_set_id)
     if eval_set is None or not eval_set.frozen:
         return None
+    leak = newest.checks.get("permission_leak") or {}
+    if leak.get("note") == LEGACY_PERMISSION_NOTE:
+        return (
+            f"{model.id}'s newest report still carries the legacy permission note "
+            "and is not evidence"
+        )
     if newest.passed:
         return None
     recall = newest.metrics.get("recall_at_10")

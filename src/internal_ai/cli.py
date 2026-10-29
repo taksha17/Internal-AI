@@ -1014,6 +1014,21 @@ def cmd_model_promote(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_models_demote(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.workflows import demote_model
+
+        actor = _actor(platform, args, args.by, "ml_lead")
+        require(platform.audit, actor, Action.PROMOTE_MODEL, args.id)
+        try:
+            model = demote_model(platform, args.id, actor.id)
+        except (PermissionError, KeyError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        _print({"model_id": model.id, "status": model.status, "path": model.path})
+    return 0
+
+
 def cmd_model_card(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.workflows import model_card_markdown
@@ -1370,6 +1385,12 @@ def build_parser() -> argparse.ArgumentParser:
     model_card = model_sub.add_parser("card")
     model_card.add_argument("--id", required=True)
     model_card.set_defaults(func=cmd_model_card)
+    models = sub.add_parser("models", help="serving decisions for registered models")
+    models_sub = models.add_subparsers(dest="models_command", required=True)
+    models_demote = models_sub.add_parser("demote")
+    models_demote.add_argument("id")
+    models_demote.add_argument("--by", default=None)
+    models_demote.set_defaults(func=cmd_models_demote)
 
     return parser
 
