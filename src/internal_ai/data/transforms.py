@@ -420,7 +420,7 @@ def filter_quality(
         if allowed_languages and language not in allowed_languages:
             reasons["language_filtered"] += 1
             continue
-        record.meta["language"] = language
+        record.meta["language"] = language if language in {"en", "unknown"} else "other"
         kept.append(record)
     stats = {
         "input": len(records),

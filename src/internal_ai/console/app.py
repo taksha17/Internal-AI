@@ -303,6 +303,12 @@ def loss_points(path: str) -> Markup:
     return Markup(markup)
 
 
+def _language_sample(store: Any, dataset_id: str) -> list[dict[str, Any]]:
+    from internal_ai.data.language import language_sample
+
+    return language_sample(store, dataset_id)
+
+
 def mount_console(
     app: FastAPI,
     get_platform: Callable[[], Platform],
@@ -1417,6 +1423,7 @@ def mount_console(
             view=view,
             release_gate=gate_view(ctx.platform, ctx.actor, release_gate) if release_gate else None,
             tokenizer=build.tokenizer_path(ctx.platform, dataset_id),
+            language_sample=_language_sample(ctx.platform.store, dataset_id),
             jobs=[
                 job
                 for job in get_jobs().list(limit=50)
@@ -1480,6 +1487,19 @@ def mount_console(
         lambda ctx, dataset_id, form: build.release_dataset(ctx.platform, ctx.actor, dataset_id),
         "dataset released; it is now immutable",
     )
+
+    def _save_language_review(ctx: Ctx, dataset_id: str, form: dict[str, str]) -> str:
+        from internal_ai.data.language import submit_language_review
+
+        marks = {
+            key.removeprefix("mark_"): value
+            for key, value in form.items()
+            if key.startswith("mark_")
+        }
+        review = submit_language_review(ctx.platform.store, ctx.actor, dataset_id, marks)
+        return f"language review saved, {review['wrong']} of {review['sampled']} wrong"
+
+    dataset_action("language-review", _save_language_review, lambda text: text)
     dataset_action(
         "tokenizer",
         lambda ctx, dataset_id, form: build.train_tokenizer(

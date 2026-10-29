@@ -20,7 +20,10 @@ def test_release_records_lineage_and_trace_fails_without_a_commit(platform) -> N
     path = platform.settings.root / "data" / "lineage.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     generate_corpus(path, records=6, duplicate_ratio=0, pii_ratio=0, seed=5)
+    from internal_ai.data.language import accept_language_sample
+
     dataset_id = build_corpus(platform, [path], name="lineage").dataset_id
+    accept_language_sample(platform.store, dataset_id)
     released = DataPipeline(platform.store, platform.audit, platform.settings.root).release(
         dataset_id, "ml_lead", gate_approved=True
     )

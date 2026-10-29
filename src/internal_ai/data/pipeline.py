@@ -611,6 +611,9 @@ class DataPipeline:
                 f"release audit found {len(planted)} record(s) carrying instructions "
                 f"({names}); a corpus is data, not a command channel"
             )
+        from internal_ai.data.language import check_release_quality
+
+        quality = check_release_quality(self.store, dataset_id)
         self.store.release_dataset(dataset_id)
         released = self.store.get_dataset(dataset_id)
         self.audit.record(
@@ -622,6 +625,7 @@ class DataPipeline:
                 "content_hash": dataset.content_hash,
                 "records": dataset.record_count,
                 "pii_audit": audit_result,
+                "toxicity_flagged": quality["toxicity_flagged"],
             },
         )
         return released or dataset

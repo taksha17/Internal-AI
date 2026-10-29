@@ -252,8 +252,11 @@ def test_release_requires_the_gate(platform, corpus_path) -> None:
 
     pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
     result = build_corpus(platform, [corpus_path], name="corpus-test")
+    from internal_ai.data.language import accept_language_sample
+
     with pytest.raises(PermissionError, match="dataset_release gate"):
         pipeline.release(result.dataset_id, "ml_lead", gate_approved=False)
+    accept_language_sample(platform.store, result.dataset_id)
     dataset = pipeline.release(result.dataset_id, "ml_lead", gate_approved=True)
     assert dataset.released
 
