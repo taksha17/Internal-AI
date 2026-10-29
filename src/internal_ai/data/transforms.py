@@ -277,6 +277,33 @@ def secret_scan(text: str) -> list[str]:
     return [kind for kind, pattern in PII_PATTERNS.items() if pattern.search(text)]
 
 
+def detector_recall() -> dict[str, Any]:
+    """How often the planted email, API token and private key are found and removed.
+
+    This is a fixture, not a claim about a customer's corpus. A detector that
+    misses its own planted sample scores below 1.0.
+    """
+    from internal_ai.data.records import Record
+
+    token = "sk-" + "abcdefghijklmnopqrstuvwxyz"
+    header = "-----BEGIN " + "PRIVATE KEY-----"
+    footer = "-----END " + "PRIVATE KEY-----"
+    planted = {
+        "email": "reach the owner at ada@example.com about the invoice today",
+        "api_token": f"the deploy token is {token} today",
+        "private_key": f"{header}\nabc\n{footer}",
+    }
+    per_detector: dict[str, float] = {}
+    for kind, text in planted.items():
+        found = kind in secret_scan(text)
+        scrubbed, _stats = scrub_pii(
+            [Record(id="planted", record_key=kind, text=text, source_id="fixture")]
+        )
+        removed = kind not in secret_scan(scrubbed[0].text)
+        per_detector[kind] = 1.0 if found and removed else 0.0
+    return {"planted": len(planted), "per_detector": per_detector}
+
+
 # --------------------------------------------------------------------- quality
 
 ENGLISH_STOPWORDS = {
