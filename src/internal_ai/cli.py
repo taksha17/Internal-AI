@@ -844,6 +844,73 @@ def cmd_feedback_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_preference_file(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.preferences import file_preference
+
+        actor = _actor(platform, args, args.by, "domain_expert")
+        try:
+            row = file_preference(
+                platform,
+                actor,
+                args.question,
+                args.answer_a,
+                args.answer_b,
+                args.better,
+                dataset_id=args.dataset or "",
+                authored_by=args.authored_by,
+                source_id=args.source_id,
+            )
+        except (PermissionError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(row["id"])
+    return 0
+
+
+def cmd_preference_list(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.preferences import list_preferences
+
+        _print({"preferences": list_preferences(platform)})
+    return 0
+
+
+def cmd_preference_export(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.preferences import export_preferences
+
+        actor = _actor(platform, args, args.by, "domain_expert")
+        try:
+            dataset = export_preferences(platform, actor)
+        except (PermissionError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        _print(
+            {
+                "dataset_id": dataset.id,
+                "version": dataset.version,
+                "released": dataset.released,
+                "training_data": dataset.stats.get("training_data"),
+            }
+        )
+    return 0
+
+
+def cmd_preference_train(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.preferences import train_preference
+
+        actor = _actor(platform, args, args.by, "ml_lead")
+        try:
+            result = train_preference(platform, actor, args.dataset_id)
+        except (KeyError, PermissionError, ValueError, NotImplementedError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        _print(result)
+    return 0
+
+
 def cmd_serve_report(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.serving.report import serve_report
@@ -1516,6 +1583,28 @@ def build_parser() -> argparse.ArgumentParser:
     feedback_export = feedback_sub.add_parser("export")
     feedback_export.add_argument("--by", default=None)
     feedback_export.set_defaults(func=cmd_feedback_export)
+
+    preference = sub.add_parser("preference", help="which of two answers a person prefers")
+    preference_sub = preference.add_subparsers(dest="preference_command", required=True)
+    preference_file = preference_sub.add_parser("file")
+    preference_file.add_argument("--question", required=True)
+    preference_file.add_argument("--a", dest="answer_a", required=True)
+    preference_file.add_argument("--b", dest="answer_b", required=True)
+    preference_file.add_argument("--better", required=True, choices=["a", "b"])
+    preference_file.add_argument("--dataset", default="")
+    preference_file.add_argument("--authored-by", default="")
+    preference_file.add_argument("--source-id", default="")
+    preference_file.add_argument("--by", default=None)
+    preference_file.set_defaults(func=cmd_preference_file)
+    preference_list = preference_sub.add_parser("list")
+    preference_list.set_defaults(func=cmd_preference_list)
+    preference_export = preference_sub.add_parser("export")
+    preference_export.add_argument("--by", default=None)
+    preference_export.set_defaults(func=cmd_preference_export)
+    preference_train = preference_sub.add_parser("train")
+    preference_train.add_argument("--dataset-id", required=True)
+    preference_train.add_argument("--by", default=None)
+    preference_train.set_defaults(func=cmd_preference_train)
 
     return parser
 

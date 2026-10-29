@@ -686,8 +686,21 @@ class DataPipeline:
         current = self.store.get_dataset(dataset_id) or dataset
         if current.stats.get("token_count_kind") != "measured":
             raise PermissionError("measure the tokens before releasing this version")
+        kind = str(current.stats.get("kind") or current.lineage.get("kind") or "")
+        if kind in {"feedback", "preference"} and current.stats.get("training_data") is not True:
+            self.store.update_dataset_tokens(
+                dataset_id, current.token_count, {**current.stats, "training_data": True}
+            )
         self.store.release_dataset(dataset_id)
-        released = self.store.get_dataset(dataset_id)
+        released = self.store.get_dataset(dataset_id) or dataset
+        if kind in {"feedback", "preference"}:
+            self.audit.record(
+                actor=actor,
+                actor_kind="human",
+                action="dataset.training_data_marked",
+                subject=dataset_id,
+                details={"kind": kind, "training_data": True},
+            )
         self.audit.record(
             actor=actor,
             actor_kind="human",
@@ -698,9 +711,10 @@ class DataPipeline:
                 "records": dataset.record_count,
                 "pii_audit": audit_result,
                 "toxicity_flagged": quality["toxicity_flagged"],
+                "kind": kind,
             },
         )
-        return released or dataset
+        return released
 
     def lineage(self, dataset_id: str) -> dict[str, Any]:
         dataset = self.store.get_dataset(dataset_id)
