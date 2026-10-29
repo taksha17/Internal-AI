@@ -863,6 +863,74 @@ def create_eval_set(
     return harness.create_eval_set(name, items, version=version, actor=actor.id)
 
 
+def file_customer_questions(
+    platform: Platform,
+    actor: Actor,
+    dataset_id: str,
+    question: str,
+    record_key: str,
+    line: int,
+) -> Any:
+    """One question a domain expert wrote, aimed at a line in the held-out split."""
+    from internal_ai.evals.harness import EvalHarness
+
+    require(platform.audit, actor, Action.CREATE_EVAL_SET, dataset_id)
+    if not actor.holds("domain_expert"):
+        raise PermissionError("a domain expert files the questions")
+    dataset = platform.store.get_dataset(dataset_id)
+    if dataset is None:
+        raise KeyError(f"unknown dataset: {dataset_id}")
+    if not dataset.released:
+        raise ValueError("release the dataset before filing its questions")
+    text = question.strip()
+    if not text:
+        raise ValueError("a question is required")
+    if line < 1:
+        raise ValueError("the line number starts at 1")
+    rows = platform.store.dataset_records_by_split(dataset_id, "test")
+    row = next((item for item in rows if item["record_key"] == record_key), None)
+    if row is None:
+        raise ValueError("that file is not in the held-out test split")
+    lines = str(row["payload"]).splitlines() or [str(row["payload"])]
+    if line > len(lines):
+        raise ValueError("that line is not in the record")
+    name = f"{dataset_id}-questions"
+    named = [item for item in platform.store.list_eval_sets() if item.name == name]
+    carried = named[-1].items if named and not named[-1].frozen else []
+    items = [
+        *carried,
+        {
+            "query": text,
+            "relevant_ids": [record_key],
+            "kind": "retrieval",
+            "dataset_id": dataset_id,
+            "source_id": row.get("source_id", ""),
+            "filed_by": actor.id,
+            "expected_file": record_key,
+            "expected_line": line,
+        },
+    ]
+    version = max((item.version for item in named), default=0) + 1
+    return EvalHarness(platform.store, platform.audit).create_eval_set(
+        name, items, version=version, actor=actor.id
+    )
+
+
+def require_customer_eval(platform: Platform, dataset_id: str) -> None:
+    """Training waits until a person has filed questions and the set is frozen."""
+    for eval_set in platform.store.list_eval_sets():
+        if not eval_set.frozen:
+            continue
+        filed = [
+            item
+            for item in eval_set.items
+            if item.get("dataset_id") == dataset_id and item.get("filed_by")
+        ]
+        if filed:
+            return
+    raise PermissionError("training waits for a frozen eval set of questions a domain expert filed")
+
+
 def eval_set_leakage(platform: Platform, eval_set_id: str) -> dict[str, Any]:
     eval_set = platform.store.get_eval_set(eval_set_id)
     if eval_set is None:
@@ -981,6 +1049,7 @@ def train_model(
     subject = f"{dataset_id}:{name}"
     if cost_cap_usd > TRAINING_COST_GATE_USD:
         _require_gate(platform, actor, GateType.TRAINING_RUN_COST, subject, "train_model")
+    require_customer_eval(platform, dataset_id)
     config = TrainConfig(
         name=name,
         steps=steps,

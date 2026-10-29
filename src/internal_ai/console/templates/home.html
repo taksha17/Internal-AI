@@ -78,16 +78,16 @@
   <section class="card">
     <div class="card-head">
       <div>
-        <h2>Build a model, step by step</h2>
-        <p class="card-sub">You are here: <strong>{{ current }}</strong>.</p>
+      <h2>Twelve stages</h2>
+      <p class="card-sub">You are here: <strong>{{ current }}</strong>.</p>
       </div>
       <span class="badge {{ 'badge-approved' if steps_done == step_total else 'badge-pending' }}">{{ steps_done }} of {{ step_total }}</span>
     </div>
     <progress class="meter" value="{{ steps_done }}" max="{{ step_total }}" aria-label="Steps complete"></progress>
-    <p class="muted small">Each step unlocks the next. Steps that need approval wait for someone other than the person who asked.</p>
+    <p class="muted small">A stage closes when its artifact exists. A later artifact leaves an earlier gap open.</p>
     <ol class="steps">
-      {% for label, href, done in steps %}
-      <li class="{{ 'done' if done else '' }}"><a href="{{ href }}">{{ label }}</a> {% if done %}{{ m.status_badge("approved") }}{% endif %}</li>
+      {% for stage in stages %}
+      <li class="{{ 'done' if stage.done else '' }}"><a href="{{ stage.href }}">{{ stage.n }}. {{ stage.name }}</a> {% if stage.done %}{{ m.status_badge("approved") }}{% else %}<span class="row-sub">{{ stage.waiting }}</span>{% endif %}</li>
       {% endfor %}
     </ol>
   </section>

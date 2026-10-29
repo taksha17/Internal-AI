@@ -584,57 +584,24 @@ def mount_console(
     def home(request: Request) -> Response:
         ctx = context(request)
         platform = ctx.platform
-        sources = build.list_sources(platform)
-        datasets = platform.store.list_datasets()
-        eval_sets = platform.store.list_eval_sets()
-        models = platform.store.list_models()
-        steps = [
-            (
-                "Register a data source and get it approved",
-                "/console/sources",
-                any(item["gate_status"] == "approved" for item in sources),
-            ),
-            (
-                "Build, split and release a dataset",
-                "/console/datasets",
-                any(item.released for item in datasets),
-            ),
-            (
-                "Train a tokenizer",
-                "/console/datasets",
-                any(build.tokenizer_path(platform, item.id) for item in datasets),
-            ),
-            (
-                "Create and freeze an eval set",
-                "/console/evals",
-                any(item.frozen for item in eval_sets),
-            ),
-            ("Train and register a model", "/console/models", bool(models)),
-            (
-                "Evaluate the model against the frozen set",
-                "/console/models",
-                bool(platform.store.list_eval_reports()),
-            ),
-            (
-                "Promote the model through its gate",
-                "/console/models",
-                any(item.status == "promoted" for item in models),
-            ),
-        ]
         from internal_ai.alerts import AlertEngine
+        from internal_ai.programme import customer_stages
 
+        stages = customer_stages(platform)
         alerts = AlertEngine(platform.store, platform.audit, platform.budget).list_alerts(
             unacknowledged_only=True
         )
-        current = next((label for label, _href, done in steps if not done), "every step is done")
+        current = next(
+            (stage["name"] for stage in stages if not stage["done"]), "every stage is recorded"
+        )
         jobs = get_jobs().list(limit=50)
         return render(
             ctx,
             "home.html",
-            steps=steps,
+            stages=stages,
             current=current,
-            steps_done=sum(1 for _label, _href, done in steps if done),
-            step_total=len(steps),
+            steps_done=sum(1 for stage in stages if stage["done"]),
+            step_total=len(stages),
             active_jobs=sum(1 for job in jobs if job["state"] in {"running", "queued"}),
             budget=platform.budget.all_status(),
             jobs=jobs,
@@ -1523,6 +1490,22 @@ def mount_console(
         "tokenizer training started",
         job_link,
     )
+
+    def _file_question(ctx: Ctx, dataset_id: str, form: dict[str, str]) -> str:
+        eval_set = build.file_customer_questions(
+            ctx.platform,
+            ctx.actor,
+            dataset_id,
+            form.get("question", ""),
+            form.get("record_key", ""),
+            _number(form.get("line", ""), int, 0),
+        )
+        return (
+            f"question filed on {eval_set.name} v{eval_set.version}; "
+            "freeze that set before training"
+        )
+
+    dataset_action("questions", _file_question, lambda text: text, lambda _text: "/console/evals")
     dataset_action(
         "eval-set",
         lambda ctx, dataset_id, form: build.create_eval_set(

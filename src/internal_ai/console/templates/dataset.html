@@ -85,6 +85,13 @@
         <label>Mode <select name="mode"><option value="paraphrase">paraphrase</option><option value="title">title</option></select></label>
         <button type="submit">Create eval set</button></form>
       {% endif %}
+      {% if dataset.released and view.has_splits and actor.holds("domain_expert") %}
+      <form method="post" action="/console/datasets/{{ dataset.id }}/questions" class="inline-form">{{ m.csrf_field() }}
+        <label>Question <input type="text" name="question" required></label>
+        <label>File <input type="text" name="record_key" required></label>
+        <label>Line <input type="number" name="line" min="1" value="1" required></label>
+        <button type="submit">File this question</button></form>
+      {% endif %}
     </li>
   </ol>
 </section>
