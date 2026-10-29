@@ -27,7 +27,7 @@ from internal_ai.data.inventory import (
 from internal_ai.data.records import ROW_SUFFIXES, choose_columns
 from internal_ai.data.suggest import label_columns
 from internal_ai.data.tree import is_text_file
-from internal_ai.domain import GateRequest, GateStatus, GateType
+from internal_ai.domain import AuditOutcome, GateRequest, GateStatus, GateType
 from internal_ai.ids import new_id, now_iso
 from internal_ai.services import governance
 from internal_ai.services.actor import Actor
@@ -1458,6 +1458,85 @@ def _queue_registration_eval(
 # ---------------------------------------------------------------------- ask
 
 
+def served_embedder(platform: Platform) -> Any | None:
+    """The embedder of the model that is actually in service, or ``None``.
+
+    Ask joins the model only where it earns its place: a promoted from-scratch
+    model, with the tokenizer that trained it. No model means keyword search.
+    """
+    from internal_ai.data.tokenizer import Tokenizer
+    from internal_ai.serving.service import ModelRouter, served_model
+    from internal_ai.training.embedder import TorchEmbedder
+
+    router = ModelRouter(platform.store, platform.audit)
+    model = served_model(platform.store, router)
+    if model is None or model.card.get("track") == "alpha":
+        return None
+    path = Path(model.path)
+    recorded = str(model.card.get("tokenizer_path") or "")
+    tokenizer_path = Path(recorded) if recorded else path.with_suffix(".tokenizer.json")
+    if not tokenizer_path.exists():
+        return None
+    try:
+        return TorchEmbedder(path, Tokenizer.load(tokenizer_path))
+    except (OSError, KeyError, RuntimeError):
+        return None
+
+
+def written_answer(
+    platform: Platform,
+    result: Any,
+    dataset_id: str,
+    actor: str = "ai_engineer",
+    adapter: Any | None = None,
+) -> Any:
+    """Let the on-prem runner write from the hits, and keep citations honest.
+
+    A reply that moves a line onto another file is not stored as an answer: the
+    hit list is stored instead and the row is marked failed, because a wrong
+    citation is worse than no prose.
+    """
+    import os
+
+    from internal_ai.training.alpha.answer import cited_answer
+    from internal_ai.training.alpha.citations import AskHit
+
+    if adapter is None:
+        if not os.environ.get("INTERNAL_AI_LOCAL_RUNNER", "").strip():
+            return result
+        from internal_ai.llm import LocalRunnerAdapter
+
+        adapter = LocalRunnerAdapter()
+    citations = [item for item in result.citations if item.get("path") and item.get("line")]
+    hits = [AskHit(str(item["path"]), int(item["line"])) for item in citations]
+    if not hits:
+        return result
+    excerpts = [str(item.get("text", "")) for item in citations]
+    training = [row["payload"] for row in platform.store.dataset_records(dataset_id)][:200]
+    written = cited_answer(adapter, result.question, hits, excerpts, training_texts=training)
+    result.written_by = written.model
+    result.citation_passed = written.passed
+    result.mismatches = written.mismatches
+    if written.passed:
+        result.answer = written.text
+    else:
+        result.answer = "\n".join(f"{hit.path}:{hit.line}" for hit in hits)
+    platform.audit.record(
+        actor=actor,
+        actor_kind="human",
+        action="ask.written",
+        subject=dataset_id,
+        outcome=AuditOutcome.SUCCESS if written.passed else AuditOutcome.FAILURE,
+        details={
+            "model": written.model,
+            "hits": len(hits),
+            "citation_passed": written.passed,
+            "mismatches": list(written.mismatches)[:5],
+        },
+    )
+    return result
+
+
 def ask(
     platform: Platform, actor: Actor, dataset_id: str, question: str, max_steps: int = 4
 ) -> Any:
@@ -1477,11 +1556,14 @@ def ask(
         )
     if not question.strip():
         raise ValueError("type a question")
-    searcher = AgenticSearcher(platform.store, platform.audit, platform.budget, embedder=None)
-    return searcher.search(
+    searcher = AgenticSearcher(
+        platform.store, platform.audit, platform.budget, embedder=served_embedder(platform)
+    )
+    result = searcher.search(
         question.strip()[:500],
         dataset_id,
         actor.principal(),
         max_steps=max(1, min(max_steps, 8)),
         actor=actor.id,
     )
+    return written_answer(platform, result, dataset_id, actor=actor.id)
