@@ -586,13 +586,43 @@ def cmd_classifier_eval(args: argparse.Namespace) -> int:
         return 0 if result["passed"] else 1
 
 
+def cmd_compute_advise(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.compute.advise import advise_dataset
+
+        advice = advise_dataset(platform, args.dataset_id)
+        kind = advice["token_count_kind"]
+        print(f"dataset {advice['dataset_id']}  tokens {advice['tokens']}  count {kind}")
+        if not advice["measured"]:
+            print("hours stay provisional until the tokenizer measures this corpus")
+        for row in advice["sizes"]:
+            floor = "yes" if row["meets_floor"] else "no"
+            ready = "yes" if row["runnable"] else "no"
+            print(
+                f"{row['size']}  {row['planning_gpu_hours']} GPU-hours  "
+                f"{row['machine']}  floor {floor}  runnable {ready}"
+            )
+        print(f"backend {advice['backend']}")
+    return 0
+
+
+def cmd_compute_attach(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.compute.advise import attach_backend
+
+        print(attach_backend(platform, args.backend))
+    return 0
+
+
 def cmd_job_submit(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.compute.advise import make_backend
         from internal_ai.compute.scheduler import JobScheduler, JobSpec
         from internal_ai.sandbox import Sandbox
 
+        sandbox = Sandbox(platform.settings.sandbox_dir)
         scheduler = JobScheduler(
-            platform.audit, platform.budget, Sandbox(platform.settings.sandbox_dir)
+            platform.audit, platform.budget, sandbox, backend=make_backend(platform, sandbox)
         )
         job = scheduler.submit(
             JobSpec(
@@ -612,11 +642,13 @@ def cmd_job_submit(args: argparse.Namespace) -> int:
 
 def cmd_job_run(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.compute.advise import make_backend
         from internal_ai.compute.scheduler import JobScheduler, JobSpec
         from internal_ai.sandbox import Sandbox
 
+        sandbox = Sandbox(platform.settings.sandbox_dir)
         scheduler = JobScheduler(
-            platform.audit, platform.budget, Sandbox(platform.settings.sandbox_dir)
+            platform.audit, platform.budget, sandbox, backend=make_backend(platform, sandbox)
         )
         job = scheduler.submit(
             JobSpec(
@@ -1257,6 +1289,15 @@ def build_parser() -> argparse.ArgumentParser:
     classifier_eval.add_argument("--dataset-id", required=True)
     classifier_eval.add_argument("--split", default="test")
     classifier_eval.set_defaults(func=cmd_classifier_eval)
+
+    compute = sub.add_parser("compute", help="what a dataset needs, and which machine is attached")
+    compute_sub = compute.add_subparsers(dest="compute_command", required=True)
+    compute_advise = compute_sub.add_parser("advise")
+    compute_advise.add_argument("--dataset-id", required=True)
+    compute_advise.set_defaults(func=cmd_compute_advise)
+    compute_attach = compute_sub.add_parser("attach")
+    compute_attach.add_argument("--backend", required=True, choices=["local", "slurm"])
+    compute_attach.set_defaults(func=cmd_compute_attach)
 
     job = sub.add_parser("job", help="compute plane job submission")
     job_sub = job.add_subparsers(dest="job_command", required=True)
