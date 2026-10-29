@@ -330,6 +330,14 @@ class EvalHarness:
         actor: str = "evaluation",
         judged_by: str | None = None,
     ) -> EvalReport:
+        judge = judged_by or actor
+        model = self.store.get_model(model_id)
+        builder = str(model.card.get("registered_by") or "") if model is not None else ""
+        if builder and judge == builder:
+            raise PermissionError(
+                "the builder cannot record their own report; a different person has to "
+                "evaluate this model"
+            )
         report = EvalReport(
             id=new_id("rep"),
             model_id=model_id,
@@ -340,7 +348,7 @@ class EvalHarness:
             checks=outcome.checks,
             passed=outcome.passed,
             notes=outcome.notes,
-            judged_by=judged_by or actor,
+            judged_by=judge,
         )
         self.store.add_eval_report(report)
         self.audit.record(

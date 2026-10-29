@@ -1620,6 +1620,7 @@ def mount_console(
                         dataset.token_count if dataset else 0,
                     ),
                     "service": out_of_service(platform.store, model),
+                    "regressed": build.recall_drop(platform, model),
                     "legacy_permission": bool(
                         report
                         and (report.checks.get("permission_leak") or {}).get("note")
@@ -1810,11 +1811,11 @@ def mount_console(
     @app.post("/console/models/{model_id}/promote", include_in_schema=False)
     async def model_promote(request: Request, model_id: str) -> Response:
         ctx = context(request)
-        await posted(ctx)
+        form = await posted(ctx)
         return await act(
             ctx,
             "/console/models",
-            lambda: build.promote(ctx.platform, ctx.actor, model_id),
+            lambda: build.promote(ctx.platform, ctx.actor, model_id, form.get("note", "")),
             "model promoted",
         )
 
