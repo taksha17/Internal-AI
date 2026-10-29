@@ -27,6 +27,23 @@ CHECK_ACTIONS: dict[str, str] = {
         "personal data. Scrub the dataset and release a new version before training again."
     ),
     "permission_leak": "The permission check did not pass. Settle that before reading the score.",
+    "retrieval_memorisation": (
+        "The memorisation check did not pass: the encoder maps a document and its own "
+        "opening line onto almost the same vector, so it is reproducing the text rather "
+        "than encoding its meaning. More varied documents change this; a longer run at "
+        "this corpus size does not."
+    ),
+    "paraphrase_memorisation": (
+        "The paraphrase check did not pass: a reworded question scores against its record "
+        "as highly as the record's own text would, so the model cannot tell a rewrite from "
+        "the document it came from. That is the shape of memorisation, and it means a "
+        "reworded query only works when it repeats the document's words."
+    ),
+    "instruction_payload": (
+        "The instruction check did not pass: a document the evaluation rests on carries "
+        "instructions aimed at the model. Remove the text from the corpus and release a "
+        "new dataset version before training again."
+    ),
 }
 
 # Reported for context, never a reason to refuse on its own.
@@ -52,13 +69,42 @@ def failed_checks(report: Any) -> list[str]:
     )
 
 
+# How each failed memorisation check names the records it flagged.
+MEMORISATION_LABELS: dict[str, str] = {
+    "retrieval_memorisation": "Documents the encoder cannot separate from their own opening line: ",
+    "paraphrase_memorisation": "Rewrites scored as highly as the record they came from: ",
+}
+
+
+def memorised_documents(checks: dict[str, Any], limit: int = 5) -> list[str]:
+    """The documents a failed memorisation check named, so they can be found."""
+    lines: list[str] = []
+    for name, label in MEMORISATION_LABELS.items():
+        result = checks.get(name) or {}
+        if _value(result, "passed", True):
+            continue
+        flagged = list(_value(result, "flagged", ()) or ())
+        if not flagged:
+            continue
+        named = [
+            f"{item.get('document', '?')} at {float(item.get('similarity', 0.0)):.3f}"
+            for item in flagged[:limit]
+        ]
+        line = label + ", ".join(named)
+        if len(flagged) > len(named):
+            line += f", and {len(flagged) - len(named)} more"
+        lines.append(line + ".")
+    return lines
+
+
 def retrieval_advice(report: Any, records: int, tokens: int) -> list[str]:
     """Why a retrieval run did not pass, and what would change it."""
     if report is None or _value(report, "passed", False):
         return []
     failed = [name for name in failed_checks(report) if name != "brief_targets"]
     if failed:
-        return [CHECK_ACTIONS.get(name, f"The {name} check did not pass.") for name in failed]
+        lines = [CHECK_ACTIONS.get(name, f"The {name} check did not pass.") for name in failed]
+        return lines + memorised_documents(_value(report, "checks", {}) or {})
     targets = (_value(report, "checks", {}) or {}).get("brief_targets") or {}
     if isinstance(targets, dict) and targets.get("passed") is False:
         lines = [

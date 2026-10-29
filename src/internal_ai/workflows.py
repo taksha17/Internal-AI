@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -129,7 +130,13 @@ def train_tokenizer_for(
         by_source.setdefault(row["source_id"], []).append(row["payload"])
     coverage = coverage_report(tokenizer, by_source, jargon=jargon)
     path = platform.settings.models_dir / f"tokenizer-{dataset_id}.json"
+    digest_path = path.with_suffix(".sha256")
+    if digest_path.is_file():
+        raise PermissionError(
+            f"tokenizer for {dataset_id} is frozen; train it on a new dataset version"
+        )
     tokenizer.save(path)
+    digest_path.write_text(hashlib.sha256(path.read_bytes()).hexdigest() + "\n", encoding="utf-8")
     coverage["tokenizer_path"] = str(path)
     coverage["dataset_id"] = dataset_id
     coverage["trained_on_split"] = "train"
@@ -148,6 +155,88 @@ def train_tokenizer_for(
     return tokenizer, coverage
 
 
+def _embedding_parameters(config: TrainConfig, tokenizer: Tokenizer) -> int:
+    from internal_ai.training.model import TransformerConfig, count_parameters
+
+    return count_parameters(
+        TransformerConfig(
+            vocab_size=tokenizer.vocab_size,
+            d_model=config.d_model,
+            n_heads=config.n_heads,
+            n_layers=config.n_layers,
+            d_ff=config.d_ff,
+            max_seq_len=config.max_seq_len,
+            dropout=config.dropout,
+            causal=config.objective == "causal",
+        )
+    )
+
+
+def _encoder_parameters(path: Path) -> int:
+    import torch
+
+    payload = torch.load(path, weights_only=True, map_location="cpu")
+    return sum(int(tensor.numel()) for tensor in payload["model_state"].values())
+
+
+def require_frozen_tokenizer(path: Path) -> str:
+    """The sha256 written beside the tokenizer. A changed file is not the one that was trained."""
+    sidecar = path.with_suffix(".sha256")
+    if not path.is_file() or not sidecar.is_file():
+        raise PermissionError(f"tokenizer {path.name} is not frozen")
+    expected = sidecar.read_text(encoding="utf-8").strip()
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    if actual != expected:
+        raise PermissionError(f"tokenizer {path.name} hash does not match the freeze")
+    return actual
+
+
+def require_token_budget(platform: Platform, dataset: Any, actor: str, parameters: int) -> None:
+    """Refuse an estimate, and a measured corpus below the tokens-per-parameter floor."""
+    from internal_ai.brief import load as load_brief
+    from internal_ai.brief import metric_key, parse_threshold
+    from internal_ai.domain import AuditOutcome
+    from internal_ai.training.trainer import TOKENS_PER_PARAMETER_FLOOR
+
+    kind = str(dataset.stats.get("token_count_kind", ""))
+    floor = float(TOKENS_PER_PARAMETER_FLOOR)
+    for metric in load_brief(platform.store).metrics:
+        if metric_key(metric.name) != "tokensperparameter":
+            continue
+        parsed = parse_threshold(metric.threshold)
+        if parsed is not None:
+            floor = max(floor, parsed)
+    tokens = int(dataset.token_count)
+    ratio = round(tokens / parameters, 4) if parameters else 0.0
+    stats = dict(dataset.stats)
+    stats["parameter_count"] = parameters
+    stats["tokens_per_parameter"] = ratio
+    platform.store.conn.execute(
+        "UPDATE datasets SET stats = ? WHERE id = ?",
+        (json.dumps(stats, sort_keys=True), dataset.id),
+    )
+    if kind != "measured":
+        platform.audit.record(
+            actor=actor,
+            action="train.token_budget",
+            subject=dataset.id,
+            outcome=AuditOutcome.DENIED,
+            details={"token_count_kind": kind or "estimate", "parameters": parameters},
+        )
+        raise PermissionError(f"token count for {dataset.id} is still an estimate")
+    if ratio < floor:
+        platform.audit.record(
+            actor=actor,
+            action="train.token_budget",
+            subject=dataset.id,
+            outcome=AuditOutcome.DENIED,
+            details={"tokens": tokens, "parameters": parameters, "floor": floor},
+        )
+        raise PermissionError(
+            f"{tokens} tokens and {parameters} parameters are below {floor:g} tokens per parameter"
+        )
+
+
 def train_embedding_model(
     platform: Platform,
     dataset_id: str,
@@ -157,8 +246,10 @@ def train_embedding_model(
     split: str = "train",
     pair_mode: str = "paraphrase",
 ) -> TrainingOutcome:
+    from internal_ai.brief import require_programme
     from internal_ai.training.trainer import Trainer
 
+    require_programme(platform, actor, release=False)
     rows = platform.store.dataset_records_by_split(dataset_id, split)
     if not rows:
         rows = platform.store.dataset_records(dataset_id)
@@ -175,9 +266,27 @@ def train_embedding_model(
         )
         for row in rows
     ]
+    validation = [
+        Record(
+            id=row["id"],
+            record_key=row["record_key"],
+            text=row["payload"],
+            source_id=row["source_id"],
+            sensitivity=row["sensitivity"],
+            acl=row["acl"],
+            tokens=row["tokens"],
+            meta=row["meta"],
+        )
+        for row in platform.store.dataset_records_by_split(dataset_id, "validation")
+    ]
     from internal_ai.training.ownership import require_released_dataset
 
     dataset = require_released_dataset(platform.store.get_dataset(dataset_id))
+    train_config = config or TrainConfig()
+    require_token_budget(platform, dataset, actor, _embedding_parameters(train_config, tokenizer))
+    if not train_config.vocab_rationale.strip():
+        raise PermissionError("say why this vocabulary size was chosen")
+    require_frozen_tokenizer(platform.settings.models_dir / f"tokenizer-{dataset_id}.json")
     trainer = Trainer(
         platform.store,
         platform.audit,
@@ -185,7 +294,6 @@ def train_embedding_model(
         platform.settings.artifacts_dir,
         root=platform.settings.root,
     )
-    train_config = config or TrainConfig()
     pairs = build_pair_dataset(platform, dataset_id, split=split, mode=pair_mode)
     return trainer.train(
         train_config,
@@ -195,6 +303,7 @@ def train_embedding_model(
         dataset_hash=dataset.content_hash if dataset else "unknown",
         actor=actor,
         pairs=pairs,
+        validation_records=validation,
     )
 
 
@@ -207,6 +316,7 @@ def evaluate_embedding_model(
     margin: float = 0.0,
     actor: str = "evaluation",
     model_id: str | None = None,
+    judged_by: str | None = None,
 ) -> dict[str, Any]:
     from internal_ai.brief import load as load_brief
     from internal_ai.evals.harness import EvalHarness
@@ -246,7 +356,9 @@ def evaluate_embedding_model(
         actor=actor,
         brief=load_brief(platform.store),
     )
-    report = harness.record_report(model_id or model_path.stem, eval_set_id, outcome, actor=actor)
+    report = harness.record_report(
+        model_id or model_path.stem, eval_set_id, outcome, actor=actor, judged_by=judged_by
+    )
     return {
         "report_id": report.id,
         "model_id": report.model_id,
@@ -288,6 +400,7 @@ def register_model(
         ],
         "trained_from_scratch": True,
         "pretrained_weights_used": False,
+        "registered_by": actor,
         "created_at": now_iso(),
     }
     model = ModelVersion(
@@ -312,12 +425,43 @@ def register_model(
     return model
 
 
+def recall_regression(platform: Platform, model: ModelVersion) -> dict[str, float] | None:
+    """How far this candidate fell behind an earlier one on the same frozen set."""
+    reports = platform.store.list_eval_reports(model.id)
+    if not reports or "recall_at_10" not in reports[-1].metrics:
+        return None
+    current = reports[-1]
+    best: float | None = None
+    for other in platform.store.list_models():
+        if other.id == model.id or other.created_at >= model.created_at:
+            continue
+        if model.dataset_ids and other.dataset_ids != model.dataset_ids:
+            continue
+        earlier = [
+            item
+            for item in platform.store.list_eval_reports(other.id)
+            if item.eval_set_id == current.eval_set_id and "recall_at_10" in item.metrics
+        ]
+        if not earlier:
+            continue
+        score = float(earlier[-1].metrics["recall_at_10"])
+        if best is None or score > best:
+            best = score
+    if best is None:
+        return None
+    drop = best - float(current.metrics["recall_at_10"])
+    if drop <= 0.05:
+        return None
+    return {"previous": best, "current": float(current.metrics["recall_at_10"]), "drop": drop}
+
+
 def promote_model(
     platform: Platform,
     model_id: str,
     gate_approved: bool,
     approver: str = "ml_lead",
     actor: str = "evaluation",
+    note: str = "",
 ) -> ModelVersion:
     model = platform.store.get_model(model_id)
     if model is None:
@@ -328,6 +472,18 @@ def promote_model(
     if report is None:
         raise PermissionError(
             "model promotion requires a passing eval report on a frozen eval set (FR-15)"
+        )
+    builder = str(model.card.get("registered_by") or "")
+    regressed = recall_regression(platform, model)
+    if regressed is not None and (approver == builder or "accepted" not in note.lower()):
+        raise PermissionError(
+            "this model regressed against the previous candidate; promotion needs the word "
+            "accepted from someone other than its builder"
+        )
+    if report.judged_by and report.judged_by in {builder, approver}:
+        raise PermissionError(
+            "the newest report was judged by the person who built or is approving this model; "
+            "a different ml_lead has to run that evaluation"
         )
     model.card["eval_results"] = report.metrics
     model.card["baseline_metrics"] = report.baseline_metrics
@@ -346,6 +502,24 @@ def promote_model(
             "eval_set_id": report.eval_set_id,
             "passed": report.passed,
         },
+    )
+    return platform.store.get_model(model_id)
+
+
+def demote_model(platform: Platform, model_id: str, actor: str) -> ModelVersion:
+    """Return a promoted model to candidate. The weights stay on disk."""
+    model = platform.store.get_model(model_id)
+    if model is None:
+        raise KeyError(f"unknown model: {model_id}")
+    if model.status != "promoted":
+        raise ValueError(f"{model_id} is {model.status}, not promoted")
+    platform.store.set_model_status(model_id, "candidate")
+    platform.audit.record(
+        actor=actor,
+        actor_kind="human",
+        action="model.demoted",
+        subject=model_id,
+        details={"path": model.path},
     )
     return platform.store.get_model(model_id)
 
@@ -499,6 +673,7 @@ def derive_eval_items(
             items.append(
                 {
                     "query": query,
+                    "paraphrase": query,
                     "relevant_ids": [row["record_key"]],
                     "kind": "retrieval",
                     "source_id": row["source_id"],
@@ -519,11 +694,14 @@ def train_classifier_model(
     split: str = "train",
 ) -> ClassifierOutcome:
     """Train a task classifier over frozen from-scratch encoder embeddings."""
+    from internal_ai.brief import require_programme
     from internal_ai.data.labels import build_labeled_dataset
     from internal_ai.training.classifier import ClassifierTrainer
     from internal_ai.training.ownership import require_released_dataset
 
-    require_released_dataset(platform.store.get_dataset(dataset_id))
+    require_programme(platform, actor, release=False)
+    dataset = require_released_dataset(platform.store.get_dataset(dataset_id))
+    require_token_budget(platform, dataset, actor, _encoder_parameters(encoder_path))
     rows = platform.store.dataset_records_by_split(dataset_id, split)
     if not rows:
         rows = platform.store.dataset_records(dataset_id)
@@ -673,12 +851,13 @@ def build_tree_corpus(
     version: int = 1,
     acl: list[str] | None = None,
     actor: str = "data_engineer",
+    sensitivity: str = "internal",
 ) -> CorpusBuild:
     """Version a file tree as a dataset with path metadata and lineage."""
 
-    records = index.records(acl=acl or ["engineering", "support"])
+    records = index.records(acl=acl or ["engineering", "support"], sensitivity=sensitivity)
     for record in records:
-        record.sensitivity = "internal"
+        record.sensitivity = sensitivity
     dataset = DatasetVersion(
         id=new_id("ds"),
         name=name,
@@ -696,7 +875,7 @@ def build_tree_corpus(
                     "path": str(index.root),
                     "content_hash": content_hash(sorted(item.content_hash for item in index.files)),
                     "owner": "data_owner",
-                    "sensitivity": "internal",
+                    "sensitivity": sensitivity,
                     "records_ingested": len(records),
                     "approved": True,
                 }
