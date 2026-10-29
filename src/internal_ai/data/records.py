@@ -45,6 +45,16 @@ EXCLUDED_SENSITIVITY = (
     "recovered",
 )
 
+# The classes a source or a row may carry, from the one a reader may see to
+# the one nobody in the company may train on.
+SENSITIVITY_ORDER: tuple[str, ...] = (
+    "internal",
+    "confidential",
+    "customer_confidential",
+    "personal",
+    "regulated",
+)
+
 
 @dataclass(slots=True)
 class Record:
@@ -170,6 +180,27 @@ def choose_columns(suffix: str, content: str) -> tuple[str, str]:
     return (text or _longest_column(rows, exclude=label), label)
 
 
+def _effective_sensitivity(source_class: str, row_class: str) -> str:
+    """The class a record carries: the more sensitive of its source's and its own.
+
+    A row may raise the class of the file it was read from, never lower it.
+    A row that claims to be less sensitive than its source is asking to be
+    treated more openly than the file it came from. A row that names a class
+    the order does not know keeps that name only when the exclusion list
+    marks records by it, because an unknown label cannot be shown to be a
+    lower one.
+    """
+    if not row_class:
+        return source_class
+    if row_class not in SENSITIVITY_ORDER:
+        return row_class if row_class in EXCLUDED_SENSITIVITY else source_class
+    if source_class not in SENSITIVITY_ORDER:
+        return source_class
+    if SENSITIVITY_ORDER.index(row_class) > SENSITIVITY_ORDER.index(source_class):
+        return row_class
+    return source_class
+
+
 def _bounded_acl(row: dict[str, Any], source: Source) -> list[str]:
     """A row may narrow the source ACL. It may not grant a group the source did not."""
     source_acl = [str(item) for item in source.acl]
@@ -210,7 +241,9 @@ def ingest_source(source: Source) -> list[Record]:
                     record_key=str(row.get("id") or row.get("record_key") or index),
                     text=text,
                     source_id=source.source_id,
-                    sensitivity=str(row.get("sensitivity", source.sensitivity)),
+                    sensitivity=_effective_sensitivity(
+                        source.sensitivity, str(row.get("sensitivity", "") or "")
+                    ),
                     acl=_bounded_acl(row, source),
                     meta={
                         "format": "jsonl",
@@ -233,7 +266,9 @@ def ingest_source(source: Source) -> list[Record]:
                     record_key=str(row.get("id") or index),
                     text=text,
                     source_id=source.source_id,
-                    sensitivity=str(row.get("sensitivity", source.sensitivity)),
+                    sensitivity=_effective_sensitivity(
+                        source.sensitivity, str(row.get("sensitivity", "") or "")
+                    ),
                     acl=_bounded_acl(row, source),
                     meta={"format": "csv", **_label_meta(row, source)},
                 )

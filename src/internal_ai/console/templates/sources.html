@@ -106,7 +106,7 @@
 {% call m.data_table([("Source", false, "name"), ("Approval", false, "state"), ("Readers",), ("Dataset",), ("Actions",)], table) %}
   {% for source in sources %}
   <tr>
-    <td><strong>{{ source.name }}</strong> <span class="muted small">{{ source.id }}</span><br><code class="small">{{ source.path }}</code><br><span class="muted small">{{ source.purpose }}</span></td>
+    <td><strong>{{ source.name }}</strong> <span class="muted small">{{ source.id }}</span><br><code class="small">{{ source.path }}</code><br><span class="muted small">{{ source.purpose }}</span><br><span class="muted small">{{ source.legal_status or "no legal status" }}{% if source.license_name %} · {{ source.license_name }}{% if source.license_url %} ({{ source.license_url }}){% endif %}{% endif %}</span></td>
     <td>{% if source.withdrawn %}{{ m.status_badge("withdrawn") }}{% else %}{{ m.status_badge(source.gate_status) }}{% endif %}<br><a class="small" href="/console/approvals?status=all">{{ source.gate_id }}</a></td>
     <td>{{ source.acl | join(", ") }}</td>
     <td>{% if source.dataset_id %}<a href="/console/datasets/{{ source.dataset_id }}">{{ source.dataset_id }}</a>{% else %}<span class="muted">none</span>{% endif %}</td>
