@@ -195,9 +195,10 @@ def test_weight_files_outside_paths_frozen_sets_and_spend(
             version=1,
             content_hash="def",
             record_count=1,
-            token_count=10,
+            token_count=200_000_000,
             created_at=now_iso(),
             released=True,
+            stats={"token_count_kind": "measured"},
         )
     )
     platform.store.add_dataset_records(
@@ -225,6 +226,9 @@ def test_weight_files_outside_paths_frozen_sets_and_spend(
             ],
         )
     )
+    from internal_ai.compute.advise import advise_dataset
+
+    advise_dataset(platform, dataset_id)
     platform.budget.set_limit(BudgetScope.GLOBAL, "global", 1)
     with pytest.raises(PermissionDenied, match="left in the"):
         build.train_model(

@@ -119,7 +119,10 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
         counted = platform.store.get_dataset(dataset_id)
         stats = dict(counted.stats)
         stats["token_count_kind"] = "measured"
-        platform.store.update_dataset_tokens(dataset_id, 10**12, stats)
+        platform.store.update_dataset_tokens(dataset_id, 250_000_000, stats)
+        from internal_ai.compute.advise import advise_dataset
+
+        advise_dataset(platform, dataset_id)
         dana.post(f"/console/datasets/{dataset_id}/request-release")
         approve(platform, mo, GateType.DATASET_RELEASE, dataset_id)
         approve(platform, cora, GateType.DATASET_RELEASE, dataset_id)

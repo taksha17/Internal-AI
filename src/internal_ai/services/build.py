@@ -1019,8 +1019,10 @@ def train_model(
     learning_rate: float = 3e-4,
     seed: int = 17,
     vocab_rationale: str = "",
+    size: str = "small",
 ) -> dict[str, Any]:
     """Train a from-scratch embedding model on the training split of a released dataset."""
+    from internal_ai.compute.advise import require_runnable_size
     from internal_ai.data.tokenizer import Tokenizer
     from internal_ai.training.trainer import TrainConfig
     from internal_ai.workflows import train_embedding_model
@@ -1037,6 +1039,10 @@ def train_model(
             dataset_id,
             "training uses released datasets only; release this dataset first",
         )
+    try:
+        advised = require_runnable_size(platform, dataset_id, size)
+    except ValueError as exc:
+        raise deny(platform.audit, actor, "train_model", dataset_id, str(exc)) from exc
     token_file = tokenizer_path(platform, dataset_id)
     if token_file is None:
         raise ValueError("train a tokenizer for this dataset first")
@@ -1050,7 +1056,8 @@ def train_model(
     if cost_cap_usd > TRAINING_COST_GATE_USD:
         _require_gate(platform, actor, GateType.TRAINING_RUN_COST, subject, "train_model")
     require_customer_eval(platform, dataset_id)
-    config = TrainConfig(
+    config = TrainConfig.for_size(
+        size,
         name=name,
         steps=steps,
         cost_cap_usd=cost_cap_usd,
@@ -1068,6 +1075,8 @@ def train_model(
         result["dataset_id"] = dataset_id
         result["tokenizer_path"] = str(token_file)
         result["name"] = name
+        result["size"] = size
+        result["planning_gpu_hours"] = advised["planning_gpu_hours"]
         return result
 
     return runner.submit(
@@ -1077,6 +1086,7 @@ def train_model(
         {
             "dataset_id": dataset_id,
             "name": name,
+            "size": size,
             "steps": steps,
             "pair_mode": pair_mode,
             "learning_rate": learning_rate,
@@ -1122,6 +1132,9 @@ def register_model(platform: Platform, actor: Actor, runner: JobRunner, job_id: 
     card["run_id"] = result["run_id"]
     card["tokenizer_path"] = result["tokenizer_path"]
     card["registered_by"] = actor.id
+    card["size"] = result.get("size", "small")
+    card["planning_gpu_hours"] = float(result.get("planning_gpu_hours") or 0.0)
+    card["track"] = "from_scratch"
     platform.store.update_model_card(model.id, card)
     saved = platform.store.get_model(model.id)
     _queue_registration_eval(platform, actor, runner, saved)

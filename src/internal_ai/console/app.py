@@ -1732,6 +1732,7 @@ def mount_console(
                 cost_cap_usd=_number(form.get("cost_cap_usd", ""), float, 2.0),
                 pair_mode=form.get("pair_mode", "paraphrase"),
                 vocab_rationale=form.get("vocab_rationale", ""),
+                size=form.get("size", "small"),
             ),
             "training started",
             job_link,
