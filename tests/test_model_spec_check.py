@@ -61,7 +61,8 @@ def test_a_shape_that_disagrees_with_the_spec_is_named() -> None:
 def test_a_layer_count_that_disagrees_with_the_spec_is_named() -> None:
     violations = spec_violations(TinyTransformer(spec(n_layers=1)), spec(n_layers=3))
 
-    assert violations == ["the model has 1 attention layers; the spec says 3"]
+    assert "the model has 1 attention layers; the spec says 3" in violations
+    assert any(line.startswith("parameter count is") for line in violations)
 
 
 def test_a_nan_weight_is_found_before_training_starts() -> None:
@@ -150,6 +151,87 @@ def test_a_first_loss_that_is_not_finite_is_named(platform, tmp_path, monkeypatc
     assert outcome.steps == 0
     assert any("the first loss is not finite" in alert for alert in outcome.alerts)
     assert np.isnan(outcome.final_loss)
+
+
+def test_one_fp32_batch_has_finite_logits_and_gradients() -> None:
+    import torch
+
+    model = TinyTransformer(spec())
+    model.train()
+    inputs = torch.randint(2, 50, (2, 8))
+    labels = inputs.clone()
+    logits, loss = model(inputs, labels)
+    loss.backward()
+
+    assert torch.isfinite(logits).all()
+    assert torch.isfinite(loss)
+    assert all(parameter.grad is not None for parameter in model.parameters())
+    assert all(torch.isfinite(parameter.grad).all() for parameter in model.parameters())
+
+
+def test_a_first_loss_far_from_ln_vocab_fails(platform, tmp_path, monkeypatch) -> None:
+    trainer, tokenizer, records = build_trainer(platform, tmp_path)
+
+    class FarLoss(TinyTransformer):
+        def forward(self, input_ids, labels=None):  # type: ignore[override]
+            logits, loss = super().forward(input_ids, labels)
+            if loss is None:
+                return logits, loss
+            return logits, loss * 0 + 100.0
+
+    monkeypatch.setattr(trainer_module, "build_model", lambda config, seed=0: FarLoss(config))
+
+    outcome = trainer.train(
+        config(), records, tokenizer, dataset_id="ds_far", dataset_hash="h", resume=False
+    )
+
+    assert outcome.status == "diverged"
+    assert any("outside 20 percent" in alert for alert in outcome.alerts)
+    row = (tmp_path / "artifacts" / "runs" / outcome.run_id / "metrics.jsonl").read_text()
+    assert "ln_vocab" in row
+    assert '"initial_loss_check": "failed"' in row or '"initial_loss_check":"failed"' in row
+
+
+def test_a_contrastive_run_records_that_ln_vocab_does_not_apply(platform, tmp_path) -> None:
+    trainer, tokenizer, records = build_trainer(platform, tmp_path)
+
+    outcome = trainer.train(
+        config(objective="contrastive", steps=1),
+        records,
+        tokenizer,
+        dataset_id="ds_contrast",
+        dataset_hash="h",
+        resume=False,
+    )
+
+    row = (tmp_path / "artifacts" / "runs" / outcome.run_id / "metrics.jsonl").read_text()
+    assert "not_applicable" in row
+
+
+def test_saved_weights_with_the_wrong_width_are_refused(platform, tmp_path) -> None:
+    import pytest
+
+    trainer, tokenizer, records = build_trainer(platform, tmp_path)
+    trainer.train(
+        config(steps=1),
+        records,
+        tokenizer,
+        dataset_id="ds_width",
+        dataset_hash="h",
+        run_id="run_width",
+        resume=False,
+    )
+
+    with pytest.raises(PermissionError, match="do not match the spec"):
+        trainer.train(
+            config(steps=2, d_model=64),
+            records,
+            tokenizer,
+            dataset_id="ds_width",
+            dataset_hash="h",
+            run_id="run_width",
+            resume=True,
+        )
 
 
 def test_a_healthy_run_still_trains_after_the_check(platform, tmp_path) -> None:
