@@ -425,12 +425,43 @@ def register_model(
     return model
 
 
+def recall_regression(platform: Platform, model: ModelVersion) -> dict[str, float] | None:
+    """How far this candidate fell behind an earlier one on the same frozen set."""
+    reports = platform.store.list_eval_reports(model.id)
+    if not reports or "recall_at_10" not in reports[-1].metrics:
+        return None
+    current = reports[-1]
+    best: float | None = None
+    for other in platform.store.list_models():
+        if other.id == model.id or other.created_at >= model.created_at:
+            continue
+        if model.dataset_ids and other.dataset_ids != model.dataset_ids:
+            continue
+        earlier = [
+            item
+            for item in platform.store.list_eval_reports(other.id)
+            if item.eval_set_id == current.eval_set_id and "recall_at_10" in item.metrics
+        ]
+        if not earlier:
+            continue
+        score = float(earlier[-1].metrics["recall_at_10"])
+        if best is None or score > best:
+            best = score
+    if best is None:
+        return None
+    drop = best - float(current.metrics["recall_at_10"])
+    if drop <= 0.05:
+        return None
+    return {"previous": best, "current": float(current.metrics["recall_at_10"]), "drop": drop}
+
+
 def promote_model(
     platform: Platform,
     model_id: str,
     gate_approved: bool,
     approver: str = "ml_lead",
     actor: str = "evaluation",
+    note: str = "",
 ) -> ModelVersion:
     model = platform.store.get_model(model_id)
     if model is None:
@@ -443,6 +474,12 @@ def promote_model(
             "model promotion requires a passing eval report on a frozen eval set (FR-15)"
         )
     builder = str(model.card.get("registered_by") or "")
+    regressed = recall_regression(platform, model)
+    if regressed is not None and (approver == builder or "accepted" not in note.lower()):
+        raise PermissionError(
+            "this model regressed against the previous candidate; promotion needs the word "
+            "accepted from someone other than its builder"
+        )
     if report.judged_by and report.judged_by in {builder, approver}:
         raise PermissionError(
             "the newest report was judged by the person who built or is approving this model; "

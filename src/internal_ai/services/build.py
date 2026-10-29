@@ -1043,7 +1043,9 @@ def register_model(platform: Platform, actor: Actor, runner: JobRunner, job_id: 
     card["tokenizer_path"] = result["tokenizer_path"]
     card["registered_by"] = actor.id
     platform.store.update_model_card(model.id, card)
-    return platform.store.get_model(model.id)
+    saved = platform.store.get_model(model.id)
+    _queue_registration_eval(platform, actor, runner, saved)
+    return saved
 
 
 def evaluate_model(
@@ -1311,15 +1313,53 @@ def request_promotion(
     )
 
 
-def promote(platform: Platform, actor: Actor, model_id: str) -> Any:
+def recall_drop(platform: Platform, model: Any) -> dict[str, float] | None:
+    from internal_ai.workflows import recall_regression
+
+    return recall_regression(platform, model)
+
+
+def promote(platform: Platform, actor: Actor, model_id: str, note: str = "") -> Any:
     from internal_ai.workflows import promote_model
 
     require(platform.audit, actor, Action.PROMOTE_MODEL, model_id)
     _require_gate(platform, actor, GateType.MODEL_PROMOTION, model_id, "promote_model")
     try:
-        return promote_model(platform, model_id, gate_approved=True, approver=actor.id)
+        return promote_model(platform, model_id, gate_approved=True, approver=actor.id, note=note)
     except PermissionError as exc:
         raise PermissionDenied(str(exc)) from exc
+
+
+def _frozen_eval_for(platform: Platform, dataset_id: str) -> Any:
+    matches = [
+        item
+        for item in platform.store.list_eval_sets()
+        if item.frozen and any(row.get("dataset_id") == dataset_id for row in item.items)
+    ]
+    return matches[-1] if matches else None
+
+
+def _evaluation_judge(platform: Platform, builder_id: str) -> Actor | None:
+    from internal_ai.people import PeopleRegistry
+
+    for person in PeopleRegistry(platform.store).list_people():
+        if person["id"] == builder_id or "ml_lead" not in person.get("roles", []):
+            continue
+        return Actor.from_person(person, authenticated=True)
+    return None
+
+
+def _queue_registration_eval(
+    platform: Platform, actor: Actor, runner: JobRunner, model: Any
+) -> None:
+    """Start the frozen eval when a candidate is registered, judged by someone else."""
+    if not model.dataset_ids:
+        return
+    eval_set = _frozen_eval_for(platform, model.dataset_ids[0])
+    judge = _evaluation_judge(platform, actor.id)
+    if eval_set is None or judge is None:
+        return
+    evaluate_model(platform, judge, runner, model.id, eval_set.id)
 
 
 # ---------------------------------------------------------------------- ask
