@@ -165,8 +165,9 @@ class TinyTransformer(nn.Module):
 
 
 def count_parameters(config: TransformerConfig) -> int:
-    model = TinyTransformer(config)
-    return model.parameter_count()
+    with torch.random.fork_rng():
+        model = TinyTransformer(config)
+        return model.parameter_count()
 
 
 def spec_violations(model: TinyTransformer, config: TransformerConfig) -> list[str]:
@@ -194,6 +195,10 @@ def spec_violations(model: TinyTransformer, config: TransformerConfig) -> list[s
         violations.append(
             f"the model has {built_layers} attention layers; the spec says {config.n_layers}"
         )
+    expected_count = count_parameters(config)
+    actual_count = model.parameter_count()
+    if actual_count != expected_count:
+        violations.append(f"parameter count is {actual_count} but the spec says {expected_count}")
     return violations
 
 

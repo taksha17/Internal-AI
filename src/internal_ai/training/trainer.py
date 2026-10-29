@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import os
 import platform
 import subprocess
@@ -100,6 +101,24 @@ class TrainingOutcome:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def initial_loss_verdict(loss: float, vocab_size: int, objective: str) -> dict[str, Any]:
+    """Whether a from-scratch cross-entropy loss starts near ``ln(vocab)``.
+
+    A random classifier starts near that number. A contrastive embedding loss is a
+    different objective, so the comparison is recorded and not applied.
+    """
+    recorded = round(loss, 6)
+    if objective == "contrastive":
+        return {"initial_loss": recorded, "initial_loss_check": "not_applicable"}
+    ln_vocab = math.log(max(vocab_size, 2))
+    within = abs(loss - ln_vocab) <= 0.2 * ln_vocab
+    return {
+        "initial_loss": recorded,
+        "ln_vocab": round(ln_vocab, 6),
+        "initial_loss_check": "passed" if within else "failed",
+    }
 
 
 def _git_commit(root: Path) -> str:
@@ -400,7 +419,10 @@ class Trainer:
         last_checkpoint = checkpoint_dir / "latest.pt"
         if resume and last_checkpoint.exists():
             state = torch.load(last_checkpoint, weights_only=True)
-            model.load_state_dict(state["model_state"])
+            try:
+                model.load_state_dict(state["model_state"])
+            except RuntimeError as exc:
+                raise PermissionError(f"saved weights do not match the spec: {exc}") from exc
             broken = self._refuse_mis_wired(run_id, actor, model, model_config, metrics_path)
             if broken is not None:
                 broken.alerts.append(f"resume refused from checkpoint step {state['step']}")
@@ -462,6 +484,23 @@ class Trainer:
 
             loss_value = float(loss.detach())
             loss_history.append(loss_value)
+            if step == 0 and resumed_from == 0:
+                opening = initial_loss_verdict(loss_value, tokenizer.vocab_size, config.objective)
+                if opening["initial_loss_check"] == "failed":
+                    self._write_metric(
+                        metrics_path,
+                        {
+                            "step": 0,
+                            "loss": round(loss_value, 6),
+                            "timestamp": now_iso(),
+                            **opening,
+                        },
+                    )
+                    alerts.append(
+                        f"initial loss {loss_value:.4f} is outside 20 percent of "
+                        f"ln(vocab) {opening['ln_vocab']:.4f}"
+                    )
+                    break
             ema_loss = loss_value if ema_loss is None else 0.9 * ema_loss + 0.1 * loss_value
             tokens_seen += int(inputs.numel())
             elapsed = max(time.monotonic() - start_time, 1e-6)
@@ -518,6 +557,10 @@ class Trainer:
                 if val_batches and step % config.eval_interval == 0:
                     val_loss = self._validation_loss(model, val_batches, config)
                     line["val_loss"] = round(val_loss, 6)
+                if step == 0 and resumed_from == 0:
+                    line.update(
+                        initial_loss_verdict(loss_value, tokenizer.vocab_size, config.objective)
+                    )
                 self._write_metric(metrics_path, line)
             if (step + 1) % config.checkpoint_interval == 0 or step + 1 == config.steps:
                 self._checkpoint(
