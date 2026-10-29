@@ -98,6 +98,7 @@ class TrainingOutcome:
     reproducibility: dict[str, Any] = field(default_factory=dict)
     token_budget: dict[str, Any] = field(default_factory=dict)
     resumed_from: int = 0
+    checkpoint_reloaded: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -332,11 +333,8 @@ class Trainer:
         batches = self.build_batches(sequences, config.batch_size, config.seed)
         offsets = self._first_row_indexes(records, tokenizer, config)
         val_sequences = self.encode_records(validation_records or [], tokenizer, config.seq_len)
-        val_batches = (
-            self.build_batches(val_sequences, config.batch_size, config.seed + 1)
-            if val_sequences
-            else []
-        )
+        fixed_validation = val_sequences[: config.batch_size]
+        val_batches = [fixed_validation] if fixed_validation else []
         if pairs and config.objective == "contrastive":
             batches = self._pair_batches(pairs, tokenizer, config)
             if len(offsets) != len(batches):
@@ -481,6 +479,8 @@ class Trainer:
         step = start_step
         final_loss = float("nan")
         step_costs: list[float] = []
+        validation_history: list[float] = []
+        last_validation: float | None = None
 
         while step < config.steps:
             position = self._batch_position(batches, step)
@@ -585,9 +585,20 @@ class Trainer:
                         "index": offsets[position["batch_index"]] if offsets else 0,
                     },
                 }
-                if val_batches and step % config.eval_interval == 0:
-                    val_loss = self._validation_loss(model, val_batches, config)
-                    line["val_loss"] = round(val_loss, 6)
+                if val_batches:
+                    measured = self._validation_loss(model, val_batches, config)
+                    line["validation_loss"] = round(measured, 6)
+                    last_validation = measured
+                    validation_history.append(measured)
+                    if (
+                        len(validation_history) >= 3
+                        and validation_history[-1] > validation_history[-2] > validation_history[-3]
+                    ):
+                        alerts.append(f"validation loss rose for three logs at step {step}")
+                        self._write_metric(metrics_path, line)
+                        break
+                else:
+                    line["validation_loss"] = "not_applicable"
                 if step == 0 and resumed_from == 0:
                     line.update(
                         initial_loss_verdict(loss_value, tokenizer.vocab_size, config.objective)
@@ -619,6 +630,19 @@ class Trainer:
             step += 1
 
         checkpoint_path = str(checkpoint_dir / "latest.pt")
+        if val_batches:
+            closing = self._validation_loss(model, val_batches, config)
+            last_validation = closing
+            if step == config.steps and (step - 1) % config.log_interval != 0:
+                self._write_metric(
+                    metrics_path,
+                    {
+                        "step": step - 1,
+                        "loss": round(final_loss, 6),
+                        "validation_loss": round(closing, 6),
+                        "timestamp": now_iso(),
+                    },
+                )
         self._checkpoint(
             checkpoint_dir,
             model,
@@ -638,6 +662,20 @@ class Trainer:
             model_path,
         )
         spend = sum(step_costs)
+        checkpoint_reloaded = False
+        if last_validation is not None and Path(checkpoint_path).exists():
+            checkpoint_reloaded = self._logged_checkpoint_matches(
+                Path(checkpoint_path),
+                last_validation,
+                val_batches,
+                config,
+                model_config,
+            )
+            if not checkpoint_reloaded:
+                alerts.append(
+                    "reloaded checkpoint does not match the last validation loss "
+                    f"{last_validation:.4f}"
+                )
         self.budget.record_spend(spend, agent=actor, task_id=None, notes=f"train:{run_id}")
         self.audit.record(
             actor=actor,
@@ -672,7 +710,24 @@ class Trainer:
             reproducibility=reproducibility,
             token_budget=token_budget,
             resumed_from=resumed_from,
+            checkpoint_reloaded=checkpoint_reloaded,
         )
+
+    def _logged_checkpoint_matches(
+        self,
+        path: Path,
+        expected: float,
+        batches: list[Any],
+        config: TrainConfig,
+        model_config: TransformerConfig,
+    ) -> bool:
+        """Whether the file on disk still scores the logged validation batch."""
+        state = torch.load(path, weights_only=True)
+        with torch.random.fork_rng():
+            reloaded = TinyTransformer(model_config)
+        reloaded.load_state_dict(state["model_state"])
+        restored = self._validation_loss(reloaded, batches, config)
+        return abs(restored - expected) <= 1e-4
 
     def _validation_loss(
         self, model: TinyTransformer, batches: list[Any], config: TrainConfig

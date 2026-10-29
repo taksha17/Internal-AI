@@ -255,6 +255,54 @@ def when(value: Any) -> Markup:
     )
 
 
+def loss_points(path: str) -> Markup:
+    """Two polylines, training solid and validation dashed, from a metrics file."""
+    file = Path(path)
+    if not path or not file.is_file():
+        return Markup("")
+    rows = []
+    for line in file.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if isinstance(row.get("loss"), int | float):
+            rows.append(row)
+    rows = rows[-24:]
+    if len(rows) < 2:
+        return Markup("")
+    numbers = [
+        float(row[key])
+        for row in rows
+        for key in ("loss", "validation_loss")
+        if isinstance(row.get(key), int | float)
+    ]
+    if len(numbers) < 2:
+        return Markup("")
+    low, high = min(numbers), max(numbers)
+    span = max(high - low, 1e-6)
+
+    def series(key: str) -> str:
+        coords = []
+        for index, row in enumerate(rows):
+            value = row.get(key)
+            if not isinstance(value, int | float):
+                continue
+            x = 4 + (232 * index / max(len(rows) - 1, 1))
+            y = 44 - (40 * (float(value) - low) / span)
+            coords.append(f"{x:.1f},{y:.1f}")
+        return " ".join(coords)
+
+    train = series("loss")
+    held_out = series("validation_loss")
+    markup = f'<polyline fill="none" stroke="currentColor" stroke-width="1.5" points="{train}" />'
+    if held_out:
+        markup += (
+            '<polyline fill="none" stroke="currentColor" stroke-width="1.5" '
+            f'stroke-dasharray="3 2" points="{held_out}" />'
+        )
+    return Markup(markup)
+
+
 def mount_console(
     app: FastAPI,
     get_platform: Callable[[], Platform],
@@ -1545,7 +1593,11 @@ def mount_console(
         platform = ctx.platform
         registered_runs = {model.card.get("run_id") for model in platform.store.list_models()}
         runs = [
-            {**job, "registered": job["result"].get("run_id") in registered_runs}
+            {
+                **job,
+                "registered": job["result"].get("run_id") in registered_runs,
+                "losses": loss_points(str(job["result"].get("metrics_path") or "")),
+            }
             for job in get_jobs().list(limit=50, kind="train_model")
         ]
         models = []
