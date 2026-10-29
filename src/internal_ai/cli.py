@@ -773,6 +773,43 @@ def cmd_people_approvers(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_feedback_list(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.feedback import failed_citations
+
+        for row in failed_citations(platform):
+            print(f"{row['time']}  {row['model']}  hits {row['hits']}  {row['latency_ms']} ms")
+    return 0
+
+
+def cmd_feedback_file(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.feedback import file_feedback
+
+        actor = _actor(platform, args, args.by, "")
+        try:
+            row = file_feedback(platform, actor, args.question, args.file, args.line, args.dataset)
+        except PermissionError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(row["id"])
+    return 0
+
+
+def cmd_feedback_export(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.feedback import export_feedback
+
+        actor = _actor(platform, args, args.by, "")
+        try:
+            dataset = export_feedback(platform, actor)
+        except PermissionError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(dataset.id)
+    return 0
+
+
 def cmd_serve_report(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.serving.report import serve_report
@@ -1411,6 +1448,21 @@ def build_parser() -> argparse.ArgumentParser:
     models_demote.add_argument("id")
     models_demote.add_argument("--by", default=None)
     models_demote.set_defaults(func=cmd_models_demote)
+
+    feedback = sub.add_parser("feedback", help="ask failures a person files by hand")
+    feedback_sub = feedback.add_subparsers(dest="feedback_command", required=True)
+    feedback_list = feedback_sub.add_parser("list")
+    feedback_list.set_defaults(func=cmd_feedback_list)
+    feedback_file = feedback_sub.add_parser("file")
+    feedback_file.add_argument("--question", required=True)
+    feedback_file.add_argument("--file", required=True)
+    feedback_file.add_argument("--line", type=int, required=True)
+    feedback_file.add_argument("--dataset", required=True)
+    feedback_file.add_argument("--by", default=None)
+    feedback_file.set_defaults(func=cmd_feedback_file)
+    feedback_export = feedback_sub.add_parser("export")
+    feedback_export.add_argument("--by", default=None)
+    feedback_export.set_defaults(func=cmd_feedback_export)
 
     return parser
 
