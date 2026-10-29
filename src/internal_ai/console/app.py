@@ -1512,6 +1512,22 @@ def mount_console(
         "tokenizer training started",
         job_link,
     )
+
+    def _file_question(ctx: Ctx, dataset_id: str, form: dict[str, str]) -> str:
+        eval_set = build.file_customer_questions(
+            ctx.platform,
+            ctx.actor,
+            dataset_id,
+            form.get("question", ""),
+            form.get("record_key", ""),
+            _number(form.get("line", ""), int, 0),
+        )
+        return (
+            f"question filed on {eval_set.name} v{eval_set.version}; "
+            "freeze that set before training"
+        )
+
+    dataset_action("questions", _file_question, lambda text: text, lambda _text: "/console/evals")
     dataset_action(
         "eval-set",
         lambda ctx, dataset_id, form: build.create_eval_set(

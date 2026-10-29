@@ -133,13 +133,25 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
         stats["token_count_kind"] = "measured"
         platform.store.update_dataset_tokens(dataset_id, 10**12, stats)
 
+        held_out = platform.store.dataset_records_by_split(dataset_id, "test")
+        dex.post(
+            f"/console/datasets/{dataset_id}/questions",
+            question="how do I reset my VPN",
+            record_key=held_out[0]["record_key"],
+            line="1",
+        )
+        filed = platform.store.list_eval_sets()[-1]
+        dex.post(f"/console/evals/{filed.id}/request-freeze")
+        approve(platform, mo, GateType.EVAL_SET_FREEZE, filed.id)
+        mo.post(f"/console/evals/{filed.id}/freeze")
+        assert platform.store.get_eval_set(filed.id).frozen
+        mo.post(f"/console/evals/{filed.id}/edit", ok=False)
+
         dex.post(f"/console/datasets/{dataset_id}/eval-set", name="tickets-eval", count="16")
-        eval_set = platform.store.list_eval_sets()[0]
+        eval_set = platform.store.list_eval_sets()[-1]
         dex.post(f"/console/evals/{eval_set.id}/request-freeze")
         approve(platform, mo, GateType.EVAL_SET_FREEZE, eval_set.id)
         mo.post(f"/console/evals/{eval_set.id}/freeze")
-        assert platform.store.get_eval_set(eval_set.id).frozen
-        mo.post(f"/console/evals/{eval_set.id}/edit", ok=False)
 
         page = mo.post(
             "/console/models/train",

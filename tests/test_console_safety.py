@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from internal_ai.api import create_app
 from internal_ai.context import Platform
-from internal_ai.domain import BudgetScope, DatasetVersion, GateType, ModelVersion
+from internal_ai.domain import BudgetScope, DatasetVersion, EvalSet, GateType, ModelVersion
 from internal_ai.evals.harness import EvalHarness
 from internal_ai.gates import GateError
 from internal_ai.ids import now_iso
@@ -207,6 +207,24 @@ def test_weight_files_outside_paths_frozen_sets_and_spend(
     token_file = platform.settings.models_dir / f"tokenizer-{dataset_id}.json"
     token_file.parent.mkdir(parents=True, exist_ok=True)
     token_file.write_text("{}")
+    platform.store.add_eval_set(
+        EvalSet(
+            id="evs_budget",
+            name="ds_budget-questions",
+            version=1,
+            frozen=True,
+            created_at=now_iso(),
+            items=[
+                {
+                    "dataset_id": dataset_id,
+                    "filed_by": "ppl_dex",
+                    "query": "where is the figure",
+                    "relevant_ids": ["payroll"],
+                    "expected_line": 1,
+                }
+            ],
+        )
+    )
     platform.budget.set_limit(BudgetScope.GLOBAL, "global", 1)
     with pytest.raises(PermissionDenied, match="left in the"):
         build.train_model(
