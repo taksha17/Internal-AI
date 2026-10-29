@@ -19,6 +19,7 @@
   <label>Cost cap (USD) <input type="number" name="cost_cap_usd" value="2" min="0.01" step="0.01">
     <span class="muted small">Above ${{ "%.0f" % cost_gate_usd }} the run needs an approved <a href="/console/gates/new?gate_type=training_run_above_threshold">training cost gate</a> with subject <code>dataset_id:model_name</code>. The run is refused if any budget has less left than this cap.</span></label>
   <label>Training pairs <select name="pair_mode"><option value="paraphrase">paraphrase</option><option value="title">title</option></select></label>
+  <label>Why this vocabulary size <input type="text" name="vocab_rationale" required maxlength="300" placeholder="600 tokens covers the ticket jargon"></label>
   <button type="submit" class="primary">Start training</button>
   {% else %}
   <p class="muted">Release a dataset first.</p>
@@ -103,7 +104,8 @@
   {% call m.data_table([("Run",), ("State",), ("Result",), ("Action",)]) %}
     {% for run in runs %}
     <tr><td><a href="/console/jobs/{{ run.id }}">{{ run.title }}</a></td><td>{{ m.status_badge(run.state) }}</td>
-      <td>{% if run.result %}{{ run.result.status }}, loss {{ "%.4f" % (run.result.final_loss or 0) }}, ${{ "%.4f" % (run.result.cost_usd or 0) }}{% endif %}</td>
+      <td>{% if run.result %}{{ run.result.status }}, loss {{ "%.4f" % (run.result.final_loss or 0) }}, ${{ "%.4f" % (run.result.cost_usd or 0) }}{% endif %}
+        {% if run.losses %}<svg class="loss-chart" viewBox="0 0 240 48" width="240" height="48" role="img" aria-label="training and validation loss">{{ run.losses }}</svg>{% endif %}</td>
       <td>{% if run.registered %}registered{% elif run.state == "succeeded" and run.result.status == "completed" and can("register_model") %}
         <form method="post" action="/console/runs/{{ run.id }}/register">{{ m.csrf_field() }}<button type="submit">Register model</button></form>{% endif %}</td></tr>
     {% else %}
@@ -128,7 +130,14 @@
 <section class="card">
   <h2>{{ model.name }} v{{ model.version }} {{ m.status_badge(model.status) }}</h2>
   <p class="muted small">{{ model.id }} · trained on {{ model.dataset_ids | join(", ") }}</p>
+  {% if row.service %}
+  <p class="callout"><strong>Out of service.</strong> {{ row.service }}. Requests are answered by another version, or refused while none qualifies.</p>
+  {% endif %}
   {% if row.report %}
+  {% if row.report.metrics.recall_at_10 is defined %}
+  <p>recall@10 {{ "%.3f" % row.report.metrics.recall_at_10 }} against a keyword baseline of {{ "%.3f" % row.report.baseline_metrics.get("recall_at_10", 0) }}.</p>
+  {% endif %}
+  {% if row.legacy_permission %}<p class="callout">The permission check on the newest report is the legacy note, not a probe.</p>{% endif %}
   <p>Latest evaluation {{ m.status_badge("passed" if row.report.passed else "failed") }} on {{ row.report.eval_set_id }}:
     {% for key, value in row.report.metrics | dictsort %}{{ key }} {{ "%.3f" % value }} (baseline {{ "%.3f" % (row.report.baseline_metrics.get(key, 0)) }}) · {% endfor %}</p>
     {% if row.report.notes %}<p class="muted">{{ row.report.notes }}</p>{% endif %}
@@ -136,14 +145,16 @@
     {% if row.advice %}<ul class="advice-list">{% for line in row.advice %}<li>{{ line }}</li>{% endfor %}</ul>{% endif %}
   {% endif %}
   {% if row.progress %}
-  <p class="card-sub">Recent evaluations against the bar the brief sets now, newest last:</p>
+  <p class="card-sub">Recent evaluations, and how far each was from the bar it was judged by, newest last:</p>
   <ul class="plain">
     {% for entry in row.progress %}
-    <li>{{ m.status_badge("passed" if entry.met else "failed") }} {{ entry.text }}<span class="spacer"></span><span class="muted small">{{ entry.created_at | when }}</span></li>
+    <li>{{ m.status_badge("passed" if entry.met else "failed") }} {{ entry.text }}{% if entry.basis == "current" %} <span class="muted small">(the brief today)</span>{% endif %}<span class="spacer"></span><span class="muted small">{{ entry.created_at | when }}</span></li>
     {% endfor %}
   </ul>
   {% endif %}
-  {% if can("evaluate_model") %}
+  {% if row.judge %}<p class="muted small">Judged by {{ row.judge }}.</p>{% endif %}
+  {% if row.self_judging %}<p class="callout">The newest report was run by the person who built this model. A different ml_lead has to evaluate it before it can be promoted.</p>{% endif %}
+  {% if can("evaluate_model") and not row.self_judging %}
   <form method="post" action="/console/models/{{ model.id }}/evaluate" class="inline-form">{{ m.csrf_field() }}
     {% if frozen_sets %}
     <label>Frozen eval set <select name="eval_set_id">{% for item in frozen_sets %}<option value="{{ item.id }}">{{ item.name }} v{{ item.version }}</option>{% endfor %}</select></label>
@@ -155,7 +166,7 @@
   {% if model.status != "promoted" and can("promote_model") %}
     {% if row.gate and row.gate.status == "approved" %}
     <form method="post" action="/console/models/{{ model.id }}/promote">{{ m.csrf_field() }}<button type="submit" class="primary">Promote</button></form>
-    {% elif row.report and row.report.passed and (not row.gate or row.gate.status == "rejected") %}
+    {% elif row.report and row.report.passed and not row.self_judging and (not row.gate or row.gate.status == "rejected") %}
     <form method="post" action="/console/models/{{ model.id }}/request-promotion" class="stack">{{ m.csrf_field() }}
       <label>Red-team results (memorisation, PII and permission tests) <textarea name="red_team_results" rows="3" required></textarea></label>
       <button type="submit">Request promotion</button></form>

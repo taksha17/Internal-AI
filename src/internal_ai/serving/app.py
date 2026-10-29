@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from internal_ai.context import Platform
 from internal_ai.data.tokenizer import Tokenizer
+from internal_ai.domain import ModelVersion
 from internal_ai.serving.service import (
     ModelRouter,
     Principal,
@@ -20,9 +21,12 @@ from internal_ai.serving.service import (
     RetrievalService,
     load_principals,
     log_request,
+    out_of_service,
     served_model,
 )
 from internal_ai.training.embedder import TorchEmbedder
+
+MEMORISATION_SAMPLE = 200
 
 
 class SearchRequest(BaseModel):
@@ -94,6 +98,33 @@ def create_serving_app(
             )
         return principal
 
+    def in_service_model() -> ModelVersion:
+        """The model this request is answered by, or a refusal that says why not."""
+        platform = get_platform()
+        model = served_model(platform.store, app.state.router)
+        if model is not None:
+            return model
+        reasons = [
+            reason
+            for item in platform.store.list_models()
+            if (reason := out_of_service(platform.store, item)) is not None
+        ]
+        if reasons:
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "no model has a passing frozen report", "reasons": reasons},
+            )
+        raise HTTPException(status_code=404, detail="no embedding model is registered")
+
+    def memorisation_sources(platform: Platform) -> list[str]:
+        """Text an answer must not recite: the served model's corpus, sampled evenly."""
+        model = served_model(platform.store, app.state.router)
+        if model is None or not model.dataset_ids:
+            return []
+        rows = platform.store.dataset_records(model.dataset_ids[0])
+        step = max(len(rows) // MEMORISATION_SAMPLE, 1)
+        return [row["payload"] for row in rows[::step][:MEMORISATION_SAMPLE]]
+
     def embedder_for(model_path: str) -> TorchEmbedder:
         embedders: dict[str, TorchEmbedder] = app.state.embedders
         if model_path not in embedders:
@@ -138,11 +169,8 @@ def create_serving_app(
     ) -> dict[str, Any]:
         started = time.monotonic()
         platform = get_platform()
-        router: ModelRouter = app.state.router
         retrieval: RetrievalService = app.state.retrieval
-        model = served_model(platform.store, router)
-        if model is None:
-            raise HTTPException(status_code=404, detail="no embedding model is registered")
+        model = in_service_model()
         dataset_id = request.dataset_id
         if dataset_id is None:
             dataset_id = model.dataset_ids[0] if model.dataset_ids else None
@@ -192,10 +220,7 @@ def create_serving_app(
     ) -> dict[str, Any]:
         started = time.monotonic()
         platform = get_platform()
-        router: ModelRouter = app.state.router
-        model = served_model(platform.store, router)
-        if model is None:
-            raise HTTPException(status_code=404, detail="no embedding model is registered")
+        model = in_service_model()
         vectors = embedder_for(model.path).embed([request.query])
         latency = (time.monotonic() - started) * 1000
         log_request(platform.audit, principal, "/v1/embed", 200, latency, {"model_id": model.id})
@@ -239,7 +264,13 @@ def create_serving_app(
         hits = [AskHit(item.path, item.line) for item in request.hits]
         excerpts = [item.text for item in request.hits]
         try:
-            result = cited_answer(LocalRunnerAdapter(), request.question, hits, excerpts)
+            result = cited_answer(
+                LocalRunnerAdapter(),
+                request.question,
+                hits,
+                excerpts,
+                training_texts=memorisation_sources(get_platform()),
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         latency = (time.monotonic() - started) * 1000

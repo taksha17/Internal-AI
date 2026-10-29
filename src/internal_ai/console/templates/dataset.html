@@ -9,7 +9,7 @@
 <div class="grid">
   <section class="card">
     <h2>What is in it</h2>
-    <p>{{ view.records }} records, {{ dataset.token_count }} tokens {% if dataset.stats.get("token_count_kind") == "measured" %}(measured with the dataset tokenizer){% else %}(estimated from characters until a tokenizer is trained){% endif %}. You can read {{ view.visible_records }} of them.</p>
+    <p>{{ view.records }} records, {{ dataset.token_count }} tokens {% if dataset.stats.get("token_count_kind") == "measured" %}measured{% else %}estimated{% endif %}{% if dataset.stats.get("parameter_count") %}, {{ dataset.stats.tokens_per_parameter }} tokens per parameter{% endif %}. You can read {{ view.visible_records }} of them.</p>
     {% if view.records < 500 %}
     <p class="callout">Small corpora answer best with keyword search. Training a model is optional here and only helps once the data grows past a few hundred records.</p>
     {% endif %}
@@ -35,6 +35,11 @@
     <li class="{{ 'done' if view.has_splits else '' }}">Split into train, validation and test.
       {% if not view.has_splits and can("build_dataset") and not dataset.released %}
       <form method="post" action="/console/datasets/{{ dataset.id }}/split" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="primary">Split</button></form>
+      {% endif %}
+    </li>
+    <li>Drop duplicate copies into a new version.
+      {% if can("build_dataset") %}
+      <form method="post" action="/console/datasets/{{ dataset.id }}/dedup" class="inline-form">{{ m.csrf_field() }}<button type="submit">Drop duplicate copies into a new version</button></form>
       {% endif %}
     </li>
     <li class="{{ 'done' if dataset.released else '' }}">Release, after a PII audit and a dataset_release gate.

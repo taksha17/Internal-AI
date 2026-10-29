@@ -31,6 +31,17 @@
   <label>Name <input type="text" name="name" required maxlength="80" placeholder="support-tickets"></label>
   <label>Purpose <input type="text" name="purpose" required maxlength="300" placeholder="Search over resolved support tickets"></label>
   <label>Who may read it (groups, comma separated) <input type="text" name="acl" value="engineering"></label>
+  <label>Legal status
+    <select name="legal_status" required>
+      <option value="internal">internal</option>
+      <option value="licensed">licensed</option>
+      <option value="public">public</option>
+      <option value="refused">refused</option>
+    </select>
+  </label>
+  <label>License name <input type="text" name="license_name" maxlength="120" placeholder="required for licensed and public"></label>
+  <label>License URL <input type="text" name="license_url" maxlength="300" placeholder="https://…"></label>
+  <label>Compatibility note <input type="text" name="license_note" maxlength="300" placeholder="how this license may be used for training"></label>
   <button type="submit" class="primary">Register and request approval</button>
 </form>
 {% else %}
