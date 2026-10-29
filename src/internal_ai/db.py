@@ -262,6 +262,17 @@ CREATE TABLE IF NOT EXISTS feedback (
     filed_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS preference (
+    id TEXT PRIMARY KEY,
+    question TEXT NOT NULL,
+    answer_a TEXT NOT NULL,
+    answer_b TEXT NOT NULL,
+    preferred TEXT NOT NULL,
+    authored_by TEXT NOT NULL,
+    dataset_id TEXT NOT NULL DEFAULT '',
+    filed_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS project_brief (
     id TEXT PRIMARY KEY,
     payload TEXT NOT NULL,
