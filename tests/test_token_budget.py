@@ -71,12 +71,26 @@ def test_a_measured_corpus_under_the_floor_names_both_numbers(platform, enroll_p
 def test_a_measured_corpus_above_the_floor_reaches_the_trainer(
     platform, enroll_person, monkeypatch
 ) -> None:
+    import hashlib
+
     tokenizer = _ready(platform, enroll_person, tokens=1, kind="measured")
-    config = TrainConfig(steps=1, d_model=16, n_heads=2, n_layers=1, d_ff=32)
+    config = TrainConfig(
+        steps=1,
+        d_model=16,
+        n_heads=2,
+        n_layers=1,
+        d_ff=32,
+        vocab_rationale="the sample vocabulary is enough to prove the floor",
+    )
     parameters = _embedding_parameters(config, tokenizer)
     dataset = platform.store.get_dataset("ds_tokens")
     stats = dict(dataset.stats)
     platform.store.update_dataset_tokens("ds_tokens", parameters * 21, stats)
+    path = platform.settings.models_dir / "tokenizer-ds_tokens.json"
+    tokenizer.save(path)
+    path.with_suffix(".sha256").write_text(
+        hashlib.sha256(path.read_bytes()).hexdigest() + "\n", encoding="utf-8"
+    )
 
     def reached(self, *args, **kwargs):
         raise RuntimeError("reached the trainer")
@@ -98,7 +112,10 @@ def test_the_brief_can_raise_the_floor(platform, enroll_person) -> None:
     stats = dict(dataset.stats)
     platform.store.update_dataset_tokens("ds_tokens", parameters * 21, stats)
     brief = load(platform.store)
-    brief.metrics = [Metric(name="tokens_per_parameter", threshold="1000")]
+    brief.metrics = [
+        Metric(name="recall_at_10", threshold="0.2"),
+        Metric(name="tokens_per_parameter", threshold="1000"),
+    ]
     save(platform.store, platform.audit, actor_named(platform, "Mo Builder"), brief)
     with pytest.raises(PermissionError, match="1000 tokens per parameter"):
         train_embedding_model(platform, "ds_tokens", tokenizer, config)

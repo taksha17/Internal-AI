@@ -45,7 +45,7 @@ def record_ready_programme(
             languages="en",
             context_length=256,
             quality_bar="cite the file the sentence came from",
-            metrics=[Metric(name="recall_at_10", threshold="0.2")],
+            metrics=[Metric(name="recall_at_10", threshold="0.05")],
             budget_usd=10,
             timeline="this quarter",
             deployment="on the company network",

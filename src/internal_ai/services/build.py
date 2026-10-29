@@ -939,6 +939,7 @@ def train_model(
     pair_mode: str = "paraphrase",
     learning_rate: float = 3e-4,
     seed: int = 17,
+    vocab_rationale: str = "",
 ) -> dict[str, Any]:
     """Train a from-scratch embedding model on the training split of a released dataset."""
     from internal_ai.data.tokenizer import Tokenizer
@@ -975,6 +976,7 @@ def train_model(
         cost_cap_usd=cost_cap_usd,
         learning_rate=learning_rate,
         seed=seed,
+        vocab_rationale=vocab_rationale,
     )
 
     def work() -> dict[str, Any]:
