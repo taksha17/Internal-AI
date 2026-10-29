@@ -139,7 +139,7 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
             "/console/models/train",
             dataset_id=dataset_id,
             name="tickets-embed",
-            steps="80",
+            steps="60",
             cost_cap_usd="1",
             vocab_rationale="600 tokens covers the ticket jargon in this sample",
         )

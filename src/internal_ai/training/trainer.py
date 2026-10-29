@@ -588,12 +588,11 @@ class Trainer:
                 if val_batches:
                     measured = self._validation_loss(model, val_batches, config)
                     line["validation_loss"] = round(measured, 6)
+                    if step % config.eval_interval == 0:
+                        line["val_loss"] = round(measured, 6)
                     last_validation = measured
                     validation_history.append(measured)
-                    if (
-                        len(validation_history) >= 3
-                        and validation_history[-1] > validation_history[-2] > validation_history[-3]
-                    ):
+                    if self._validation_rose(validation_history):
                         alerts.append(f"validation loss rose for three logs at step {step}")
                         self._write_metric(metrics_path, line)
                         break
@@ -728,6 +727,17 @@ class Trainer:
         reloaded.load_state_dict(state["model_state"])
         restored = self._validation_loss(reloaded, batches, config)
         return abs(restored - expected) <= 1e-4
+
+    def _validation_rose(self, history: list[float]) -> bool:
+        """Three logs, each more than a percent above the one before.
+
+        A held-out loss can sit still in the fourth decimal. A bare greater-than
+        treats that wobble as the model memorising and stops a healthy run.
+        """
+        if len(history) < 3:
+            return False
+        earlier, middle, latest = history[-3:]
+        return middle > earlier * 1.01 and latest > middle * 1.01
 
     def _validation_loss(
         self, model: TinyTransformer, batches: list[Any], config: TrainConfig
