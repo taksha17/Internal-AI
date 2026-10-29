@@ -215,7 +215,7 @@ def test_serving_reports_the_model_that_is_actually_served(tmp_path) -> None:
             name="embedding-v1",
             version=1,
             content_hash="h1",
-            created_at="now",
+            created_at="2026-01-01T00:00:00+00:00",
         )
     )
     platform.store.add_model(
@@ -224,7 +224,7 @@ def test_serving_reports_the_model_that_is_actually_served(tmp_path) -> None:
             name="embedding-v1",
             version=2,
             content_hash="h2",
-            created_at="now",
+            created_at="2026-01-02T00:00:00+00:00",
             status="promoted",
         )
     )
@@ -242,11 +242,18 @@ def test_serving_reports_the_model_that_is_actually_served(tmp_path) -> None:
         assert served["mdl_promoted"] is True
         assert served["mdl_candidate"] is False
 
-        app.state.router.set_active("embedding-v1", "mdl_candidate", "admin", "rollback")
+        with pytest.raises(PermissionError, match="promoted"):
+            app.state.router.set_active("embedding-v1", "mdl_candidate", "admin", "rollback")
         listed = client.get("/v1/models", headers={"X-Internal-Key": "k"}).json()
         served = {entry["id"]: entry["active"] for entry in listed}
-        assert served["mdl_candidate"] is True
-        assert served["mdl_promoted"] is False
+        assert served["mdl_promoted"] is True
+        assert served["mdl_candidate"] is False
+
+        app.state.router.set_active("embedding-v1", "mdl_promoted", "admin", "deploy")
+        listed = client.get("/v1/models", headers={"X-Internal-Key": "k"}).json()
+        served = {entry["id"]: entry["active"] for entry in listed}
+        assert served["mdl_promoted"] is True
+        assert served["mdl_candidate"] is False
 
 
 def test_title_mode_pairs_use_first_line(platform) -> None:

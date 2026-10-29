@@ -81,7 +81,10 @@ class RateLimiter:
 
 
 def parse_api_keys(raw: str) -> dict[str, Principal]:
-    """Parse serving keys from `key:user:group1,group2` pairs or JSON."""
+    """Parse serving keys from `key:user:group1|group2` entries or JSON.
+
+    Entries are separated by commas, so the groups inside one entry use ``|``.
+    """
     principals: dict[str, Principal] = {}
     raw = raw.strip()
     if not raw:
@@ -167,26 +170,29 @@ class ModelRouter:
     active: dict[str, str] = field(default_factory=dict)
 
     def resolve(self, name: str) -> ModelVersion | None:
-        candidates = [
+        all_valid = [
             item
             for item in self.store.list_models(name=name)
             if out_of_service(self.store, item) is None
         ]
-        if not candidates:
+        promoted = [item for item in all_valid if item.status == "promoted"]
+        if not promoted:
             return None
         model_id = self.active.get(name)
         if model_id:
-            for candidate in candidates:
+            for candidate in promoted:
                 if candidate.id == model_id:
                     return candidate
-        promoted = [item for item in candidates if item.status == "promoted"]
-        pool = promoted or candidates
-        return pool[-1]
+        return promoted[-1]
 
     def set_active(self, name: str, model_id: str, actor: str, reason: str) -> ModelVersion:
         model = self.store.get_model(model_id)
         if model is None:
             raise KeyError(f"unknown model: {model_id}")
+        if model.status != "promoted":
+            raise PermissionError(
+                f"only a promoted model may serve requests; {model_id} is {model.status}"
+            )
         refused = out_of_service(self.store, model)
         if refused is not None:
             raise PermissionError(f"cannot serve a model that failed its evaluation: {refused}")

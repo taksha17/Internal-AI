@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import re
+import threading
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -77,6 +80,8 @@ def create_serving_app(
         lifespan=lifespan,
     )
     limiter = RateLimiter(rate_limit_per_minute)
+    max_concurrent = int(os.environ.get("INTERNAL_AI_MAX_CONCURRENT", "5"))
+    app.state.concurrency_semaphore = threading.Semaphore(max_concurrent)
 
     def get_platform() -> Platform:
         return app.state.platform
@@ -260,35 +265,78 @@ def create_serving_app(
             raise HTTPException(
                 status_code=400, detail="a question and at least one hit are required"
             )
-        started = time.monotonic()
-        hits = [AskHit(item.path, item.line) for item in request.hits]
-        excerpts = [item.text for item in request.hits]
-        try:
-            result = cited_answer(
-                LocalRunnerAdapter(),
-                request.question,
-                hits,
-                excerpts,
-                training_texts=memorisation_sources(get_platform()),
+        # Enforce load ceiling: acquire concurrency semaphore
+        with app.state.concurrency_semaphore:
+            started = time.monotonic()
+            model = in_service_model()
+            hits = [AskHit(item.path, item.line) for item in request.hits]
+            excerpts = [item.text for item in request.hits]
+            try:
+                result = cited_answer(
+                    LocalRunnerAdapter(),
+                    request.question,
+                    hits,
+                    excerpts,
+                    training_texts=memorisation_sources(get_platform()),
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            latency = (time.monotonic() - started) * 1000
+
+            # Enforce latency target from model config if set
+            latency_target_ms = model.config.get("latency_target_ms")
+            if latency_target_ms is not None and latency > latency_target_ms:
+                raise HTTPException(
+                    status_code=408,
+                    detail={
+                        "error": "latency target exceeded",
+                        "latency_ms": round(latency, 3),
+                        "latency_target_ms": latency_target_ms,
+                    },
+                )
+
+            guardrail_violations = validate_output_guardrails(result.text)
+            log_request(
+                get_platform().audit,
+                principal,
+                "/v1/answer",
+                200,
+                latency,
+                {
+                    "hits": len(hits),
+                    "citation_passed": result.passed,
+                    "model": result.model,
+                    "guardrail_violations": guardrail_violations,
+                },
+                question=request.question,
             )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        latency = (time.monotonic() - started) * 1000
-        log_request(
-            get_platform().audit,
-            principal,
-            "/v1/answer",
-            200,
-            latency,
-            {"hits": len(hits), "citation_passed": result.passed, "model": result.model},
-            question=request.question,
-        )
-        return {
-            "text": result.text,
-            "citation_passed": result.passed,
-            "model": result.model,
-            "mismatches": list(result.mismatches),
-            "latency_ms": round(latency, 3),
-        }
+            return {
+                "text": result.text,
+                "citation_passed": result.passed,
+                "model": result.model,
+                "mismatches": list(result.mismatches),
+                "latency_ms": round(latency, 3),
+                "guardrail_violations": guardrail_violations,
+            }
 
     return app
+
+
+_GUARDRAIL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\bpassword\b", re.IGNORECASE), "potential password disclosure"),
+    (re.compile(r"\bapi[\s_-]*key\b", re.IGNORECASE), "potential API key disclosure"),
+    (re.compile(r"\bconfidential\b", re.IGNORECASE), "confidential term used"),
+]
+
+
+def validate_output_guardrails(text: str) -> list[str]:
+    """Apply configured guardrails to output text.
+
+    Returns a list of violation messages (empty if all pass).
+    This is a stub that currently checks for obvious issues.
+    """
+    violations = []
+    for pattern, message in _GUARDRAIL_PATTERNS:
+        if pattern.search(text):
+            violations.append(message)
+    return violations
