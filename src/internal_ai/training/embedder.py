@@ -45,7 +45,8 @@ class TorchEmbedder:
         if batch_size < 1:
             raise ValueError("batch_size must be positive")
         encoded = [
-            list(self.tokenizer.encode(text, max_tokens=self.max_seq_len - 1)) or [1]
+            self.tokenizer.content_ids(list(self.tokenizer.encode(text)))[: self.max_seq_len - 1]
+            or [1]
             for text in texts
         ]
         # Padding participates in attention, so every batch uses the same width

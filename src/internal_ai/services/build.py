@@ -401,6 +401,7 @@ def guided_register(
         clean or "guided",
         GUIDED_PURPOSES[chosen],
         ["engineering"],
+        legal_status="internal",
     )
 
 
@@ -429,6 +430,10 @@ def register_source(
     name: str,
     purpose: str,
     acl: list[str],
+    legal_status: str = "",
+    license_name: str = "",
+    license_url: str = "",
+    license_note: str = "",
 ) -> dict[str, Any]:
     """Record a candidate source and open its new_data_source_access gate."""
     require(platform.audit, actor, Action.REGISTER_SOURCE, raw_path)
@@ -461,13 +466,18 @@ def register_source(
             ),
             "sensitivity_class": inspection.sensitivity,
             "purpose": purpose.strip(),
+            "legal_status": legal_status.strip(),
+            "license_name": license_name.strip(),
+            "license_url": license_url.strip(),
+            "license_note": license_note.strip(),
             "readers": ", ".join(groups),
             "scan": json.dumps(inspection.to_dict(), sort_keys=True),
         },
     )
     platform.store.conn.execute(
         "INSERT INTO data_sources (id, name, path, kind, acl, sensitivity, scan, purpose,"
-        " requested_by, gate_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        " requested_by, gate_id, legal_status, license_name, license_url, license_note,"
+        " created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             source_id,
             clean_name,
@@ -479,6 +489,10 @@ def register_source(
             purpose.strip(),
             actor.id,
             gate.id,
+            legal_status.strip(),
+            license_name.strip(),
+            license_url.strip(),
+            license_note.strip(),
             now_iso(),
         ),
     )
@@ -521,6 +535,14 @@ def build_dataset(platform: Platform, actor: Actor, runner: JobRunner, source_id
         raise KeyError(f"unknown source: {source_id}")
     if source["withdrawn"]:
         raise deny(platform.audit, actor, "build_dataset", source_id, "the source was withdrawn")
+    if source.get("legal_status") == "refused":
+        raise deny(
+            platform.audit,
+            actor,
+            "build_dataset",
+            source_id,
+            "a refused source cannot be ingested",
+        )
     _require_gate(platform, actor, GateType.NEW_DATA_SOURCE, source_id, "build_dataset")
     inspection = inspect_source(platform, source["path"])
     if not inspection.acceptable:
@@ -542,7 +564,12 @@ def build_dataset(platform: Platform, actor: Actor, runner: JobRunner, source_id
 
             index = build_tree_index(Path(source["path"]), source_id=source_id)
             built = build_tree_corpus(
-                platform, index, name=source["name"], version=version, acl=source["acl"]
+                platform,
+                index,
+                name=source["name"],
+                version=version,
+                acl=source["acl"],
+                sensitivity=source["sensitivity"],
             )
         else:
             from internal_ai.data.pipeline import DataPipeline, PipelineConfig
@@ -554,7 +581,7 @@ def build_dataset(platform: Platform, actor: Actor, runner: JobRunner, source_id
                     Source(
                         source_id=source_id,
                         path=Path(source["path"]),
-                        sensitivity="internal",
+                        sensitivity=source["sensitivity"],
                         acl=source["acl"],
                         approved=True,
                         owner=source["requested_by"],
@@ -683,10 +710,21 @@ def request_release(platform: Platform, actor: Actor, dataset_id: str) -> GateRe
     )
 
 
+def drop_duplicate_copies(platform: Platform, actor: Actor, dataset_id: str) -> Any:
+    """Build the next version without duplicate copies. The current version stays."""
+    from internal_ai.data.pipeline import DataPipeline
+
+    require(platform.audit, actor, Action.BUILD_DATASET, dataset_id)
+    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+    return pipeline.drop_duplicate_copies(dataset_id, actor.id)
+
+
 def release_dataset(platform: Platform, actor: Actor, dataset_id: str) -> Any:
+    from internal_ai.brief import require_programme
     from internal_ai.data.pipeline import DataPipeline
 
     require(platform.audit, actor, Action.RELEASE_DATASET, dataset_id)
+    require_programme(platform, actor.id, release=True, actor_kind=actor.kind)
     _require_gate(platform, actor, GateType.DATASET_RELEASE, dataset_id, "release_dataset")
     pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
     return pipeline.release(dataset_id, actor.id, gate_approved=True)
@@ -901,6 +939,7 @@ def train_model(
     pair_mode: str = "paraphrase",
     learning_rate: float = 3e-4,
     seed: int = 17,
+    vocab_rationale: str = "",
 ) -> dict[str, Any]:
     """Train a from-scratch embedding model on the training split of a released dataset."""
     from internal_ai.data.tokenizer import Tokenizer
@@ -937,6 +976,7 @@ def train_model(
         cost_cap_usd=cost_cap_usd,
         learning_rate=learning_rate,
         seed=seed,
+        vocab_rationale=vocab_rationale,
     )
 
     def work() -> dict[str, Any]:
@@ -1003,7 +1043,9 @@ def register_model(platform: Platform, actor: Actor, runner: JobRunner, job_id: 
     card["tokenizer_path"] = result["tokenizer_path"]
     card["registered_by"] = actor.id
     platform.store.update_model_card(model.id, card)
-    return platform.store.get_model(model.id)
+    saved = platform.store.get_model(model.id)
+    _queue_registration_eval(platform, actor, runner, saved)
+    return saved
 
 
 def evaluate_model(
@@ -1032,6 +1074,15 @@ def evaluate_model(
             eval_set_id,
             "evaluation runs against frozen eval sets only; freeze this set first",
         )
+    if actor.id == str(model.card.get("registered_by") or ""):
+        raise deny(
+            platform.audit,
+            actor,
+            "evaluate_model",
+            model_id,
+            "a builder cannot judge their own model; ask another ml_lead to run this "
+            "evaluation on the frozen set",
+        )
     dataset_id = model.dataset_ids[0]
     token_file = Path(model.card.get("tokenizer_path") or "")
     if not token_file.exists():
@@ -1047,6 +1098,7 @@ def evaluate_model(
             margin=margin,
             actor=EVAL_AGENT,
             model_id=model_id,
+            judged_by=actor.id,
         )
 
     return runner.submit(
@@ -1230,6 +1282,11 @@ def request_promotion(
         raise ValueError(
             "evaluate the model against a frozen eval set first, and the report must pass"
         )
+    if report.judged_by and report.judged_by == str(model.card.get("registered_by") or ""):
+        raise ValueError(
+            "the newest report was run by the person who built this model; a different "
+            "ml_lead has to evaluate it before a promotion is requested"
+        )
     if not red_team_results.strip():
         raise ValueError("describe the red-team results: memorisation, PII and permission tests")
     _no_open_gate(platform, GateType.MODEL_PROMOTION, model_id)
@@ -1256,15 +1313,53 @@ def request_promotion(
     )
 
 
-def promote(platform: Platform, actor: Actor, model_id: str) -> Any:
+def recall_drop(platform: Platform, model: Any) -> dict[str, float] | None:
+    from internal_ai.workflows import recall_regression
+
+    return recall_regression(platform, model)
+
+
+def promote(platform: Platform, actor: Actor, model_id: str, note: str = "") -> Any:
     from internal_ai.workflows import promote_model
 
     require(platform.audit, actor, Action.PROMOTE_MODEL, model_id)
     _require_gate(platform, actor, GateType.MODEL_PROMOTION, model_id, "promote_model")
     try:
-        return promote_model(platform, model_id, gate_approved=True, approver=actor.id)
+        return promote_model(platform, model_id, gate_approved=True, approver=actor.id, note=note)
     except PermissionError as exc:
         raise PermissionDenied(str(exc)) from exc
+
+
+def _frozen_eval_for(platform: Platform, dataset_id: str) -> Any:
+    matches = [
+        item
+        for item in platform.store.list_eval_sets()
+        if item.frozen and any(row.get("dataset_id") == dataset_id for row in item.items)
+    ]
+    return matches[-1] if matches else None
+
+
+def _evaluation_judge(platform: Platform, builder_id: str) -> Actor | None:
+    from internal_ai.people import PeopleRegistry
+
+    for person in PeopleRegistry(platform.store).list_people():
+        if person["id"] == builder_id or "ml_lead" not in person.get("roles", []):
+            continue
+        return Actor.from_person(person, authenticated=True)
+    return None
+
+
+def _queue_registration_eval(
+    platform: Platform, actor: Actor, runner: JobRunner, model: Any
+) -> None:
+    """Start the frozen eval when a candidate is registered, judged by someone else."""
+    if not model.dataset_ids:
+        return
+    eval_set = _frozen_eval_for(platform, model.dataset_ids[0])
+    judge = _evaluation_judge(platform, actor.id)
+    if eval_set is None or judge is None:
+        return
+    evaluate_model(platform, judge, runner, model.id, eval_set.id)
 
 
 # ---------------------------------------------------------------------- ask

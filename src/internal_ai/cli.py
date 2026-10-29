@@ -825,6 +825,33 @@ def cmd_data_split(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dataset_trace(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.data.pipeline import DataPipeline
+
+        dataset = platform.store.get_dataset(args.dataset_id)
+        if dataset is None:
+            print(f"unknown dataset: {args.dataset_id}", file=sys.stderr)
+            return 1
+        report = DataPipeline(platform.store, platform.audit, platform.settings.root).trace_sample(
+            args.dataset_id, limit=args.sample, actor=args.by or "cli"
+        )
+        steps = ",".join(
+            str(step.get("step", ""))
+            for step in dataset.lineage.get("steps", [])
+            if step.get("step")
+        )
+        commit = str(dataset.lineage.get("code_commit", "unknown"))
+        rows = sorted(
+            platform.store.dataset_records(args.dataset_id), key=lambda row: row["record_key"]
+        )[: args.sample]
+        for row in rows:
+            print(f"{row['record_key']}\t{row['source_id']}\t{steps}\t{commit}")
+        if not steps or commit == "unknown" or not report["passed"]:
+            return 1
+    return 0
+
+
 def cmd_data_lineage(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         dataset = platform.store.get_dataset(args.dataset_id)
@@ -984,6 +1011,21 @@ def cmd_model_promote(args: argparse.Namespace) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         _print({"model_id": model.id, "status": model.status})
+    return 0
+
+
+def cmd_models_demote(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.workflows import demote_model
+
+        actor = _actor(platform, args, args.by, "ml_lead")
+        require(platform.audit, actor, Action.PROMOTE_MODEL, args.id)
+        try:
+            model = demote_model(platform, args.id, actor.id)
+        except (PermissionError, KeyError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        _print({"model_id": model.id, "status": model.status, "path": model.path})
     return 0
 
 
@@ -1239,6 +1281,13 @@ def build_parser() -> argparse.ArgumentParser:
     data_lineage = data_sub.add_parser("lineage")
     data_lineage.add_argument("--dataset-id", required=True)
     data_lineage.set_defaults(func=cmd_data_lineage)
+    dataset_cmd = sub.add_parser("dataset", help="dataset lineage sample")
+    dataset_sub = dataset_cmd.add_subparsers(dest="dataset_command", required=True)
+    dataset_trace = dataset_sub.add_parser("trace")
+    dataset_trace.add_argument("dataset_id")
+    dataset_trace.add_argument("--sample", type=int, default=20)
+    dataset_trace.add_argument("--by", default="cli")
+    dataset_trace.set_defaults(func=cmd_dataset_trace)
     data_release = data_sub.add_parser("release")
     data_release.add_argument("--dataset-id", required=True)
     data_release.add_argument("--by", default=None)
@@ -1336,6 +1385,12 @@ def build_parser() -> argparse.ArgumentParser:
     model_card = model_sub.add_parser("card")
     model_card.add_argument("--id", required=True)
     model_card.set_defaults(func=cmd_model_card)
+    models = sub.add_parser("models", help="serving decisions for registered models")
+    models_sub = models.add_subparsers(dest="models_command", required=True)
+    models_demote = models_sub.add_parser("demote")
+    models_demote.add_argument("id")
+    models_demote.add_argument("--by", default=None)
+    models_demote.set_defaults(func=cmd_models_demote)
 
     return parser
 

@@ -13,6 +13,25 @@ from internal_ai.services.permissions import Action, deny, require
 
 KILL_SWITCH_ENGAGED_BY = "kill_switch_engaged_by"
 KILL_SWITCH_REASON_KEY = "kill_switch_reason"
+LEGAL_STATUSES = frozenset({"internal", "licensed", "public", "refused"})
+LICENSED_STATUSES = frozenset({"licensed", "public"})
+
+
+def _require_source_legal(supplied: dict[str, Any]) -> None:
+    """A source the company does not have the right to train on never opens a gate."""
+    status = str(supplied.get("legal_status", "")).strip()
+    if status not in LEGAL_STATUSES:
+        raise ValueError("legal_status must be internal, licensed, public, or refused")
+    if status == "refused":
+        raise ValueError("a refused source cannot be submitted for training")
+    if status in LICENSED_STATUSES:
+        missing = [
+            key
+            for key in ("license_name", "license_url", "license_note")
+            if not str(supplied.get(key, "")).strip()
+        ]
+        if missing:
+            raise ValueError(f"a {status} source needs {', '.join(missing)}")
 
 
 def _note_required(actor: Actor, note: str, what: str) -> None:
@@ -89,6 +108,8 @@ def request_gate(
     missing = [key for key in entry.evidence if not str(supplied.get(key, "")).strip()]
     if missing:
         raise ValueError(f"missing required evidence: {', '.join(missing)}")
+    if resolved == GateType.NEW_DATA_SOURCE:
+        _require_source_legal(supplied)
     gate = platform.gates.request(
         resolved,
         title=title,

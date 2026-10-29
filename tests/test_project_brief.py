@@ -378,7 +378,7 @@ def test_the_model_card_shows_the_gap_for_each_recent_evaluation(tmp_path: Path)
         client, _csrf = signed_in_as(app, "Lena Lead")
         page = client.get("/console/models").text
 
-        assert "Recent evaluations against the bar the brief sets now" in page
+        assert "how far each was from the bar it was judged by" in page
         assert "recall@10 0.412 of 0.70 — 0.288 short" in page
         assert "recall@10 0.655 of 0.70 — 0.045 short" in page
         assert page.index("0.412 of 0.70") < page.index("0.655 of 0.70")
@@ -401,3 +401,52 @@ def test_a_met_bar_reads_as_headroom_and_an_unmeasured_one_says_why() -> None:
     assert rows[0]["met"] is False
     assert "recall@10 0.810 of 0.70 — 0.110 to spare" in rows[0]["text"]
     assert "this evaluation does not measure ndcg@10" in rows[0]["text"]
+
+
+def test_an_edited_threshold_does_not_rewrite_how_short_a_past_run_was() -> None:
+    class Report:
+        created_at = "2026-10-05T09:00:00+00:00"
+        passed = False
+        metrics: ClassVar[dict[str, float]] = {"recall_at_10": 0.655}
+        checks: ClassVar[dict[str, object]] = {
+            "brief_targets": {
+                "passed": False,
+                "targets": [
+                    {
+                        "name": "recall@10",
+                        "threshold": "0.70",
+                        "direction": "at_least",
+                        "measured": 0.655,
+                        "gap": -0.045,
+                        "met": False,
+                        "note": "",
+                    }
+                ],
+            }
+        }
+
+    project = brief.ProjectBrief(
+        metrics=[brief.Metric(name="recall@10", threshold="0.90", direction="at_least")]
+    )
+    row = brief.progress_rows(project, [Report()])[0]
+
+    assert row["basis"] == "recorded"
+    assert "recall@10 0.655 of 0.70 — 0.045 short" in row["text"]
+    assert "the brief now asks 0.90" in row["text"]
+    assert "0.90 — 0.245 short" not in row["text"]
+
+
+def test_a_report_from_before_the_bar_existed_is_read_against_today() -> None:
+    class Report:
+        created_at = "2026-10-05T09:00:00+00:00"
+        passed = False
+        metrics: ClassVar[dict[str, float]] = {"recall_at_10": 0.655}
+        checks: ClassVar[dict[str, object]] = {}
+
+    project = brief.ProjectBrief(
+        metrics=[brief.Metric(name="recall@10", threshold="0.70", direction="at_least")]
+    )
+    row = brief.progress_rows(project, [Report()])[0]
+
+    assert row["basis"] == "current"
+    assert "recall@10 0.655 of 0.70 — 0.045 short" in row["text"]
