@@ -88,6 +88,8 @@ def export_feedback(platform: Platform, actor: Actor) -> DatasetVersion:
     """A new unreleased dataset. Release still needs its gates; nothing here trains."""
     if not actor.holds("data_owner"):
         raise PermissionError("exporting feedback requires data_owner")
+    from internal_ai.data.pipeline import _git_commit
+
     rows = list_feedback(platform)
     dataset_id = new_id("ds")
     records = []
@@ -97,20 +99,37 @@ def export_feedback(platform: Platform, actor: Actor) -> DatasetVersion:
             {
                 "record_key": row["id"],
                 "payload": text,
-                "source_id": row["dataset_id"],
+                "source_id": "feedback",
                 "meta": {"kind": "feedback", "feedback_id": row["id"]},
             }
         )
+    existing = platform.store.list_datasets(name="ask-feedback")
+    version = max((item.version for item in existing), default=0) + 1
+    content = content_hash({"rows": [item["record_key"] for item in records]})
     dataset = DatasetVersion(
         id=dataset_id,
         name="ask-feedback",
-        version=1,
-        content_hash=content_hash({"rows": [item["record_key"] for item in records]}),
+        version=version,
+        content_hash=content,
         record_count=len(records),
         token_count=sum(max(1, len(item["payload"]) // 4) for item in records),
         created_at=now_iso(),
-        lineage={"kind": "feedback", "feedback_ids": [row["id"] for row in rows]},
-        stats={"kind": "feedback", "training_data": False},
+        lineage={
+            "kind": "feedback",
+            "sources": [
+                {
+                    "source_id": "feedback",
+                    "path": "feedback",
+                    "content_hash": content,
+                    "owner": actor.id,
+                    "approved": True,
+                }
+            ],
+            "config_hash": content_hash({"kind": "feedback", "rows": len(records)}),
+            "code_commit": _git_commit(platform.settings.root),
+            "feedback_ids": [row["id"] for row in rows],
+        },
+        stats={"kind": "feedback", "training_data": False, "token_count_kind": "measured"},
         released=False,
     )
     platform.store.add_dataset(dataset)

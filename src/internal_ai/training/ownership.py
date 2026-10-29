@@ -18,4 +18,8 @@ def require_released_dataset(dataset: DatasetVersion | None) -> DatasetVersion:
         raise PermissionError(
             "a model is built from a released dataset; improve the model with a new version"
         )
+    if dataset.stats.get("training_data") is False:
+        raise PermissionError(
+            "this set was exported from feedback and is not training data until its release"
+        )
     return dataset
