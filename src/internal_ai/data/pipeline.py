@@ -519,6 +519,72 @@ class DataPipeline:
         )
         return created
 
+    def redact_personal_data(self, dataset_id: str, actor: str) -> DatasetVersion:
+        """A new version with contact details replaced. The source version keeps them."""
+        dataset = self.store.get_dataset(dataset_id)
+        if dataset is None:
+            raise KeyError(f"unknown dataset: {dataset_id}")
+        copies = [
+            Record(
+                id=new_id("rec"),
+                record_key=record.record_key,
+                text=record.text,
+                source_id=record.source_id,
+                sensitivity=record.sensitivity,
+                acl=list(record.acl),
+                tokens=record.tokens,
+                meta=dict(record.meta),
+            )
+            for record in self._dataset_records(dataset_id)
+        ]
+        originals = [record.text for record in copies]
+        scrubbed, stats = scrub_pii(copies)
+        if stats["total_redactions"] == 0:
+            raise ValueError("no personal data to redact")
+        for record, original in zip(scrubbed, originals, strict=True):
+            record.tokens = max(1, len(record.text) // 4)
+            record.meta = {**record.meta, "redacted_from": dataset.id}
+            if record.text == original:
+                record.meta.pop("scrubbed", None)
+        lineage = dict(dataset.lineage)
+        steps = list(lineage.get("steps", []))
+        steps.append({"step": "pii_scrub", **stats})
+        lineage["steps"] = steps
+        lineage["parent"] = dataset.id
+        created = DatasetVersion(
+            id=new_id("ds"),
+            name=dataset.name,
+            version=dataset.version + 1,
+            content_hash=content_hash(
+                {"parent": dataset.id, "records": sorted(item.fingerprint() for item in scrubbed)}
+            ),
+            record_count=len(scrubbed),
+            token_count=sum(item.tokens for item in scrubbed),
+            created_at=now_iso(),
+            lineage=lineage,
+            stats={"steps": steps, "token_count_kind": "estimate"},
+            released=False,
+            parent_version=dataset.id,
+        )
+        parent_rows = {
+            row["record_key"]: row["payload"] for row in self.store.dataset_records(dataset_id)
+        }
+        self.store.add_dataset(created)
+        self.store.add_dataset_records(created.id, [item.to_row() for item in scrubbed])
+        after = {
+            row["record_key"]: row["payload"] for row in self.store.dataset_records(dataset_id)
+        }
+        if after != parent_rows:
+            raise RuntimeError("redaction changed the source version")
+        self.audit.record(
+            actor=actor,
+            actor_kind="human",
+            action="dataset.redacted",
+            subject=created.id,
+            details={"parent": dataset.id, "records": created.record_count, **stats},
+        )
+        return created
+
     def _exclusion_audit(self, dataset_id: str, actor: str) -> dict[str, Any]:
         from internal_ai.data.governance import exclusion_audit
 
@@ -617,6 +683,9 @@ class DataPipeline:
         from internal_ai.data.language import check_release_quality
 
         quality = check_release_quality(self.store, dataset_id)
+        current = self.store.get_dataset(dataset_id) or dataset
+        if current.stats.get("token_count_kind") != "measured":
+            raise PermissionError("measure the tokens before releasing this version")
         self.store.release_dataset(dataset_id)
         released = self.store.get_dataset(dataset_id)
         self.audit.record(

@@ -191,6 +191,12 @@ def test_guided_register_builds_release_and_asks(tmp_path: Path) -> None:
 
         split = dana.post(f"/console/datasets/{dataset_id}/split", data={"csrf_token": csrf})
         assert split.status_code == 200
+        trained = dana.post(
+            f"/console/datasets/{dataset_id}/tokenizer",
+            data={"csrf_token": csrf, "vocab_size": "600"},
+        )
+        assert trained.status_code == 200
+        assert platform.store.get_dataset(dataset_id).stats["token_count_kind"] == "measured"
         dana.post(
             f"/console/datasets/{dataset_id}/request-release",
             data={"csrf_token": csrf},

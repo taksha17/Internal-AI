@@ -1483,6 +1483,17 @@ def mount_console(
         lambda created: f"/console/datasets/{created.id}",
     )
     dataset_action(
+        "redact",
+        lambda ctx, dataset_id, form: build.redact_personal_data(
+            ctx.platform, ctx.actor, dataset_id
+        ),
+        lambda created: (
+            f"version {created.version} replaces contact details; "
+            "the previous version still has them"
+        ),
+        lambda created: f"/console/datasets/{created.id}",
+    )
+    dataset_action(
         "release",
         lambda ctx, dataset_id, form: build.release_dataset(ctx.platform, ctx.actor, dataset_id),
         "dataset released; it is now immutable",

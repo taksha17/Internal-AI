@@ -678,13 +678,15 @@ def request_release(platform: Platform, actor: Actor, dataset_id: str) -> GateRe
         raise ValueError("this dataset is already released")
     if "splits" not in dataset.stats:
         raise ValueError("split the dataset before asking for its release")
+    if dataset.stats.get("token_count_kind") != "measured":
+        raise ValueError("measure the tokens before asking for release")
     _no_open_gate(platform, GateType.DATASET_RELEASE, dataset_id)
     pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
     audit_result = pipeline.run_pii_audit(dataset_id, sample_size=None)
     if not audit_result["passed"]:
         raise ValueError(
             f"the PII audit found {audit_result['critical_findings']} critical findings; "
-            "this dataset cannot be released"
+            "redact them into a new version. This version keeps the contact details"
         )
     dataset = platform.store.get_dataset(dataset_id) or dataset
     return governance.request_gate(
@@ -717,6 +719,15 @@ def drop_duplicate_copies(platform: Platform, actor: Actor, dataset_id: str) -> 
     require(platform.audit, actor, Action.BUILD_DATASET, dataset_id)
     pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
     return pipeline.drop_duplicate_copies(dataset_id, actor.id)
+
+
+def redact_personal_data(platform: Platform, actor: Actor, dataset_id: str) -> Any:
+    """Build the next version with contact details replaced. The current version stays."""
+    from internal_ai.data.pipeline import DataPipeline
+
+    require(platform.audit, actor, Action.BUILD_DATASET, dataset_id)
+    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+    return pipeline.redact_personal_data(dataset_id, actor.id)
 
 
 def release_dataset(platform: Platform, actor: Actor, dataset_id: str) -> Any:
