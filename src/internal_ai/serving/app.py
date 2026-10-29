@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
+from internal_ai.config import installed_guardrail_policy
 from internal_ai.context import Platform
 from internal_ai.data.tokenizer import Tokenizer
 from internal_ai.domain import ModelVersion
@@ -297,7 +298,7 @@ def create_serving_app(
 
             guardrail_violations = validate_output_guardrails(result.text)
             try:
-                policy = guardrail_policy(model.config)
+                policy = guardrail_policy(model.config, default=installed_guardrail_policy())
             except ValueError as exc:
                 raise HTTPException(status_code=500, detail=str(exc)) from exc
             details = {
@@ -350,13 +351,14 @@ GUARDRAIL_REFUSE = "refuse"
 GUARDRAIL_POLICIES = (GUARDRAIL_WARN, GUARDRAIL_REFUSE)
 
 
-def guardrail_policy(config: dict[str, Any]) -> str:
+def guardrail_policy(config: dict[str, Any], default: str = GUARDRAIL_WARN) -> str:
     """What a model does with flagged text: warn and return it, or refuse it.
 
-    An unset policy warns, which is the behaviour before this choice existed. An
+    A model's own ``guardrail_policy`` wins; an unset or empty one takes the
+    install default, which itself warns unless an operator says otherwise. An
     unrecognised policy fails closed instead of quietly falling back to warning.
     """
-    policy = str(config.get("guardrail_policy", GUARDRAIL_WARN))
+    policy = str(config.get("guardrail_policy") or default)
     if policy not in GUARDRAIL_POLICIES:
         raise ValueError(
             f"unknown guardrail_policy {policy!r}; use one of {', '.join(GUARDRAIL_POLICIES)}"

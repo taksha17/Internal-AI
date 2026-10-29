@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fastapi.testclient import TestClient
 
+from internal_ai.config import ENV_GUARDRAIL_POLICY
 from internal_ai.context import Platform
 from internal_ai.domain import ModelVersion
 from internal_ai.llm import Completion
@@ -157,6 +158,37 @@ def test_an_unrecognised_policy_fails_closed(tmp_path, monkeypatch) -> None:
     assert response.status_code == 500, response.text
     assert "unknown guardrail_policy" in response.json()["detail"]
     assert "text" not in response.json()
+
+
+def test_the_install_default_applies_when_a_model_does_not_choose(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(ENV_GUARDRAIL_POLICY, "refuse")
+    app = _app(tmp_path, monkeypatch, Runner())
+    with TestClient(app) as client:
+        response = _ask(client)
+
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["violations"] == ["potential password disclosure"]
+    assert "text" not in response.json()
+
+
+def test_a_model_can_still_choose_its_own_policy(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(ENV_GUARDRAIL_POLICY, "refuse")
+    app = _app(tmp_path, monkeypatch, Runner(), config={"guardrail_policy": "warn"})
+    with TestClient(app) as client:
+        response = _ask(client)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["guardrail_violations"] == ["potential password disclosure"]
+
+
+def test_an_unrecognised_install_default_fails_closed(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(ENV_GUARDRAIL_POLICY, "block")
+    app = _app(tmp_path, monkeypatch, Runner())
+    with TestClient(app) as client:
+        response = _ask(client)
+
+    assert response.status_code == 500, response.text
+    assert "unknown guardrail_policy" in response.json()["detail"]
 
 
 def test_an_answer_slower_than_the_target_is_refused(tmp_path, monkeypatch) -> None:

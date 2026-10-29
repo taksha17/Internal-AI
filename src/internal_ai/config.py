@@ -8,7 +8,9 @@ from pathlib import Path
 
 ENV_HOME = "INTERNAL_AI_HOME"
 ENV_OFFLINE = "INTERNAL_AI_OFFLINE"
+ENV_GUARDRAIL_POLICY = "INTERNAL_AI_GUARDRAIL_POLICY"
 DEFAULT_HOME = "var"
+DEFAULT_GUARDRAIL_POLICY = "warn"
 _OFFLINE_OFF = frozenset({"0", "false", "off", "no"})
 
 
@@ -20,6 +22,17 @@ def offline_mode() -> bool:
     """
     flag = os.environ.get(ENV_OFFLINE, "1").strip().lower()
     return flag not in _OFFLINE_OFF
+
+
+def installed_guardrail_policy() -> str:
+    """What the install does with flagged text when a model does not choose.
+
+    A model may override this in its own config; nothing else changes it, so an
+    unset variable leaves every model on ``warn``.
+    """
+    return os.environ.get(ENV_GUARDRAIL_POLICY, DEFAULT_GUARDRAIL_POLICY).strip() or (
+        DEFAULT_GUARDRAIL_POLICY
+    )
 
 
 @dataclass(frozen=True, slots=True)
