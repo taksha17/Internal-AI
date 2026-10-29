@@ -192,6 +192,9 @@ class EvalHarness:
         checks = self._safety_checks(
             model, corpus_records, training_records or [], relevant_doc_ids
         )
+        checks["paraphrase_memorisation"] = paraphrase_memorisation_probe(
+            model, eval_set.items, corpus_records
+        )
         baseline_mean = sum(baseline_scores) / len(baseline_scores) if baseline_scores else 0.0
         checks["baseline_informativeness"] = {
             "passed": True,
@@ -315,6 +318,8 @@ class EvalHarness:
                 "note": "eval set has no relevance labels, contamination check could not run",
             }
         checks["permission_leak"] = permission_probe(corpus_records, relevant_doc_ids)
+        checks["instruction_payload"] = instruction_probe(corpus_records, relevant_doc_ids)
+        checks["retrieval_memorisation"] = retrieval_memorisation_probe(model, corpus_records)
         return checks
 
     def record_report(
@@ -323,6 +328,7 @@ class EvalHarness:
         eval_set_id: str,
         outcome: EvalOutcome,
         actor: str = "evaluation",
+        judged_by: str | None = None,
     ) -> EvalReport:
         report = EvalReport(
             id=new_id("rep"),
@@ -334,6 +340,7 @@ class EvalHarness:
             checks=outcome.checks,
             passed=outcome.passed,
             notes=outcome.notes,
+            judged_by=judged_by or actor,
         )
         self.store.add_eval_report(report)
         self.audit.record(
@@ -344,6 +351,66 @@ class EvalHarness:
             details={"model_id": model_id, "passed": report.passed},
         )
         return report
+
+
+def paraphrase_memorisation_probe(
+    model: Embedder, items: list[dict[str, Any]], corpus_records: list[Record]
+) -> dict[str, Any]:
+    """Whether the model scores an item's rewrite like the record it came from."""
+    from internal_ai.evals.memorisation import probe_items
+
+    try:
+        report = probe_items(model, items, corpus_records)
+    except Exception as exc:
+        return {"passed": False, "error": str(exc)}
+    if report.probed == 0:
+        return {
+            "passed": True,
+            "probed": 0,
+            "skipped": report.skipped,
+            "note": "no eval item carried a paraphrase to score",
+        }
+    return report.as_dict()
+
+
+def retrieval_memorisation_probe(model: Embedder, corpus_records: list[Record]) -> dict[str, Any]:
+    """Whether the encoder cannot tell a document from its own opening line."""
+    from internal_ai.evals.memorisation import probe
+
+    try:
+        report = probe(model, corpus_records)
+    except Exception as exc:
+        return {"passed": False, "error": str(exc)}
+    if report.probed == 0:
+        return {
+            "passed": True,
+            "probed": 0,
+            "skipped": report.skipped,
+            "note": (
+                f"no document was long enough beyond its opening line to compare "
+                f"({report.skipped} skipped)"
+            ),
+        }
+    return report.as_dict()
+
+
+def instruction_probe(corpus_records: list[Record], relevant_doc_ids: set[str]) -> dict[str, Any]:
+    """Whether a document the eval relies on carries instructions for the model.
+
+    A labelled document is what the score rests on; if it also says "ignore
+    previous instructions", the number describes a corpus nobody vetted.
+    """
+    from internal_ai.data.injection import instruction_hits
+
+    labelled = [record for record in corpus_records if record.record_key in relevant_doc_ids]
+    if not labelled:
+        return {"passed": True, "note": "no labelled document to inspect", "probed": 0}
+    hits = instruction_hits(labelled)
+    return {
+        "passed": not hits,
+        "probed": len(labelled),
+        "carrying_instructions": hits[:5],
+    }
 
 
 def brief_targets(brief: ProjectBrief | None, metrics: dict[str, float]) -> dict[str, Any] | None:

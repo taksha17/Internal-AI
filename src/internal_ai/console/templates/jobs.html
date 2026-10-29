@@ -4,6 +4,9 @@
 {% block crumb %}Jobs{% endblock %}
 {% block content %}
 {{ m.page_head("Jobs", "Long steps run as jobs. Each one passed the kill switch and budget checks before it started.", "Runs") }}
+{% if programme_gaps %}
+<p class="callout">Still to record: {{ programme_gaps | join("; ") }}. <a href="/console/brief">Write the brief</a> before a dataset is released or a model is trained.</p>
+{% endif %}
 <form class="toolbar" method="get" action="/console/jobs">
   <label class="grow">Search <input type="search" name="q" value="{{ q }}" placeholder="Title, id or person"></label>
   <label>State

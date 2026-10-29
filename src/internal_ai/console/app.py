@@ -50,6 +50,7 @@ from internal_ai.services.identity import (
 )
 from internal_ai.services.jobs import JobRunner
 from internal_ai.services.permissions import Action, allowed, deny, reason
+from internal_ai.serving.service import out_of_service
 from internal_ai.store import ALLOWED_TRANSITIONS, TransitionError
 
 HERE = Path(__file__).resolve().parent
@@ -254,6 +255,54 @@ def when(value: Any) -> Markup:
     )
 
 
+def loss_points(path: str) -> Markup:
+    """Two polylines, training solid and validation dashed, from a metrics file."""
+    file = Path(path)
+    if not path or not file.is_file():
+        return Markup("")
+    rows = []
+    for line in file.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if isinstance(row.get("loss"), int | float):
+            rows.append(row)
+    rows = rows[-24:]
+    if len(rows) < 2:
+        return Markup("")
+    numbers = [
+        float(row[key])
+        for row in rows
+        for key in ("loss", "validation_loss")
+        if isinstance(row.get(key), int | float)
+    ]
+    if len(numbers) < 2:
+        return Markup("")
+    low, high = min(numbers), max(numbers)
+    span = max(high - low, 1e-6)
+
+    def series(key: str) -> str:
+        coords = []
+        for index, row in enumerate(rows):
+            value = row.get(key)
+            if not isinstance(value, int | float):
+                continue
+            x = 4 + (232 * index / max(len(rows) - 1, 1))
+            y = 44 - (40 * (float(value) - low) / span)
+            coords.append(f"{x:.1f},{y:.1f}")
+        return " ".join(coords)
+
+    train = series("loss")
+    held_out = series("validation_loss")
+    markup = f'<polyline fill="none" stroke="currentColor" stroke-width="1.5" points="{train}" />'
+    if held_out:
+        markup += (
+            '<polyline fill="none" stroke="currentColor" stroke-width="1.5" '
+            f'stroke-dasharray="3 2" points="{held_out}" />'
+        )
+    return Markup(markup)
+
+
 def mount_console(
     app: FastAPI,
     get_platform: Callable[[], Platform],
@@ -370,6 +419,7 @@ def mount_console(
             "flashes": pop_flashes(ctx),
             "path": ctx.request.url.path,
             "brief": brief.load(platform.store),
+            "programme_gaps": brief.programme_gaps(platform, release=True),
             "waiting": waiting,
             "inbox": len(waiting.yours),
             "attention": waiting.count,
@@ -1259,6 +1309,10 @@ def mount_console(
                 form.get("name", ""),
                 form.get("purpose", ""),
                 _groups(form.get("acl", "")),
+                legal_status=form.get("legal_status", ""),
+                license_name=form.get("license_name", ""),
+                license_url=form.get("license_url", ""),
+                license_note=form.get("license_note", ""),
             ),
             lambda source: (
                 f"source {source['name']} registered; a data owner must approve "
@@ -1411,6 +1465,17 @@ def mount_console(
         ),
     )
     dataset_action(
+        "dedup",
+        lambda ctx, dataset_id, form: build.drop_duplicate_copies(
+            ctx.platform, ctx.actor, dataset_id
+        ),
+        lambda created: (
+            f"version {created.version} keeps {created.record_count} records; "
+            "the previous version was not changed and still needs its own release"
+        ),
+        lambda created: f"/console/datasets/{created.id}",
+    )
+    dataset_action(
         "release",
         lambda ctx, dataset_id, form: build.release_dataset(ctx.platform, ctx.actor, dataset_id),
         "dataset released; it is now immutable",
@@ -1528,7 +1593,11 @@ def mount_console(
         platform = ctx.platform
         registered_runs = {model.card.get("run_id") for model in platform.store.list_models()}
         runs = [
-            {**job, "registered": job["result"].get("run_id") in registered_runs}
+            {
+                **job,
+                "registered": job["result"].get("run_id") in registered_runs,
+                "losses": loss_points(str(job["result"].get("metrics_path") or "")),
+            }
             for job in get_jobs().list(limit=50, kind="train_model")
         ]
         models = []
@@ -1550,6 +1619,11 @@ def mount_console(
                         dataset.record_count if dataset else 0,
                         dataset.token_count if dataset else 0,
                     ),
+                    "service": out_of_service(platform.store, model),
+                    "builder": str(model.card.get("registered_by") or ""),
+                    "judge": report.judged_by if report else "",
+                    "self_judging": bool(report and report.judged_by)
+                    and report.judged_by == str(model.card.get("registered_by") or ""),
                     "progress": brief.progress_rows(
                         brief.load(platform.store),
                         platform.store.list_eval_reports(model.id),
@@ -1637,6 +1711,7 @@ def mount_console(
                 steps=_number(form.get("steps", ""), int, 60),
                 cost_cap_usd=_number(form.get("cost_cap_usd", ""), float, 2.0),
                 pair_mode=form.get("pair_mode", "paraphrase"),
+                vocab_rationale=form.get("vocab_rationale", ""),
             ),
             "training started",
             job_link,

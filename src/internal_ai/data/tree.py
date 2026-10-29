@@ -97,13 +97,13 @@ class TreeFile:
     size: int
     line_count: int
 
-    def to_record(self, source_id: str, acl: list[str]) -> Record:
+    def to_record(self, source_id: str, acl: list[str], sensitivity: str = "internal") -> Record:
         return Record(
             id=new_id("rec"),
             record_key=self.relative_path,
             text=self.text,
             source_id=source_id,
-            sensitivity="internal",
+            sensitivity=sensitivity,
             acl=list(acl),
             tokens=max(1, len(self.text) // 4),
             meta={
@@ -124,9 +124,9 @@ class TreeIndex:
     skipped: int = 0
     truncated: int = 0
 
-    def records(self, acl: list[str] | None = None) -> list[Record]:
+    def records(self, acl: list[str] | None = None, sensitivity: str = "internal") -> list[Record]:
         access = acl if acl is not None else ["engineering", "support"]
-        return [item.to_record(self.source_id, access) for item in self.files]
+        return [item.to_record(self.source_id, access, sensitivity) for item in self.files]
 
     def stats(self) -> dict[str, Any]:
         suffixes: dict[str, int] = {}
