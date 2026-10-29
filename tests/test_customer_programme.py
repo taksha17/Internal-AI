@@ -191,4 +191,4 @@ def test_the_home_page_shows_the_hours_under_compute(tmp_path: Path) -> None:
     assert "3. Compute" in page
     assert "small " in page and "GPU-hours" in page and "runnable" in page
     assert "7b " in page and "waiting" in page
-    assert page.count("<p class=\"muted small\">") >= 3
+    assert page.count('<p class="muted small">') >= 3
