@@ -36,6 +36,7 @@ class Action(StrEnum):
     EVALUATE_MODEL = "evaluate_model"
     REGISTER_MODEL = "register_model"
     PROMOTE_MODEL = "promote_model"
+    SET_SERVING_POLICY = "set_serving_policy"
     DECIDE_POLICY = "decide_policy"
     WRITE_BRIEF = "write_brief"
     MANAGE_PEOPLE = "manage_people"
@@ -64,6 +65,7 @@ ACTION_ROLES: dict[Action, frozenset[str]] = {
     Action.EVALUATE_MODEL: frozenset({"ml_lead"}),
     Action.REGISTER_MODEL: frozenset({"ml_lead"}),
     Action.PROMOTE_MODEL: frozenset({"ml_lead"}),
+    Action.SET_SERVING_POLICY: frozenset({"ml_lead"}),
     Action.DECIDE_POLICY: frozenset({"program_lead", "legal"}),
     Action.WRITE_BRIEF: frozenset({"program_lead", "ml_lead"}),
     Action.MANAGE_PEOPLE: frozenset({"program_lead", "engineering_manager"}),

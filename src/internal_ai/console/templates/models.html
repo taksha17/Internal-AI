@@ -179,6 +179,20 @@
     {% else %}<span class="muted">Freeze an eval set to evaluate this model.</span>{% endif %}
   </form>
   {% endif %}
+  {% if can("set_serving_policy") %}
+  <form method="post" action="/console/models/{{ model.id }}/guardrail-policy" class="inline-form">{{ m.csrf_field() }}
+    <label>Flagged answers
+      <select name="policy">
+        <option value=""{{ ' selected' if not row.policy else '' }}>follow the install default ({{ install_policy }})</option>
+        <option value="warn"{{ ' selected' if row.policy == 'warn' else '' }}>warn and return the answer</option>
+        <option value="refuse"{{ ' selected' if row.policy == 'refuse' else '' }}>withhold the answer</option>
+      </select>
+    </label>
+    <button type="submit">Set</button>
+  </form>
+  {% else %}
+  <p class="muted small">Flagged answers: {{ row.policy or "the install default (" ~ install_policy ~ ")" }}.</p>
+  {% endif %}
   {% if row.gate %}{{ m.gate_box(row.gate) }}{% endif %}
   {% if model.status != "promoted" and can("promote_model") %}
     {% if row.gate and row.gate.status == "approved" %}

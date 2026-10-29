@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import re
 import threading
 import time
 from collections.abc import AsyncIterator
@@ -18,6 +17,11 @@ from internal_ai.config import installed_guardrail_policy
 from internal_ai.context import Platform
 from internal_ai.data.tokenizer import Tokenizer
 from internal_ai.domain import ModelVersion
+from internal_ai.serving.guardrails import (
+    GUARDRAIL_REFUSE,
+    guardrail_policy,
+    validate_output_guardrails,
+)
 from internal_ai.serving.service import (
     ModelRouter,
     Principal,
@@ -344,43 +348,3 @@ def create_serving_app(
             }
 
     return app
-
-
-GUARDRAIL_WARN = "warn"
-GUARDRAIL_REFUSE = "refuse"
-GUARDRAIL_POLICIES = (GUARDRAIL_WARN, GUARDRAIL_REFUSE)
-
-
-def guardrail_policy(config: dict[str, Any], default: str = GUARDRAIL_WARN) -> str:
-    """What a model does with flagged text: warn and return it, or refuse it.
-
-    A model's own ``guardrail_policy`` wins; an unset or empty one takes the
-    install default, which itself warns unless an operator says otherwise. An
-    unrecognised policy fails closed instead of quietly falling back to warning.
-    """
-    policy = str(config.get("guardrail_policy") or default)
-    if policy not in GUARDRAIL_POLICIES:
-        raise ValueError(
-            f"unknown guardrail_policy {policy!r}; use one of {', '.join(GUARDRAIL_POLICIES)}"
-        )
-    return policy
-
-
-_GUARDRAIL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"\bpassword\b", re.IGNORECASE), "potential password disclosure"),
-    (re.compile(r"\bapi[\s_-]*key\b", re.IGNORECASE), "potential API key disclosure"),
-    (re.compile(r"\bconfidential\b", re.IGNORECASE), "confidential term used"),
-]
-
-
-def validate_output_guardrails(text: str) -> list[str]:
-    """Apply configured guardrails to output text.
-
-    Returns a list of violation messages (empty if all pass).
-    This is a stub that currently checks for obvious issues.
-    """
-    violations = []
-    for pattern, message in _GUARDRAIL_PATTERNS:
-        if pattern.search(text):
-            violations.append(message)
-    return violations

@@ -1438,6 +1438,39 @@ def promote(platform: Platform, actor: Actor, model_id: str, note: str = "") -> 
         raise PermissionDenied(str(exc)) from exc
 
 
+def set_guardrail_policy(platform: Platform, actor: Actor, model_id: str, policy: str) -> Any:
+    """What this model does with flagged text. Empty means the install's rule.
+
+    The candidate config is resolved before it is stored, so a typo in either
+    the model's choice or the install default is refused here rather than
+    turning every request into a 500 later.
+    """
+    from internal_ai.config import installed_guardrail_policy
+    from internal_ai.serving.guardrails import guardrail_policy
+
+    require(platform.audit, actor, Action.SET_SERVING_POLICY, model_id)
+    model = platform.store.get_model(model_id)
+    if model is None:
+        raise KeyError(f"unknown model: {model_id}")
+    chosen = policy.strip()
+    config = dict(model.config)
+    if chosen:
+        config["guardrail_policy"] = chosen
+    else:
+        config.pop("guardrail_policy", None)
+    guardrail_policy(config, default=installed_guardrail_policy())
+    before = str(model.config.get("guardrail_policy") or "")
+    platform.store.update_model_config(model_id, config)
+    platform.audit.record(
+        actor=actor.id,
+        actor_kind=actor.kind,
+        action="serving.guardrail_policy_set",
+        subject=model_id,
+        details={"before": before, "after": chosen, "inherits_install_default": not chosen},
+    )
+    return platform.store.get_model(model_id) or model
+
+
 def _frozen_eval_for(platform: Platform, dataset_id: str) -> Any:
     matches = [
         item

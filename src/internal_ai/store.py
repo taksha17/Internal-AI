@@ -883,6 +883,10 @@ class Store:
     def update_model_card(self, model_id: str, card: dict[str, Any]) -> None:
         self.conn.execute("UPDATE models SET card = ? WHERE id = ?", (_json(card), model_id))
 
+    def update_model_config(self, model_id: str, config: dict[str, Any]) -> None:
+        """How a model is served, not what it is: the content hash does not move."""
+        self.conn.execute("UPDATE models SET config = ? WHERE id = ?", (_json(config), model_id))
+
     @staticmethod
     def _row_to_model(row: sqlite3.Row) -> ModelVersion:
         return ModelVersion(
