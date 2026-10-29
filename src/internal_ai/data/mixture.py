@@ -35,9 +35,7 @@ def mixture_rows(records: list[Record]) -> list[dict[str, Any]]:
     return rows
 
 
-def write_shards(
-    rows: list[dict[str, Any]], tokenizer: Tokenizer, directory: Path
-) -> list[Path]:
+def write_shards(rows: list[dict[str, Any]], tokenizer: Tokenizer, directory: Path) -> list[Path]:
     """One jsonl file per 256 records, in record-key order."""
     directory.mkdir(parents=True, exist_ok=True)
     ordered = sorted(rows, key=lambda row: str(row["record_key"]))
