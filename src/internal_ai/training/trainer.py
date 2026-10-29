@@ -170,6 +170,26 @@ class Trainer:
             sequences.append(ids)
         return sequences
 
+    def _first_row_indexes(
+        self, records: list[Record], tokenizer: Tokenizer, config: TrainConfig
+    ) -> list[int]:
+        """The dataset row that opens each batch, in the order training reads them."""
+        kept: list[int] = []
+        for index, record in enumerate(records):
+            ids = tokenizer.content_ids(tokenizer.encode(record.text))[: config.seq_len - 1]
+            if len(ids) >= 8:
+                kept.append(index)
+        if not kept:
+            return []
+        generator = torch.Generator().manual_seed(config.seed)
+        order = torch.randperm(len(kept), generator=generator).tolist()
+        shuffled = [kept[index] for index in order]
+        starts: list[int] = []
+        for start in range(0, len(shuffled), config.batch_size):
+            if shuffled[start : start + config.batch_size]:
+                starts.append(shuffled[start])
+        return starts
+
     def build_batches(
         self, sequences: list[list[int]], batch_size: int, seed: int
     ) -> list[list[list[int]]]:
@@ -286,6 +306,7 @@ class Trainer:
         pairs: list[dict[str, str]] | None = None,
         run_id: str | None = None,
         validation_records: list[Record] | None = None,
+        split: str = "train",
     ) -> TrainingOutcome:
         """Train, or continue, one run.
 
@@ -309,6 +330,7 @@ class Trainer:
         if not sequences and not pairs:
             raise ValueError("no usable sequences in the dataset")
         batches = self.build_batches(sequences, config.batch_size, config.seed)
+        offsets = self._first_row_indexes(records, tokenizer, config)
         val_sequences = self.encode_records(validation_records or [], tokenizer, config.seq_len)
         val_batches = (
             self.build_batches(val_sequences, config.batch_size, config.seed + 1)
@@ -317,6 +339,8 @@ class Trainer:
         )
         if pairs and config.objective == "contrastive":
             batches = self._pair_batches(pairs, tokenizer, config)
+            if len(offsets) != len(batches):
+                offsets = list(range(len(batches)))
         tokens_per_step = sum(
             len(part)
             for batch in batches
@@ -435,6 +459,8 @@ class Trainer:
                 return refused
             position = self._batch_position(batches, start_step)
             optimizer.load_state_dict(state["optimizer_state"])
+            if state.get("rng_state") is not None:
+                torch.set_rng_state(state["rng_state"])
             resumed_from = start_step
             self.audit.record(
                 actor=actor,
@@ -553,6 +579,11 @@ class Trainer:
                     "tokens_seen": tokens_seen,
                     "cost_usd": round(sum(step_costs), 6),
                     "timestamp": now_iso(),
+                    "data_offset": {
+                        "dataset_id": dataset_id,
+                        "split": split,
+                        "index": offsets[position["batch_index"]] if offsets else 0,
+                    },
                 }
                 if val_batches and step % config.eval_interval == 0:
                     val_loss = self._validation_loss(model, val_batches, config)
@@ -875,6 +906,7 @@ class Trainer:
             "config": config.to_dict(),
             "dataset_hash": dataset_hash,
             "data_position": data_position or {},
+            "rng_state": torch.get_rng_state().clone(),
             "commit": _git_commit(self.root),
         }
         torch.save(payload, checkpoint_dir / "latest.pt")
