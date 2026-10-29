@@ -87,7 +87,7 @@
     <p class="muted small">A stage closes when its artifact exists. A later artifact leaves an earlier gap open.</p>
     <ol class="steps">
       {% for stage in stages %}
-      <li class="{{ 'done' if stage.done else '' }}"><a href="{{ stage.href }}">{{ stage.n }}. {{ stage.name }}</a> {% if stage.done %}{{ m.status_badge("approved") }}{% else %}<span class="row-sub">{{ stage.waiting }}</span>{% endif %}{% if stage.lines %}<ul class="plain">{% for line in stage.lines %}<li class="muted small">{{ line }}</li>{% endfor %}</ul>{% endif %}</li>
+      <li class="{{ 'done' if stage.done else '' }}"><a href="{{ stage.href }}">{{ stage.n }}. {{ stage.name }}</a> {% if stage.done %}{{ m.status_badge("approved") }}{% else %}<span class="row-sub">{{ stage.waiting }}</span>{% endif %}{% for line in stage.lines %}<p class="muted small">{{ line }}</p>{% endfor %}</li>
       {% endfor %}
     </ol>
   </section>

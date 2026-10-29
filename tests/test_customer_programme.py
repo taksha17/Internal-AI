@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from conftest import enroll, sign_in
+from fastapi.testclient import TestClient
+
+from internal_ai.api import create_app
 from internal_ai.domain import DatasetVersion, EvalReport, ModelVersion
 from internal_ai.ids import now_iso
 from internal_ai.programme import customer_stages
@@ -16,6 +22,7 @@ def test_a_fresh_install_has_twelve_open_stages(platform) -> None:
     assert [stage["n"] for stage in stages] == list(range(1, 13))
     assert all(stage["done"] is False for stage in stages)
     assert "target" in stages[0]["waiting"]
+    assert stages[2]["lines"] == []
 
 
 def test_a_released_dataset_closes_only_the_data_stage(platform) -> None:
@@ -153,3 +160,35 @@ def test_the_board_prints_hours_and_leaves_a_large_size_waiting(platform) -> Non
     text = " ".join(stage["lines"])
     assert "small" in text and "runnable" in text
     assert "7b" in text and "waiting" in text
+
+
+def test_the_home_page_shows_the_hours_under_compute(tmp_path: Path) -> None:
+    from internal_ai.compute.advise import advise_dataset
+    from internal_ai.context import Platform
+
+    setup = Platform.create(root=tmp_path, llm_kind="scripted")
+    enroll(setup, "Ada Admin", ["program_lead"])
+    setup.store.add_dataset(
+        DatasetVersion(
+            id="ds_hours",
+            name="corpus",
+            version=1,
+            content_hash="abc",
+            record_count=1,
+            token_count=200_000_000,
+            created_at=now_iso(),
+            stats={"token_count_kind": "measured"},
+        )
+    )
+    advise_dataset(setup, "ds_hours")
+    setup.close()
+
+    app = create_app(root=tmp_path, llm_kind="scripted")
+    client = TestClient(app)
+    with client:
+        assert sign_in(client, "Ada Admin").status_code == 303
+        page = client.get("/console/home").text
+    assert "3. Compute" in page
+    assert "small " in page and "GPU-hours" in page and "runnable" in page
+    assert "7b " in page and "waiting" in page
+    assert page.count("<p class=\"muted small\">") >= 3
