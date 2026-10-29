@@ -962,10 +962,12 @@ def cmd_tokenizer_train(args: argparse.Namespace) -> int:
 def cmd_train_run(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.data.tokenizer import Tokenizer
+        from internal_ai.services.build import require_customer_eval
         from internal_ai.training.trainer import TrainConfig
         from internal_ai.workflows import train_embedding_model
 
         tokenizer_path = Path(args.tokenizer)
+        require_customer_eval(platform, args.dataset_id)
         tokenizer = Tokenizer.load(tokenizer_path)
         config = TrainConfig(
             name=args.name,
