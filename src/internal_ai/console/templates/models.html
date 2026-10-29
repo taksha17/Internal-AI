@@ -104,7 +104,8 @@
   {% call m.data_table([("Run",), ("State",), ("Result",), ("Action",)]) %}
     {% for run in runs %}
     <tr><td><a href="/console/jobs/{{ run.id }}">{{ run.title }}</a></td><td>{{ m.status_badge(run.state) }}</td>
-      <td>{% if run.result %}{{ run.result.status }}, loss {{ "%.4f" % (run.result.final_loss or 0) }}, ${{ "%.4f" % (run.result.cost_usd or 0) }}{% endif %}</td>
+      <td>{% if run.result %}{{ run.result.status }}, loss {{ "%.4f" % (run.result.final_loss or 0) }}, ${{ "%.4f" % (run.result.cost_usd or 0) }}{% endif %}
+        {% if run.losses %}<svg class="loss-chart" viewBox="0 0 240 48" width="240" height="48" role="img" aria-label="training and validation loss">{{ run.losses }}</svg>{% endif %}</td>
       <td>{% if run.registered %}registered{% elif run.state == "succeeded" and run.result.status == "completed" and can("register_model") %}
         <form method="post" action="/console/runs/{{ run.id }}/register">{{ m.csrf_field() }}<button type="submit">Register model</button></form>{% endif %}</td></tr>
     {% else %}
