@@ -134,6 +134,7 @@ def test_guided_register_builds_release_and_asks(tmp_path: Path) -> None:
     enroll(setup, "Owen Owner", ["data_owner"], ["engineering"])
     enroll(setup, "Mo Builder", ["ml_lead"], ["engineering"])
     enroll(setup, "Cora Compliance", ["compliance"], ["engineering"])
+    enroll(setup, "Dex Expert", ["domain_expert"], ["engineering"])
     setup.close()
 
     app = create_app(root=tmp_path, llm_kind="scripted", sync_jobs=True)
@@ -206,6 +207,20 @@ def test_guided_register_builds_release_and_asks(tmp_path: Path) -> None:
             )
             assert response.status_code == 200
         record_ready_programme(platform, actor_named(platform, "Mo Builder"))
+        from internal_ai.data.language import language_sample
+
+        dex = TestClient(app)
+        assert sign_in(dex, "Dex Expert").status_code == 303
+        marks = {
+            "csrf_token": session_csrf(dex),
+            **{
+                f"mark_{row['id']}": "correct"
+                for row in language_sample(platform.store, dataset_id)
+            },
+        }
+        reviewed = dex.post(f"/console/datasets/{dataset_id}/language-review", data=marks)
+        assert reviewed.status_code == 200
+        assert "language review saved" in reviewed.text
         dana.post(f"/console/datasets/{dataset_id}/release", data={"csrf_token": csrf})
         assert platform.store.get_dataset(dataset_id).released
 
