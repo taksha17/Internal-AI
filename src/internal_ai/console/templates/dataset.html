@@ -14,6 +14,9 @@
     <p class="callout">Small corpora answer best with keyword search. Training a model is optional here and only helps once the data grows past a few hundred records.</p>
     {% endif %}
     <p>{% for split, count in view.splits | dictsort %}{{ split }} {{ count }} · {% endfor %}</p>
+    {% if dataset.stats.get("ablations") %}
+    <p>Ablation {% for item in dataset.stats.ablations %}{{ item.folder }} validation loss {{ item.validation_loss }}{% if not loop.last %}; {% endif %}{% endfor %}.</p>
+    {% endif %}
     {% if view.trace %}
     <p class="muted small">Sampled lineage: {{ view.trace.traced }} of {{ view.trace.sampled }} records trace to their source, config {{ view.trace.config_hash[:12] }}{% if view.trace.code_commit != "unknown" %}, commit {{ view.trace.code_commit[:12] }}{% endif %}.{% if not view.trace.passed %} {{ view.trace.failures | length }} record(s) did not resolve.{% endif %}</p>
     {% endif %}
