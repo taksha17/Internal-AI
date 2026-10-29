@@ -12,6 +12,8 @@ from internal_ai.context import Platform
 def customer_stages(platform: Platform) -> list[dict[str, Any]]:
     """Each stage, whether its artifact exists, and the one thing still missing."""
     datasets = platform.store.list_datasets()
+    released = [item for item in datasets if item.released]
+    newest_released = released[-1] if released else None
     models = platform.store.list_models()
     scratch = [model for model in models if model.card.get("track") != "alpha"]
     reports = platform.store.list_eval_reports()
@@ -36,8 +38,8 @@ def customer_stages(platform: Platform) -> list[dict[str, Any]]:
         _stage(
             4,
             "Data",
-            "/console/datasets",
-            any(item.released for item in datasets),
+            f"/console/datasets/{newest_released.id}" if newest_released else "/console/datasets",
+            newest_released is not None,
             "release a dataset",
         ),
         _stage(
