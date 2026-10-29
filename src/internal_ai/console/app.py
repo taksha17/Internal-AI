@@ -1872,6 +1872,8 @@ def mount_console(
             per_page=per,
             filters={"state": chosen, "q": q},
         )
+        from internal_ai.feedback import latest_gpu_busy
+
         return render(
             ctx,
             "jobs.html",
@@ -1880,6 +1882,7 @@ def mount_console(
             states=list(choices),
             state=chosen,
             q=q,
+            gpu_busy=latest_gpu_busy(ctx.platform.settings.artifacts_dir),
         )
 
     @app.get("/console/jobs/{job_id}", include_in_schema=False)

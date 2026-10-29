@@ -252,6 +252,16 @@ CREATE TABLE IF NOT EXISTS evidence (
     subject TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS feedback (
+    id TEXT PRIMARY KEY,
+    question TEXT NOT NULL,
+    expected_file TEXT NOT NULL,
+    expected_line INTEGER NOT NULL,
+    dataset_id TEXT NOT NULL,
+    filed_by TEXT NOT NULL,
+    filed_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS project_brief (
     id TEXT PRIMARY KEY,
     payload TEXT NOT NULL,

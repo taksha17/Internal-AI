@@ -43,6 +43,13 @@ except ImportError as exc:  # pragma: no cover
 TOKENS_PER_PARAMETER_FLOOR = 20
 
 
+def gpu_busy() -> int:
+    """1 when this process is holding CUDA memory. 0 when CUDA is absent."""
+    if not torch.cuda.is_available():
+        return 0
+    return 1 if torch.cuda.memory_allocated() > 0 else 0
+
+
 @dataclass(slots=True)
 class TrainConfig:
     name: str = "embedding-v1"
@@ -984,8 +991,9 @@ class Trainer:
         return seconds / 3600.0 * rate
 
     def _write_metric(self, path: Path, payload: dict[str, Any]) -> None:
+        row = {**payload, "gpu_busy": gpu_busy()}
         with open(path, "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, sort_keys=True) + "\n")
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
 
     def _checkpoint(
         self,
