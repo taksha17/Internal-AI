@@ -257,6 +257,10 @@ def test_release_requires_the_gate(platform, corpus_path) -> None:
     with pytest.raises(PermissionError, match="dataset_release gate"):
         pipeline.release(result.dataset_id, "ml_lead", gate_approved=False)
     accept_language_sample(platform.store, result.dataset_id)
+    counted = platform.store.get_dataset(result.dataset_id)
+    stats = dict(counted.stats)
+    stats["token_count_kind"] = "measured"
+    platform.store.update_dataset_tokens(result.dataset_id, counted.token_count, stats)
     dataset = pipeline.release(result.dataset_id, "ml_lead", gate_approved=True)
     assert dataset.released
 

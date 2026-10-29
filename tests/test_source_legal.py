@@ -97,6 +97,10 @@ def test_release_refuses_an_excluded_class_and_records_a_clean_sample(platform) 
     from internal_ai.data.language import accept_language_sample
 
     accept_language_sample(platform.store, built.dataset_id)
+    counted = platform.store.get_dataset(built.dataset_id)
+    stats = dict(counted.stats)
+    stats["token_count_kind"] = "measured"
+    platform.store.update_dataset_tokens(built.dataset_id, counted.token_count, stats)
     released = pipeline.release(built.dataset_id, "ml_lead", gate_approved=True)
     audit = released.stats["exclusion_audit"]
     assert audit["passed"] is True

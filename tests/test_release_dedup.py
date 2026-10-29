@@ -68,6 +68,10 @@ def test_a_corpus_under_the_residual_cap_records_the_counts(platform) -> None:
     from internal_ai.data.language import accept_language_sample
 
     accept_language_sample(platform.store, dataset_id)
+    counted = platform.store.get_dataset(dataset_id)
+    stats = dict(counted.stats)
+    stats["token_count_kind"] = "measured"
+    platform.store.update_dataset_tokens(dataset_id, counted.token_count, stats)
     pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
     released = pipeline.release(dataset_id, "ml_lead", gate_approved=True)
     assert released.stats["exact_duplicate_groups"] == 0

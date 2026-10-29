@@ -24,6 +24,10 @@ def test_release_records_lineage_and_trace_fails_without_a_commit(platform) -> N
 
     dataset_id = build_corpus(platform, [path], name="lineage").dataset_id
     accept_language_sample(platform.store, dataset_id)
+    counted = platform.store.get_dataset(dataset_id)
+    stats = dict(counted.stats)
+    stats["token_count_kind"] = "measured"
+    platform.store.update_dataset_tokens(dataset_id, counted.token_count, stats)
     released = DataPipeline(platform.store, platform.audit, platform.settings.root).release(
         dataset_id, "ml_lead", gate_approved=True
     )
