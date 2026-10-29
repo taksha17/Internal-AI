@@ -137,6 +137,10 @@ def train_tokenizer_for(
         )
     tokenizer.save(path)
     digest_path.write_text(hashlib.sha256(path.read_bytes()).hexdigest() + "\n", encoding="utf-8")
+    from internal_ai.data.mixture import write_shards
+
+    shard_dir = platform.settings.models_dir / "shards" / dataset_id
+    coverage["shards"] = [str(item) for item in write_shards(rows, tokenizer, shard_dir)]
     coverage["tokenizer_path"] = str(path)
     coverage["dataset_id"] = dataset_id
     coverage["trained_on_split"] = "train"
@@ -153,6 +157,91 @@ def train_tokenizer_for(
     coverage["tokens"] = measured["tokens"]
     coverage["token_count_estimate"] = measured["estimate"]
     return tokenizer, coverage
+
+
+def run_mixture_ablation(platform: Platform, dataset_id: str) -> list[dict[str, Any]]:
+    """Two short runs on two folders. The losses are recorded; neither is chosen."""
+    from internal_ai.data.mixture import folder_of
+    from internal_ai.training.trainer import Trainer
+
+    rows = platform.store.dataset_records(dataset_id)
+    folders = sorted({folder_of(row["record_key"]) for row in rows})
+    if len(folders) < 2:
+        raise ValueError("an ablation needs records from two folders")
+    results: list[dict[str, Any]] = []
+    for folder in folders[:2]:
+        subset = [row for row in rows if folder_of(row["record_key"]) == folder]
+        texts = [row["payload"] for row in subset]
+        tokenizer = train_tokenizer(texts, vocab_size=80)
+        records = [
+            Record(
+                id=row["id"],
+                record_key=row["record_key"],
+                text=row["payload"],
+                source_id=row["source_id"],
+                acl=row["acl"],
+                tokens=row["tokens"],
+                meta=row["meta"],
+            )
+            for row in subset
+        ]
+        config = TrainConfig(
+            name=f"ablation-{folder}",
+            steps=20,
+            batch_size=2,
+            seq_len=24,
+            max_seq_len=24,
+            d_model=32,
+            n_heads=2,
+            n_layers=1,
+            d_ff=64,
+            dropout=0.0,
+            log_interval=20,
+            checkpoint_interval=20,
+            objective="causal",
+            seed=17,
+            learning_rate=3e-3,
+            vocab_rationale="ablation of one folder",
+        )
+        outcome = Trainer(
+            platform.store,
+            platform.audit,
+            platform.budget,
+            platform.settings.artifacts_dir,
+            root=platform.settings.root,
+        ).train(
+            config,
+            records,
+            tokenizer,
+            dataset_id=dataset_id,
+            dataset_hash="ablation",
+            validation_records=records[:1],
+            resume=False,
+            run_id=f"ablation-{folder}",
+        )
+        measured = _last_validation(Path(outcome.metrics_path))
+        results.append({"folder": folder, "validation_loss": measured})
+    dataset = platform.store.get_dataset(dataset_id)
+    stats = dict(dataset.stats) if dataset is not None else {}
+    stats["ablations"] = results
+    platform.store.conn.execute(
+        "UPDATE datasets SET stats = ? WHERE id = ?",
+        (json.dumps(stats, sort_keys=True, default=str), dataset_id),
+    )
+    return results
+
+
+def _last_validation(path: Path) -> float:
+    value = 0.0
+    if not path.is_file():
+        return value
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if isinstance(row.get("validation_loss"), float):
+            value = row["validation_loss"]
+    return value
 
 
 def _embedding_parameters(config: TrainConfig, tokenizer: Tokenizer) -> int:

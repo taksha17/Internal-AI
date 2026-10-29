@@ -232,6 +232,8 @@ class DataPipeline:
             hash_input["labels"] = given_labels
         dataset_hash = content_hash(hash_input)
 
+        from internal_ai.data.mixture import mixture_rows
+
         lineage = {
             "sources": lineage_sources,
             "steps": steps,
@@ -239,6 +241,7 @@ class DataPipeline:
             "config_hash": config.hash,
             "code_commit": _git_commit(self.root),
             "created_at": now_iso(),
+            "mixture": mixture_rows(records),
         }
         if given_labels:
             lineage["labels"] = {

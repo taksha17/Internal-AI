@@ -224,6 +224,25 @@ class Trainer:
         ]
         return {"batch_index": index % len(batches), "batch_hash": content_hash(rows)}
 
+    def _batches_from_shards(
+        self, directory: Path, config: TrainConfig
+    ) -> tuple[list[list[list[int]]], list[str]]:
+        """Read shard files in name order. Each batch remembers which file it came from."""
+        batches: list[list[list[int]]] = []
+        names: list[str] = []
+        for path in sorted(directory.glob("shard-*.jsonl")):
+            chunk = [
+                json.loads(line)["ids"][: config.seq_len]
+                for line in path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            for start in range(0, len(chunk), config.batch_size):
+                batches.append(chunk[start : start + config.batch_size])
+                names.append(path.name)
+        if not batches:
+            raise ValueError(f"no shard rows in {directory}")
+        return batches, names
+
     def _pair_batches(
         self, pairs: list[dict[str, str]], tokenizer: Tokenizer, config: TrainConfig
     ) -> list[list[tuple[list[int], list[int]]]]:
@@ -308,6 +327,7 @@ class Trainer:
         run_id: str | None = None,
         validation_records: list[Record] | None = None,
         split: str = "train",
+        shards_dir: Path | None = None,
     ) -> TrainingOutcome:
         """Train, or continue, one run.
 
@@ -339,6 +359,10 @@ class Trainer:
             batches = self._pair_batches(pairs, tokenizer, config)
             if len(offsets) != len(batches):
                 offsets = list(range(len(batches)))
+        shard_for_batch: list[str] = []
+        if shards_dir is not None:
+            batches, shard_for_batch = self._batches_from_shards(Path(shards_dir), config)
+            offsets = list(range(len(batches)))
         tokens_per_step = sum(
             len(part)
             for batch in batches
@@ -583,6 +607,15 @@ class Trainer:
                         "dataset_id": dataset_id,
                         "split": split,
                         "index": offsets[position["batch_index"]] if offsets else 0,
+                        **(
+                            {
+                                "shard": shard_for_batch[
+                                    position["batch_index"] % len(shard_for_batch)
+                                ]
+                            }
+                            if shard_for_batch
+                            else {}
+                        ),
                     },
                 }
                 if val_batches:
