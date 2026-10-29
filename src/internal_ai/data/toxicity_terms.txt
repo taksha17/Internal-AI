@@ -1,0 +1,4 @@
+# Terms that flag a record as borderline. The row is kept.
+asshole
+bastard
+moron
