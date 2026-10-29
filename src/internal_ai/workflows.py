@@ -491,6 +491,8 @@ def register_model(
         "track": "from_scratch",
         "size": str(outcome.reproducibility.get("config", {}).get("size") or "small"),
         "planning_gpu_hours": float(outcome.estimate.get("planning_gpu_hours") or 0.0),
+        "training_subset": outcome.subset,
+        "training_records_used": int(outcome.subset.get("selected_count") or 0),
         "pretrained_weights_used": False,
         "registered_by": actor,
         "created_at": now_iso(),

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from internal_ai.data.records import Record
 from internal_ai.data.tokenizer import Tokenizer, train_tokenizer
 from internal_ai.training.trainer import (
@@ -296,6 +298,8 @@ def test_a_real_run_trains_on_the_selected_subset_only(platform, tmp_path, monke
     )
 
     assert outcome.steps == 1
+    assert outcome.subset["selected_count"] == 2
+    assert outcome.subset["total_available"] == 8
     assert seen[0] == ["good-0", "good-1"]
     assert seen[1] == ["val"], "validation is not part of the training subset"
     events = platform.store.list_audit(action="train.subset_selected")
@@ -303,3 +307,86 @@ def test_a_real_run_trains_on_the_selected_subset_only(platform, tmp_path, monke
     assert events[-1].details["selected_count"] == 2
     assert events[-1].details["total_available"] == 8
     assert events[-1].details["selection_method"] == "quality"
+
+
+def test_the_outcome_and_card_record_how_many_records_trained(platform, tmp_path) -> None:
+    from internal_ai.domain import DatasetVersion
+    from internal_ai.ids import now_iso
+    from internal_ai.training.trainer import TrainingOutcome
+    from internal_ai.workflows import register_model
+
+    platform.store.add_dataset(
+        DatasetVersion(
+            id="ds_card",
+            name="tickets",
+            version=1,
+            content_hash="abc",
+            record_count=8,
+            token_count=10_000,
+            created_at=now_iso(),
+            released=True,
+            stats={},
+        )
+    )
+    outcome = TrainingOutcome(
+        run_id="run_subset",
+        status="completed",
+        steps=2,
+        tokens_seen=64,
+        final_loss=1.0,
+        cost_usd=0.0,
+        checkpoint_path="",
+        metrics_path="",
+        model_path=str(tmp_path / "m.pt"),
+        subset={
+            "subset_used": "selected",
+            "selected_count": 3,
+            "total_available": 8,
+            "selection_method": "quality",
+            "average_score": 0.9,
+        },
+    )
+    model = register_model(
+        platform,
+        "subset-card",
+        Path(outcome.model_path),
+        outcome,
+        "ds_card",
+        actor="ml_engineer",
+    )
+    assert model.card["training_records_used"] == 3
+    assert model.card["training_subset"]["total_available"] == 8
+
+
+def test_the_cli_and_console_accept_a_subset() -> None:
+    from internal_ai.cli import build_parser
+
+    args = build_parser().parse_args(
+        [
+            "train",
+            "run",
+            "--dataset-id",
+            "ds",
+            "--tokenizer",
+            "tok.json",
+            "--subset-size",
+            "500",
+            "--subset-strategy",
+            "threshold",
+            "--subset-threshold",
+            "0.7",
+        ]
+    )
+    assert args.subset_size == 500
+    assert args.subset_strategy == "threshold"
+    assert args.subset_threshold == 0.7
+    template = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "internal_ai"
+        / "console"
+        / "templates"
+        / "models.html"
+    ).read_text(encoding="utf-8")
+    assert 'name="subset_size"' in template
+    assert "training_subset.selected_count" in template

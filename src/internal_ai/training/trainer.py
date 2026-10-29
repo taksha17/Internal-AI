@@ -126,6 +126,7 @@ class TrainingOutcome:
     estimate: dict[str, Any] = field(default_factory=dict)
     reproducibility: dict[str, Any] = field(default_factory=dict)
     token_budget: dict[str, Any] = field(default_factory=dict)
+    subset: dict[str, Any] = field(default_factory=dict)
     resumed_from: int = 0
     checkpoint_reloaded: bool = False
 
@@ -539,6 +540,7 @@ class Trainer:
         torch.manual_seed(config.seed)
         os.environ["PYTHONHASHSEED"] = str(config.seed)
 
+        subset_stats: dict[str, Any] = {}
         if config.train_subset_size is not None:
             records, subset_stats = select_training_subset(
                 records, config, tokenizer, config.seq_len
@@ -660,6 +662,7 @@ class Trainer:
                 estimate=estimate.to_dict(),
                 reproducibility=reproducibility,
                 token_budget=token_budget,
+                subset=subset_stats,
             )
 
         start_step = 0
@@ -943,6 +946,7 @@ class Trainer:
             estimate=estimate.to_dict(),
             reproducibility=reproducibility,
             token_budget=token_budget,
+            subset=subset_stats,
             resumed_from=resumed_from,
             checkpoint_reloaded=checkpoint_reloaded,
         )

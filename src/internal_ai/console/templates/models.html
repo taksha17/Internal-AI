@@ -23,6 +23,13 @@
     </select>
     <span class="muted small">Only a size the compute advice marks runnable can start; record what this corpus needs first with <code>internal-ai compute advise</code>.</span>
   </label>
+  <label>Training subset <input type="number" name="subset_size" min="1" placeholder="all records">
+    <span class="muted small">Optional. Trains on the best N records and leaves validation alone; empty means every record.</span></label>
+  <label>Subset strategy
+    <select name="subset_strategy"><option value="quality">quality</option><option value="random">random</option><option value="threshold">threshold</option></select>
+  </label>
+  <label>Subset threshold <input type="number" name="subset_threshold" min="0" max="1" step="0.05" value="0.8">
+    <span class="muted small">Used by the threshold strategy only.</span></label>
   <label>Training steps <input type="number" name="steps" value="60" min="1" max="5000"></label>
   <label>Cost cap (USD) <input type="number" name="cost_cap_usd" value="2" min="0.01" step="0.01">
     <span class="muted small">Above ${{ "%.0f" % cost_gate_usd }} the run needs an approved <a href="/console/gates/new?gate_type=training_run_above_threshold">training cost gate</a> with subject <code>dataset_id:model_name</code>. The run is refused if any budget has less left than this cap.</span></label>
@@ -112,7 +119,7 @@
   {% call m.data_table([("Run",), ("State",), ("Result",), ("Action",)]) %}
     {% for run in runs %}
     <tr><td><a href="/console/jobs/{{ run.id }}">{{ run.title }}</a></td><td>{{ m.status_badge(run.state) }}</td>
-      <td>{% if run.result %}{{ run.result.status }}, loss {{ "%.4f" % (run.result.final_loss or 0) }}, ${{ "%.4f" % (run.result.cost_usd or 0) }}{% endif %}
+      <td>{% if run.result %}{{ run.result.status }}, loss {{ "%.4f" % (run.result.final_loss or 0) }}, ${{ "%.4f" % (run.result.cost_usd or 0) }}{% if run.result.subset %}, {{ run.result.subset.selected_count }}/{{ run.result.subset.total_available }} records{% endif %}{% endif %}
         {% if run.losses %}<svg class="loss-chart" viewBox="0 0 240 48" width="240" height="48" role="img" aria-label="training and validation loss">{{ run.losses }}</svg>{% endif %}</td>
       <td>{% if run.registered %}registered{% elif run.state == "succeeded" and run.result.status == "completed" and can("register_model") %}
         <form method="post" action="/console/runs/{{ run.id }}/register">{{ m.csrf_field() }}<button type="submit">Register model</button></form>{% endif %}</td></tr>
@@ -138,6 +145,7 @@
 <section class="card">
   <h2>{{ model.name }} v{{ model.version }} {{ m.status_badge(model.status) }}</h2>
   <p class="muted small">{{ model.id }} · trained on {{ model.dataset_ids | join(", ") }}</p>
+  {% if model.card.training_subset %}<p class="muted small">Used {{ model.card.training_subset.selected_count }} of {{ model.card.training_subset.total_available }} training records ({{ model.card.training_subset.selection_method }}).</p>{% endif %}
   {% if row.service %}
   <p class="callout"><strong>Out of service.</strong> {{ row.service }}. Requests are answered by another version, or refused while none qualifies.</p>
   {% endif %}

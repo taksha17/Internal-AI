@@ -1020,6 +1020,9 @@ def train_model(
     seed: int = 17,
     vocab_rationale: str = "",
     size: str = "small",
+    subset_size: int | None = None,
+    subset_strategy: str = "quality",
+    subset_threshold: float = 0.8,
 ) -> dict[str, Any]:
     """Train a from-scratch embedding model on the training split of a released dataset."""
     from internal_ai.compute.advise import require_runnable_size
@@ -1052,6 +1055,12 @@ def train_model(
         raise ValueError("a training run needs a positive cost cap")
     if pair_mode not in ("paraphrase", "title"):
         raise ValueError("pair mode is paraphrase or title")
+    if subset_size is not None and subset_size < 1:
+        raise ValueError("a training subset needs at least one record")
+    if subset_strategy not in ("quality", "random", "threshold"):
+        raise ValueError("subset strategy is quality, random or threshold")
+    if not 0.0 <= subset_threshold <= 1.0:
+        raise ValueError("subset threshold is between 0 and 1")
     subject = f"{dataset_id}:{name}"
     if cost_cap_usd > TRAINING_COST_GATE_USD:
         _require_gate(platform, actor, GateType.TRAINING_RUN_COST, subject, "train_model")
@@ -1064,6 +1073,9 @@ def train_model(
         learning_rate=learning_rate,
         seed=seed,
         vocab_rationale=vocab_rationale,
+        train_subset_size=subset_size,
+        train_subset_strategy=subset_strategy,
+        train_subset_threshold=subset_threshold,
     )
 
     def work() -> dict[str, Any]:
@@ -1090,6 +1102,9 @@ def train_model(
             "steps": steps,
             "pair_mode": pair_mode,
             "learning_rate": learning_rate,
+            "subset_size": subset_size,
+            "subset_strategy": subset_strategy,
+            "subset_threshold": subset_threshold,
         },
         work,
         agent=TRAINING_AGENT,
