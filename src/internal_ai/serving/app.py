@@ -13,12 +13,12 @@ from typing import Any
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
-from internal_ai.config import installed_guardrail_policy
 from internal_ai.context import Platform
 from internal_ai.data.tokenizer import Tokenizer
 from internal_ai.domain import ModelVersion
 from internal_ai.serving.guardrails import (
     GUARDRAIL_REFUSE,
+    configured_install_policy,
     guardrail_policy,
     validate_output_guardrails,
 )
@@ -302,7 +302,9 @@ def create_serving_app(
 
             guardrail_violations = validate_output_guardrails(result.text)
             try:
-                policy = guardrail_policy(model.config, default=installed_guardrail_policy())
+                policy = guardrail_policy(
+                    model.config, default=configured_install_policy(get_platform().store)
+                )
             except ValueError as exc:
                 raise HTTPException(status_code=500, detail=str(exc)) from exc
             details = {

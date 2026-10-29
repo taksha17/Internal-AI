@@ -4,6 +4,22 @@
 {% block content %}
 {{ m.page_head("Models", "Models are trained from random initialisation on a released dataset. No pretrained weights are ever loaded.", "Workspace") }}
 
+{% if can("set_serving_policy") %}
+<form method="post" action="/console/models/guardrail-default" class="inline-form card">{{ m.csrf_field() }}
+  <label>Flagged answers across the install
+    <select name="policy">
+      <option value=""{{ ' selected' if not install_stored_policy else '' }}>follow the environment ({{ install_policy }})</option>
+      <option value="warn"{{ ' selected' if install_stored_policy == 'warn' else '' }}>warn and return the answer</option>
+      <option value="refuse"{{ ' selected' if install_stored_policy == 'refuse' else '' }}>withhold the answer</option>
+    </select>
+  </label>
+  <button type="submit">Set for the install</button>
+  <p class="muted small">What every model does with text that names a secret when it does not choose its own policy. A change applies from the next answer, with no restart.</p>
+</form>
+{% else %}
+<p class="muted small">Flagged answers across the install: {{ install_policy }}, for every model that does not choose its own policy.</p>
+{% endif %}
+
 {% if can("train_model") %}
 <form method="post" action="/console/models/train" class="stack card">
   {{ m.csrf_field() }}

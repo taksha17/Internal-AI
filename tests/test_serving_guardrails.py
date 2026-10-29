@@ -13,6 +13,7 @@ from internal_ai.context import Platform
 from internal_ai.domain import ModelVersion
 from internal_ai.llm import Completion
 from internal_ai.serving.app import create_serving_app, validate_output_guardrails
+from internal_ai.serving.guardrails import INSTALL_POLICY_KEY
 from internal_ai.serving.service import Principal
 
 HIT = {"path": "src/a.txt", "line": 1, "text": "the password rotation lives here"}
@@ -189,6 +190,41 @@ def test_an_unrecognised_install_default_fails_closed(tmp_path, monkeypatch) -> 
 
     assert response.status_code == 500, response.text
     assert "unknown guardrail_policy" in response.json()["detail"]
+
+
+def test_a_stored_install_default_applies_without_a_restart(tmp_path, monkeypatch) -> None:
+    app = _app(tmp_path, monkeypatch, Runner())
+    with TestClient(app) as client:
+        assert _ask(client).status_code == 200
+        app.state.platform.store.kv_set(INSTALL_POLICY_KEY, "refuse")
+        response = _ask(client)
+
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"]["violations"] == ["potential password disclosure"]
+
+
+def test_a_cleared_install_default_falls_back_to_the_environment(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(ENV_GUARDRAIL_POLICY, "refuse")
+    app = _app(tmp_path, monkeypatch, Runner())
+    with TestClient(app) as client:
+        store = app.state.platform.store
+        store.kv_set(INSTALL_POLICY_KEY, "warn")
+        assert _ask(client).status_code == 200
+        store.kv_set(INSTALL_POLICY_KEY, "")
+        response = _ask(client)
+
+    assert response.status_code == 422, response.text
+
+
+def test_an_unrecognised_stored_default_fails_closed(tmp_path, monkeypatch) -> None:
+    app = _app(tmp_path, monkeypatch, Runner())
+    with TestClient(app) as client:
+        app.state.platform.store.kv_set(INSTALL_POLICY_KEY, "block")
+        response = _ask(client)
+
+    assert response.status_code == 500, response.text
+    assert "unknown guardrail_policy" in response.json()["detail"]
+    assert "text" not in response.json()
 
 
 def test_an_answer_slower_than_the_target_is_refused(tmp_path, monkeypatch) -> None:

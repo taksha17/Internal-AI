@@ -11,9 +11,13 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from internal_ai.config import installed_guardrail_policy
+from internal_ai.store import Store
+
 GUARDRAIL_WARN = "warn"
 GUARDRAIL_REFUSE = "refuse"
 GUARDRAIL_POLICIES = (GUARDRAIL_WARN, GUARDRAIL_REFUSE)
+INSTALL_POLICY_KEY = "serving.guardrail_policy"
 
 _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bpassword\b", re.IGNORECASE), "potential password disclosure"),
@@ -35,6 +39,16 @@ def guardrail_policy(config: dict[str, Any], default: str = GUARDRAIL_WARN) -> s
             f"unknown guardrail_policy {policy!r}; use one of {', '.join(GUARDRAIL_POLICIES)}"
         )
     return policy
+
+
+def configured_install_policy(store: Store) -> str:
+    """What the install does when a model does not choose for itself.
+
+    The console's setting wins, so an operator's choice holds from the next
+    request and needs no restart. An install that never chose falls back to
+    ``INTERNAL_AI_GUARDRAIL_POLICY``, which is how a fresh one is seeded.
+    """
+    return store.kv_get(INSTALL_POLICY_KEY, "") or installed_guardrail_policy()
 
 
 def validate_output_guardrails(text: str) -> list[str]:

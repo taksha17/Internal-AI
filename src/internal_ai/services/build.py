@@ -1445,8 +1445,7 @@ def set_guardrail_policy(platform: Platform, actor: Actor, model_id: str, policy
     the model's choice or the install default is refused here rather than
     turning every request into a 500 later.
     """
-    from internal_ai.config import installed_guardrail_policy
-    from internal_ai.serving.guardrails import guardrail_policy
+    from internal_ai.serving.guardrails import configured_install_policy, guardrail_policy
 
     require(platform.audit, actor, Action.SET_SERVING_POLICY, model_id)
     model = platform.store.get_model(model_id)
@@ -1458,7 +1457,7 @@ def set_guardrail_policy(platform: Platform, actor: Actor, model_id: str, policy
         config["guardrail_policy"] = chosen
     else:
         config.pop("guardrail_policy", None)
-    guardrail_policy(config, default=installed_guardrail_policy())
+    guardrail_policy(config, default=configured_install_policy(platform.store))
     before = str(model.config.get("guardrail_policy") or "")
     platform.store.update_model_config(model_id, config)
     platform.audit.record(
@@ -1469,6 +1468,37 @@ def set_guardrail_policy(platform: Platform, actor: Actor, model_id: str, policy
         details={"before": before, "after": chosen, "inherits_install_default": not chosen},
     )
     return platform.store.get_model(model_id) or model
+
+
+def set_install_guardrail_policy(platform: Platform, actor: Actor, policy: str) -> str:
+    """The whole install's rule for flagged text. Empty hands it back to the environment.
+
+    The value is stored, not read from the environment at request time, so a
+    change holds from the next answer without a restart. It is checked before it
+    is written, because an install default of a misspelt policy would fail every
+    answer that reaches the scan.
+    """
+    from internal_ai.serving.guardrails import (
+        INSTALL_POLICY_KEY,
+        configured_install_policy,
+        guardrail_policy,
+    )
+
+    require(platform.audit, actor, Action.SET_SERVING_POLICY, INSTALL_POLICY_KEY)
+    chosen = policy.strip()
+    if chosen:
+        guardrail_policy({}, default=chosen)
+    before = configured_install_policy(platform.store)
+    platform.store.kv_set(INSTALL_POLICY_KEY, chosen)
+    after = configured_install_policy(platform.store)
+    platform.audit.record(
+        actor=actor.id,
+        actor_kind=actor.kind,
+        action="serving.guardrail_default_set",
+        subject=INSTALL_POLICY_KEY,
+        details={"before": before, "after": after, "follows_environment": not chosen},
+    )
+    return after
 
 
 def _frozen_eval_for(platform: Platform, dataset_id: str) -> Any:

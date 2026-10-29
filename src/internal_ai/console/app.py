@@ -30,7 +30,6 @@ from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from internal_ai import brief
-from internal_ai.config import installed_guardrail_policy
 from internal_ai.console import find as finder
 from internal_ai.console import inbox, lists
 from internal_ai.context import Platform
@@ -51,6 +50,7 @@ from internal_ai.services.identity import (
 )
 from internal_ai.services.jobs import JobRunner
 from internal_ai.services.permissions import Action, allowed, deny, reason
+from internal_ai.serving.guardrails import INSTALL_POLICY_KEY, configured_install_policy
 from internal_ai.serving.service import out_of_service
 from internal_ai.store import ALLOWED_TRANSITIONS, TransitionError
 
@@ -1698,7 +1698,8 @@ def mount_console(
             state=state,
             frozen_sets=[item for item in platform.store.list_eval_sets() if item.frozen],
             cost_gate_usd=build.TRAINING_COST_GATE_USD,
-            install_policy=installed_guardrail_policy(),
+            install_policy=configured_install_policy(platform.store),
+            install_stored_policy=platform.store.kv_get(INSTALL_POLICY_KEY, "") or "",
         )
 
     @app.post("/console/models/overfit", include_in_schema=False)
@@ -1811,6 +1812,22 @@ def mount_console(
             ),
             "evaluation started",
             job_link,
+        )
+
+    @app.post("/console/models/guardrail-default", include_in_schema=False)
+    async def guardrail_default(request: Request) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        return await act(
+            ctx,
+            "/console/models",
+            lambda: build.set_install_guardrail_policy(
+                ctx.platform, ctx.actor, form.get("policy", "")
+            ),
+            lambda policy: (
+                f"flagged answers now {policy} across the install, for every model that "
+                "does not choose its own policy"
+            ),
         )
 
     @app.post("/console/models/{model_id}/guardrail-policy", include_in_schema=False)
