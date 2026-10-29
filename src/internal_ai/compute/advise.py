@@ -18,6 +18,7 @@ from internal_ai.training.trainer import TOKENS_PER_PARAMETER_FLOOR
 
 BACKEND_KEY = "compute_backend"
 SIZES = (("small", 10_000_000), ("1b", 1_000_000_000), ("7b", 7_000_000_000))
+SIZE_NAMES = tuple(name for name, _parameters in SIZES)
 LOCAL_HOUR_LIMIT = 1.0
 
 
@@ -45,6 +46,45 @@ def make_backend(platform: Platform, sandbox: Sandbox) -> JobBackend:
     if attached_backend(platform) == "slurm":
         return SlurmBackend()
     return LocalBackend(sandbox)
+
+
+def stored_advice(platform: Platform, dataset_id: str) -> dict[str, Any] | None:
+    """The last advice for this dataset, or ``None`` when nobody recorded any."""
+    raw = platform.store.kv_get(f"compute_advice:{dataset_id}", "")
+    return json.loads(raw) if raw else None
+
+
+def require_runnable_size(platform: Platform, dataset_id: str, size: str) -> dict[str, Any]:
+    """The advised row for a size, refusing one this platform cannot take.
+
+    A waiting size is not a warning: starting the run anyway would spend the
+    machine's hours on a shape the corpus cannot support. The refusal names the
+    hours so the person can see what the size would need.
+    """
+    if size not in SIZE_NAMES:
+        raise ValueError("size is small, 1b or 7b")
+    advice = stored_advice(platform, dataset_id)
+    if advice is None:
+        raise ValueError(
+            f"no compute advice is stored for {dataset_id}; record what this corpus needs first"
+        )
+    row = next((item for item in advice.get("sizes", []) if item.get("size") == size), None)
+    if row is None:
+        raise ValueError(f"the stored advice has no {size} row")
+    if not row.get("runnable"):
+        reasons = []
+        if not advice.get("measured"):
+            reasons.append("the token count is still an estimate")
+        if not row.get("meets_floor"):
+            reasons.append("the corpus is below the tokens-per-parameter floor")
+        if row.get("machine") == "H100-class" and advice.get("backend") == "local":
+            reasons.append("no H100-class backend is attached")
+        detail = "; ".join(reasons) or "the advice marks it waiting"
+        raise ValueError(
+            f"{size} is waiting: {row.get('planning_gpu_hours')} GPU-hours on "
+            f"{row.get('machine')} ({detail})"
+        )
+    return row
 
 
 def advise_dataset(

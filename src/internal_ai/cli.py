@@ -961,6 +961,7 @@ def cmd_tokenizer_train(args: argparse.Namespace) -> int:
 
 def cmd_train_run(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.compute.advise import require_runnable_size
         from internal_ai.data.tokenizer import Tokenizer
         from internal_ai.services.build import require_customer_eval
         from internal_ai.training.trainer import TrainConfig
@@ -968,8 +969,14 @@ def cmd_train_run(args: argparse.Namespace) -> int:
 
         tokenizer_path = Path(args.tokenizer)
         require_customer_eval(platform, args.dataset_id)
+        try:
+            require_runnable_size(platform, args.dataset_id, args.size)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
         tokenizer = Tokenizer.load(tokenizer_path)
-        config = TrainConfig(
+        config = TrainConfig.for_size(
+            args.size,
             name=args.name,
             objective=args.objective,
             steps=args.steps,
@@ -1426,6 +1433,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_run.add_argument("--dataset-id", required=True)
     train_run.add_argument("--tokenizer", required=True)
     train_run.add_argument("--name", default="embedding-v1")
+    train_run.add_argument("--size", default="small", choices=["small", "1b", "7b"])
     train_run.add_argument(
         "--objective", default="contrastive", choices=["contrastive", "mlm", "causal"]
     )

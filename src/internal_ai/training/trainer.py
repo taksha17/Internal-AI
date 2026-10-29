@@ -42,6 +42,15 @@ except ImportError as exc:  # pragma: no cover
 
 TOKENS_PER_PARAMETER_FLOOR = 20
 
+# The shapes the platform names in its compute advice. A run may only take a
+# shape the advice marks runnable; the trainer builds the shape it is given.
+SIZE_ARCHITECTURES: dict[str, dict[str, int]] = {
+    "small": {"d_model": 128, "n_heads": 4, "n_layers": 4, "d_ff": 512},
+    "1b": {"d_model": 2048, "n_heads": 16, "n_layers": 24, "d_ff": 8192},
+    "7b": {"d_model": 4096, "n_heads": 32, "n_layers": 32, "d_ff": 16384},
+}
+SIZES = tuple(SIZE_ARCHITECTURES)
+
 
 def gpu_busy() -> int:
     """1 when this process is holding CUDA memory. 0 when CUDA is absent."""
@@ -53,6 +62,7 @@ def gpu_busy() -> int:
 @dataclass(slots=True)
 class TrainConfig:
     name: str = "embedding-v1"
+    size: str = "small"
     objective: str = "contrastive"
     steps: int = 100
     batch_size: int = 8
@@ -81,6 +91,14 @@ class TrainConfig:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+    @classmethod
+    def for_size(cls, size: str, **overrides: Any) -> TrainConfig:
+        """A config whose width follows the size, so a card cannot claim a shape it never built."""
+        if size not in SIZE_ARCHITECTURES:
+            raise ValueError("size is small, 1b or 7b")
+        values = {**SIZE_ARCHITECTURES[size], **overrides}
+        return cls(size=size, **values)
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> TrainConfig:
