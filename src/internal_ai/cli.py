@@ -1054,6 +1054,9 @@ def cmd_train_run(args: argparse.Namespace) -> int:
             cost_cap_usd=args.cost_cap,
             seed=args.seed,
             learning_rate=args.learning_rate,
+            train_subset_size=args.subset_size,
+            train_subset_strategy=args.subset_strategy,
+            train_subset_threshold=args.subset_threshold,
         )
         outcome = train_embedding_model(
             platform, args.dataset_id, tokenizer, config, actor=args.actor, pair_mode=args.pair_mode
@@ -1512,6 +1515,11 @@ def build_parser() -> argparse.ArgumentParser:
     train_run.add_argument("--cost-cap", type=float, default=5.0)
     train_run.add_argument("--seed", type=int, default=17)
     train_run.add_argument("--learning-rate", type=float, default=3e-4)
+    train_run.add_argument("--subset-size", type=int, default=None)
+    train_run.add_argument(
+        "--subset-strategy", default="quality", choices=["quality", "random", "threshold"]
+    )
+    train_run.add_argument("--subset-threshold", type=float, default=0.8)
     train_run.add_argument("--actor", default="ml_engineer")
     train_run.add_argument("--pair-mode", default="paraphrase", choices=["paraphrase", "title"])
     train_run.set_defaults(func=cmd_train_run)

@@ -88,6 +88,10 @@ class TrainConfig:
     dropout: float = 0.1
     max_seq_len: int = 256
     vocab_rationale: str = ""
+    train_subset_size: int | None = None
+    train_subset_strategy: str = "quality"
+    train_subset_threshold: float = 0.8
+    min_quality_score: float = 0.5
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -122,6 +126,7 @@ class TrainingOutcome:
     estimate: dict[str, Any] = field(default_factory=dict)
     reproducibility: dict[str, Any] = field(default_factory=dict)
     token_budget: dict[str, Any] = field(default_factory=dict)
+    subset: dict[str, Any] = field(default_factory=dict)
     resumed_from: int = 0
     checkpoint_reloaded: bool = False
 
@@ -168,6 +173,169 @@ def _git_commit(root: Path) -> str:
         if proc.returncode == 0 and proc.stdout.strip():
             return proc.stdout.strip()
     return "unknown"
+
+
+def select_training_subset(
+    records: list[Record],
+    config: TrainConfig,
+    tokenizer: Tokenizer,
+    seq_len: int,
+) -> tuple[list[Record], dict[str, Any]]:
+    """Select a subset of training records based on advice marks.
+
+    Args:
+        records: List of training records
+        config: Training configuration with subset parameters
+        tokenizer: Tokenizer for encoding text
+        seq_len: Maximum sequence length
+
+    Returns:
+        Tuple of (selected_records, statistics)
+    """
+    if config.train_subset_size is None:
+        # No subset limit - use all records
+        return records, {"subset_used": "all", "selected_count": len(records)}
+
+    # Calculate quality scores for each record
+    scored_records = []
+    for record in records:
+        score = _calculate_record_quality_score(record, tokenizer, seq_len, config)
+        scored_records.append((record, score))
+
+    # Sort records by quality score (descending)
+    scored_records.sort(key=lambda x: x[1], reverse=True)
+
+    # Select top N records or apply threshold
+    if config.train_subset_strategy == "random":
+        import random
+
+        random.seed(config.seed)
+        sampled_indices = random.sample(
+            range(len(scored_records)), min(config.train_subset_size, len(scored_records))
+        )
+        selected_records = [scored_records[i][0] for i in sampled_indices]
+        selected_scores = [scored_records[i][1] for i in sampled_indices]
+        method = "random"
+    elif config.train_subset_strategy == "threshold":
+        threshold_score = config.train_subset_threshold
+        selected_pairs = [
+            (record, score) for record, score in scored_records if score >= threshold_score
+        ]
+        # Ensure we don't exceed the requested size
+        if len(selected_pairs) > config.train_subset_size:
+            selected_pairs = selected_pairs[: config.train_subset_size]
+        selected_records = [record for record, _ in selected_pairs]
+        selected_scores = [score for _, score in selected_pairs]
+        method = "threshold"
+    else:  # quality (default)
+        selected_pairs = scored_records[: config.train_subset_size]
+        selected_records = [record for record, _ in selected_pairs]
+        selected_scores = [score for _, score in selected_pairs]
+        method = "quality"
+    stats = {
+        "subset_used": "selected",
+        "selected_count": len(selected_records),
+        "total_available": len(records),
+        "selection_method": method,
+        "quality_threshold": config.train_subset_threshold,
+        "average_score": sum(selected_scores) / max(len(selected_scores), 1),
+    }
+
+    return selected_records, stats
+
+
+def _calculate_record_quality_score(
+    record: Record,
+    tokenizer: Tokenizer,
+    seq_len: int,
+    config: TrainConfig,
+) -> float:
+    """Calculate a quality score for a single record (0.0 to 1.0).
+
+    Higher scores indicate better training examples based on:
+    - Language quality (English preferred)
+    - Low boilerplate content
+    - Appropriate document length
+    """
+    text = record.text
+    if not text or not text.strip():
+        return 0.0
+
+    # Language quality score (higher for common languages)
+    language = record.meta.get("language", "unknown")
+    language_score = {
+        "en": 1.0,
+        "zh": 0.9,
+        "ru": 0.8,
+        "ar": 0.7,
+        "unknown": 0.4,
+        "other": 0.6,
+    }.get(language, 0.5)
+
+    # Boilerplate detection (lower score for boilerplate)
+    bp_ratio = _boilerplate_ratio(text)
+    boilerplate_score = max(0.0, 1.0 - bp_ratio)
+
+    # Length appropriateness (based on seq_len constraints)
+    word_count = len(text.split())
+    char_count = len(text)
+    if word_count < 5 or char_count < 40:
+        length_score = 0.3  # Too short
+    elif word_count > seq_len * 3:
+        length_score = 0.6  # Too long
+    else:
+        length_score = 1.0  # Good length
+
+    # Alpha ratio (letters vs other chars) - penalize low-alpha content
+    letters = sum(1 for char in text if char.isalpha())
+    alpha_ratio = letters / max(len(text), 1)
+    alpha_score = min(1.0, alpha_ratio * 1.5)  # Normalize
+
+    # Weighted combination
+    quality_score = (
+        language_score * 0.35 + boilerplate_score * 0.30 + length_score * 0.20 + alpha_score * 0.15
+    )
+
+    return min(1.0, max(0.0, quality_score))
+
+
+def _boilerplate_ratio(text: str) -> float:
+    """Calculate the ratio of boilerplate markers in text (0.0 to 1.0).
+
+    Higher values indicate more boilerplate/legal text, which is less useful
+    for training.
+    """
+    lowered = text.lower()
+    if not lowered:
+        return 0.0
+
+    boilerplate_markers = (
+        "copyright",
+        "all rights reserved",
+        "terms of service",
+        "privacy policy",
+        "cookie policy",
+        "unsubscribe",
+        "click here",
+        "javascript is disabled",
+        "enable javascript",
+        "©",
+        "®",
+        "™",
+    )
+
+    # Count markers and also check density (markers per 100 chars)
+    marker_count = sum(1 for marker in boilerplate_markers if marker in lowered)
+    text_length = len(lowered)
+
+    # Base ratio from marker count
+    count_ratio = min(marker_count / 5.0, 1.0)  # 5+ markers = full boilerplate
+
+    # Density ratio (markers per 100 characters)
+    density_ratio = min((marker_count / max(text_length / 100, 1)) * 0.5, 1.0)
+
+    # Combined score
+    return min(1.0, max(count_ratio, density_ratio))
 
 
 class Trainer:
@@ -372,6 +540,17 @@ class Trainer:
         torch.manual_seed(config.seed)
         os.environ["PYTHONHASHSEED"] = str(config.seed)
 
+        subset_stats: dict[str, Any] = {}
+        if config.train_subset_size is not None:
+            records, subset_stats = select_training_subset(
+                records, config, tokenizer, config.seq_len
+            )
+            self.audit.record(
+                actor="trainer",
+                action="train.subset_selected",
+                subject=config.name,
+                details=subset_stats,
+            )
         sequences = self.encode_records(records, tokenizer, config.seq_len)
         if not sequences and not pairs:
             raise ValueError("no usable sequences in the dataset")
@@ -483,6 +662,7 @@ class Trainer:
                 estimate=estimate.to_dict(),
                 reproducibility=reproducibility,
                 token_budget=token_budget,
+                subset=subset_stats,
             )
 
         start_step = 0
@@ -766,6 +946,7 @@ class Trainer:
             estimate=estimate.to_dict(),
             reproducibility=reproducibility,
             token_budget=token_budget,
+            subset=subset_stats,
             resumed_from=resumed_from,
             checkpoint_reloaded=checkpoint_reloaded,
         )
