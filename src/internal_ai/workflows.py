@@ -581,6 +581,9 @@ def promote_model(
         raise PermissionError(
             "the supervised run dropped recall@10 by more than 0.05 against the previous candidate"
         )
+    from internal_ai.evidence import require_playbook
+
+    require_playbook(platform, float(model.card.get("planning_gpu_hours") or 0))
     model.card["eval_results"] = report.metrics
     model.card["baseline_metrics"] = report.baseline_metrics
     model.card["eval_report_id"] = report.id

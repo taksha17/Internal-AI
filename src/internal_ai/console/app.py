@@ -1888,7 +1888,16 @@ def mount_console(
         job = get_jobs().get(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail="unknown job")
-        return render(ctx, "job.html", job=job, next_step=_next_step(job))
+        from internal_ai.evidence import list_evidence
+
+        playbooks = list_evidence(ctx.platform, "instability_playbook")
+        return render(
+            ctx,
+            "job.html",
+            job=job,
+            next_step=_next_step(job),
+            playbook=playbooks[-1] if playbooks else None,
+        )
 
     @app.get("/console/jobs/{job_id}/status", include_in_schema=False)
     def job_status(request: Request, job_id: str) -> Response:
