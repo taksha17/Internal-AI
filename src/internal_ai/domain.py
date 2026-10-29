@@ -340,6 +340,7 @@ class EvalReport:
     checks: dict[str, Any] = field(default_factory=dict)
     passed: bool = False
     notes: str = ""
+    judged_by: str = ""
 
 
 @dataclass(slots=True)

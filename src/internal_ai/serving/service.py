@@ -120,6 +120,44 @@ class RetrievalHit:
     source_id: str = ""
 
 
+LEGACY_PERMISSION_NOTE = "permission enforcement is verified by the retrieval service tests"
+
+
+def out_of_service(store: Store, model: ModelVersion) -> str | None:
+    """Why a model must not answer a request, or ``None`` when it may.
+
+    A promoted model stops being servable the moment its newest report on a
+    still-frozen eval set fails: a later failing re-run is evidence about this
+    model now, and the gate that promoted it approved an older report. Reports
+    that are missing, or that sit on a set that is not frozen, are not evidence
+    either way and leave the model as it was.
+    """
+    reports = store.list_eval_reports(model.id)
+    if not reports:
+        return None
+    newest = reports[-1]
+    eval_set = store.get_eval_set(newest.eval_set_id)
+    if eval_set is None or not eval_set.frozen:
+        return None
+    leak = newest.checks.get("permission_leak") or {}
+    if leak.get("note") == LEGACY_PERMISSION_NOTE:
+        return (
+            f"{model.id}'s newest report still carries the legacy permission note "
+            "and is not evidence"
+        )
+    if newest.passed:
+        return None
+    recall = newest.metrics.get("recall_at_10")
+    baseline = newest.baseline_metrics.get("recall_at_10")
+    detail = ""
+    if recall is not None and baseline is not None:
+        detail = f" at recall@10 {recall:.3f} against a keyword baseline of {baseline:.3f}"
+    return (
+        f"{model.id}'s newest report on {newest.eval_set_id}{detail} failed; "
+        "it is out of service until a later evaluation passes"
+    )
+
+
 @dataclass(slots=True)
 class ModelRouter:
     """Active model version per model name, with rollback support."""
@@ -129,7 +167,11 @@ class ModelRouter:
     active: dict[str, str] = field(default_factory=dict)
 
     def resolve(self, name: str) -> ModelVersion | None:
-        candidates = self.store.list_models(name=name)
+        candidates = [
+            item
+            for item in self.store.list_models(name=name)
+            if out_of_service(self.store, item) is None
+        ]
         if not candidates:
             return None
         model_id = self.active.get(name)
@@ -145,6 +187,9 @@ class ModelRouter:
         model = self.store.get_model(model_id)
         if model is None:
             raise KeyError(f"unknown model: {model_id}")
+        refused = out_of_service(self.store, model)
+        if refused is not None:
+            raise PermissionError(f"cannot serve a model that failed its evaluation: {refused}")
         previous = self.active.get(name)
         self.active[name] = model_id
         self.audit.record(
@@ -169,7 +214,11 @@ def served_model(store: Store, router: ModelRouter) -> ModelVersion | None:
     named = router.resolve("embedding-v1")
     if named is not None:
         return named
-    promoted = [item for item in store.list_models() if item.status == "promoted"]
+    promoted = [
+        item
+        for item in store.list_models()
+        if item.status == "promoted" and out_of_service(store, item) is None
+    ]
     return promoted[-1] if promoted else None
 
 
@@ -232,6 +281,22 @@ class RetrievalService:
         return hits
 
 
+_HIDDEN_DETAIL_KEYS = frozenset({"question", "query", "prompt"})
+
+
+def public_details(extra: dict[str, Any] | None, question: str = "") -> dict[str, Any]:
+    """Details safe to store. The question is not one of them."""
+    hidden = {question} if question else set()
+    cleaned: dict[str, Any] = {}
+    for key, value in (extra or {}).items():
+        if key in _HIDDEN_DETAIL_KEYS:
+            continue
+        if isinstance(value, str) and any(secret and secret in value for secret in hidden):
+            continue
+        cleaned[key] = value
+    return cleaned
+
+
 def log_request(
     audit: AuditLog,
     principal: Principal,
@@ -239,6 +304,8 @@ def log_request(
     status_code: int,
     latency_ms: float,
     extra: dict[str, Any] | None = None,
+    question: str = "",
+    cost_usd: float = 0.0,
 ) -> None:
     audit.record(
         actor=principal.user_id,
@@ -249,6 +316,7 @@ def log_request(
         details={
             "status_code": status_code,
             "latency_ms": round(latency_ms, 3),
-            **(extra or {}),
+            **public_details(extra, question),
         },
+        cost_usd=cost_usd,
     )
