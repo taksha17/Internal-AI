@@ -79,7 +79,7 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
         dana, cora = Person(app, "Dana Owner"), Person(app, "Cora Compliance")
         dex = Person(app, "Dex Expert")
 
-        assert "Build a model, step by step" in mo.get("/console/home")
+        assert "Twelve stages" in mo.get("/console/home")
 
         page = mo.inspected(mo.post("/console/sources/sample", records="80"))
         assert "What the platform sees" in page
