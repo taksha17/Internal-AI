@@ -6,6 +6,7 @@ metrics with divergence alerts, and a hard cost cap enforced during the run.
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import platform
@@ -602,30 +603,26 @@ class Trainer:
     def _validation_loss(
         self, model: TinyTransformer, batches: list[Any], config: TrainConfig
     ) -> float:
-        """Mean loss on held-out batches, with the model frozen and the noise fixed.
+        """Mean loss on held-out batches, measured on a copy.
 
-        The masking is resampled under its own seed and the training stream is put
-        back afterwards, so the held-out number can be compared between steps and
-        between a model in memory and the same model reloaded from disk.
+        The copy keeps the masking on its own seed, and the training model and its
+        random stream are left as they were, so a held-out number can be compared
+        between steps and between memory and a reloaded checkpoint.
         """
-        was_training = model.training
-        rng_state = torch.get_rng_state()
-        model.eval()
-        torch.manual_seed(config.seed + 991)
+        frozen = copy.deepcopy(model)
+        frozen.eval()
         totals: list[float] = []
-        try:
+        with torch.random.fork_rng():
+            torch.manual_seed(config.seed + 991)
             with torch.no_grad():
                 for batch in batches:
                     inputs, targets, _ = self._make_batch(batch, config)
                     if config.objective == "contrastive":
-                        loss = self._contrastive_loss(model, inputs, targets, config)
+                        loss = self._contrastive_loss(frozen, inputs, targets, config)
                     else:
-                        _, loss = model(inputs, targets)
+                        _, loss = frozen(inputs, targets)
                     if loss is not None and torch.isfinite(loss):
                         totals.append(float(loss.detach()))
-        finally:
-            model.train(was_training)
-            torch.set_rng_state(rng_state)
         return sum(totals) / len(totals) if totals else float("nan")
 
     def _verify_checkpoint(
@@ -642,7 +639,8 @@ class Trainer:
         """Reload a checkpoint and re-measure, so the file is shown to hold the model."""
         in_memory = self._validation_loss(model, val_batches, config)
         state = torch.load(path, weights_only=True)
-        reloaded = TinyTransformer(model_config)
+        with torch.random.fork_rng():
+            reloaded = TinyTransformer(model_config)
         reloaded.load_state_dict(state["model_state"])
         restored = self._validation_loss(reloaded, val_batches, config)
         delta = abs(in_memory - restored)
