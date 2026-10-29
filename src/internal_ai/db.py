@@ -223,7 +223,8 @@ CREATE TABLE IF NOT EXISTS eval_reports (
     baseline_metrics TEXT NOT NULL DEFAULT '{}',
     checks TEXT NOT NULL DEFAULT '{}',
     passed INTEGER NOT NULL DEFAULT 0,
-    notes TEXT NOT NULL DEFAULT ''
+    notes TEXT NOT NULL DEFAULT '',
+    judged_by TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS policy_decisions (
@@ -240,6 +241,15 @@ CREATE TABLE IF NOT EXISTS policy_decisions (
 CREATE TABLE IF NOT EXISTS kv (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS evidence (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    body TEXT NOT NULL,
+    signed_by TEXT NOT NULL,
+    signed_at TEXT NOT NULL,
+    subject TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS project_brief (
@@ -339,6 +349,10 @@ CREATE TABLE IF NOT EXISTS data_sources (
     requested_by TEXT NOT NULL,
     gate_id TEXT,
     dataset_id TEXT,
+    legal_status TEXT NOT NULL DEFAULT '',
+    license_name TEXT NOT NULL DEFAULT '',
+    license_url TEXT NOT NULL DEFAULT '',
+    license_note TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 );
 """
@@ -364,6 +378,17 @@ def init_db(conn: sqlite3.Connection) -> None:
     }
     if "expires_at" not in token_columns:
         conn.execute("ALTER TABLE api_tokens ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''")
+    source_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(data_sources)").fetchall()
+    }
+    for name in ("legal_status", "license_name", "license_url", "license_note"):
+        if name not in source_columns:
+            conn.execute(f"ALTER TABLE data_sources ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
+    report_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(eval_reports)").fetchall()
+    }
+    if "judged_by" not in report_columns:
+        conn.execute("ALTER TABLE eval_reports ADD COLUMN judged_by TEXT NOT NULL DEFAULT ''")
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('version', ?) "
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",

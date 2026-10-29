@@ -9,11 +9,14 @@
 <div class="grid">
   <section class="card">
     <h2>What is in it</h2>
-    <p>{{ view.records }} records, {{ dataset.token_count }} tokens {% if dataset.stats.get("token_count_kind") == "measured" %}(measured with the dataset tokenizer){% else %}(estimated from characters until a tokenizer is trained){% endif %}. You can read {{ view.visible_records }} of them.</p>
+    <p>{{ view.records }} records, {{ dataset.token_count }} tokens {% if dataset.stats.get("token_count_kind") == "measured" %}measured{% else %}estimated{% endif %}{% if dataset.stats.get("parameter_count") %}, {{ dataset.stats.tokens_per_parameter }} tokens per parameter{% endif %}. You can read {{ view.visible_records }} of them.</p>
     {% if view.records < 500 %}
     <p class="callout">Small corpora answer best with keyword search. Training a model is optional here and only helps once the data grows past a few hundred records.</p>
     {% endif %}
     <p>{% for split, count in view.splits | dictsort %}{{ split }} {{ count }} · {% endfor %}</p>
+    {% if dataset.stats.get("ablations") %}
+    <p>Ablation {% for item in dataset.stats.ablations %}{{ item.folder }} validation loss {{ item.validation_loss }}{% if not loop.last %}; {% endif %}{% endfor %}.</p>
+    {% endif %}
     {% if view.trace %}
     <p class="muted small">Sampled lineage: {{ view.trace.traced }} of {{ view.trace.sampled }} records trace to their source, config {{ view.trace.config_hash[:12] }}{% if view.trace.code_commit != "unknown" %}, commit {{ view.trace.code_commit[:12] }}{% endif %}.{% if not view.trace.passed %} {{ view.trace.failures | length }} record(s) did not resolve.{% endif %}</p>
     {% endif %}
@@ -37,8 +40,23 @@
       <form method="post" action="/console/datasets/{{ dataset.id }}/split" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="primary">Split</button></form>
       {% endif %}
     </li>
+    <li>Drop duplicate copies into a new version.
+      {% if can("build_dataset") %}
+      <form method="post" action="/console/datasets/{{ dataset.id }}/dedup" class="inline-form">{{ m.csrf_field() }}<button type="submit">Drop duplicate copies into a new version</button></form>
+      {% endif %}
+    </li>
     <li class="{{ 'done' if dataset.released else '' }}">Release, after a PII audit and a dataset_release gate.
       {% if view.release_gate %}{{ m.gate_box(release_gate) }}{% endif %}
+      {% if language_sample and not dataset.released %}
+      <form method="post" action="/console/datasets/{{ dataset.id }}/language-review">{{ m.csrf_field() }}
+        {% for row in language_sample %}
+        <label>{{ row.record_key }}
+          <select name="mark_{{ row.id }}"><option value="correct">correct</option><option value="wrong">wrong</option></select>
+        </label>
+        {% endfor %}
+        <button type="submit">Save language review</button>
+      </form>
+      {% endif %}
       {% if view.has_splits and not dataset.released and can("release_dataset") %}
         {% if not view.release_gate or view.release_gate.status == "rejected" %}
         <form method="post" action="/console/datasets/{{ dataset.id }}/request-release" class="inline-form">{{ m.csrf_field() }}<button type="submit">Run PII audit and request release</button></form>

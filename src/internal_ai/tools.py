@@ -117,11 +117,12 @@ class ToolRegistry:
         return str(target)
 
     def _read_artifact(self, path: str) -> str:
-        target = Path(path)
+        target = Path(path).resolve()
+        store = self.artifacts_dir.resolve()
+        if target != store and store not in target.parents:
+            raise ToolDenied(f"artifact outside of the shared store: {path}")
         if not target.exists():
             raise FileNotFoundError(path)
-        if self.artifacts_dir not in target.parents and target != self.artifacts_dir:
-            raise ToolDenied(f"artifact outside of the shared store: {path}")
         return target.read_text(encoding="utf-8")
 
     def _list_artifacts(self) -> str:

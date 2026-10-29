@@ -22,6 +22,19 @@ HITS = [
     AskHit("Acmy_Website/src/app/api/payments/razorpay/create-order/route.ts", 8),
     AskHit("Acmy_Website/docs/PRD.md", 16),
 ]
+ALPHA_ITEM = {
+    "query": "which host is allowed in production?",
+    "hits": [
+        {
+            "path": "Acmy_Website/next.config.ts",
+            "line": 36,
+            "text": "const allowedHost = 'app.example.com';",
+        }
+    ],
+}
+GOOD_ANSWER = "See Acmy_Website/next.config.ts at line 36."
+MOVED_ANSWER = "See Acmy_Website/next.config.ts at line 99."
+TRAINING_TEXT = "the nightly reconciliation job failed on the warehouse ledgerline feed"
 
 
 def dataset(platform, dataset_id: str, released: bool) -> None:
@@ -37,6 +50,33 @@ def dataset(platform, dataset_id: str, released: bool) -> None:
             released=released,
         )
     )
+    platform.store.add_dataset_records(
+        dataset_id,
+        [
+            {
+                "record_key": "train-1",
+                "payload": TRAINING_TEXT,
+                "source_id": "s",
+                "acl": [],
+            }
+        ],
+    )
+
+
+def alpha_eval_set(platform, items: list[dict]) -> str:
+    from internal_ai.evals.harness import EvalHarness
+
+    harness = EvalHarness(platform.store, platform.audit)
+    eval_set = harness.create_eval_set("alpha", items)
+    harness.freeze_eval_set(eval_set.id, "ml_lead", gate_approved=True)
+    return eval_set.id
+
+
+def approve_gate(platform, gate_id: str) -> None:
+    stored = platform.store.get_gate(gate_id)
+    assert stored is not None
+    stored.status = type(stored.status)("approved")
+    platform.store.update_gate(stored)
 
 
 def test_only_the_alpha_package_names_a_published_loader() -> None:
@@ -157,15 +197,96 @@ def test_alpha_promotion_is_requested_and_serving_waits(
     assert gate.requested_by == person.id
     with pytest.raises(PermissionError, match="approved"):
         serve_alpha(platform, model.id, tmp_path / "runner")
-    stored = platform.store.get_gate(gate.id)
-    assert stored is not None
-    stored.status = type(stored.status)("approved")
-    platform.store.update_gate(stored)
+    approve_gate(platform, gate.id)
+    with pytest.raises(PermissionError, match="frozen"):
+        serve_alpha(platform, model.id, tmp_path / "runner")
+    assert str(GateType.MODEL_PROMOTION) == "model_promotion"
+
+
+def test_the_alpha_evaluation_scores_the_answers_against_a_frozen_set(
+    platform, enroll_person, tmp_path: Path
+) -> None:
+    from internal_ai.training.alpha.promote import evaluate_alpha
+
+    person = enroll_person(platform, "Elena Alpha", ["ml_lead"])
+    dataset(platform, "ds_alpha", released=True)
+    adapter = tmp_path / "adapter.pt"
+    torch.save({"A": torch.zeros(1)}, adapter)
+    model = register_alpha(platform, PRIMARY, adapter, "ds_alpha", person)
+    eval_set_id = alpha_eval_set(platform, [ALPHA_ITEM])
+
+    good = evaluate_alpha(platform, model.id, eval_set_id, [GOOD_ANSWER])
+    assert good.passed is True, good.checks
+    assert good.metrics["citation_pass_rate"] == 1.0
+
+    moved = evaluate_alpha(platform, model.id, eval_set_id, [MOVED_ANSWER])
+    assert moved.passed is False
+    assert moved.checks["citations"]["passed"] is False
+
+
+def test_the_alpha_evaluation_refuses_an_unfrozen_eval_set(
+    platform, enroll_person, tmp_path: Path
+) -> None:
+    from internal_ai.evals.harness import EvalHarness
+    from internal_ai.training.alpha.promote import evaluate_alpha
+
+    person = enroll_person(platform, "Elena Alpha", ["ml_lead"])
+    dataset(platform, "ds_alpha", released=True)
+    adapter = tmp_path / "adapter.pt"
+    torch.save({"A": torch.zeros(1)}, adapter)
+    model = register_alpha(platform, PRIMARY, adapter, "ds_alpha", person)
+    harness = EvalHarness(platform.store, platform.audit)
+    eval_set = harness.create_eval_set("alpha", [ALPHA_ITEM])
+
+    with pytest.raises(PermissionError, match="frozen"):
+        evaluate_alpha(platform, model.id, eval_set.id, [GOOD_ANSWER])
+
+
+def test_an_alpha_model_is_not_served_without_a_passing_frozen_report(
+    platform, enroll_person, tmp_path: Path
+) -> None:
+    from internal_ai.training.alpha.promote import evaluate_alpha
+
+    person = enroll_person(platform, "Elena Alpha", ["ml_lead"])
+    dataset(platform, "ds_alpha", released=True)
+    adapter = tmp_path / "adapter.pt"
+    torch.save({"A": torch.zeros(1)}, adapter)
+    model = register_alpha(platform, PRIMARY, adapter, "ds_alpha", person)
+    gate = request_alpha_promotion(platform, person, model.id, GOOD_ANSWER, HITS)
+    approve_gate(platform, gate.id)
+    eval_set_id = alpha_eval_set(platform, [ALPHA_ITEM])
+    evaluate_alpha(platform, model.id, eval_set_id, [MOVED_ANSWER])
+
+    with pytest.raises(PermissionError, match="frozen"):
+        serve_alpha(platform, model.id, tmp_path / "runner")
+    assert platform.store.get_model(model.id).status == "candidate"
+
+
+def test_serving_an_alpha_model_promotes_it_and_records_the_report(
+    platform, enroll_person, tmp_path: Path
+) -> None:
+    from internal_ai.training.alpha.promote import evaluate_alpha
+
+    person = enroll_person(platform, "Elena Alpha", ["ml_lead"])
+    dataset(platform, "ds_alpha", released=True)
+    adapter = tmp_path / "adapter.pt"
+    torch.save({"A": torch.zeros(1)}, adapter)
+    model = register_alpha(platform, PRIMARY, adapter, "ds_alpha", person)
+    gate = request_alpha_promotion(platform, person, model.id, GOOD_ANSWER, HITS)
+    approve_gate(platform, gate.id)
+    eval_set_id = alpha_eval_set(platform, [ALPHA_ITEM])
+    report = evaluate_alpha(platform, model.id, eval_set_id, [GOOD_ANSWER])
+
     manifest = serve_alpha(platform, model.id, tmp_path / "runner")
     body = manifest.read_text(encoding="utf-8")
     assert model.card["adapter_sha256"] in body
     assert "local-runner" in body
-    assert str(GateType.MODEL_PROMOTION) == "model_promotion"
+
+    promoted = platform.store.get_model(model.id)
+    assert promoted.status == "promoted"
+    assert promoted.card["eval_report_id"] == report.id
+    assert promoted.card["promoted_by"]
+    assert promoted.eval_report_id == report.id
 
 
 def test_registering_an_alpha_model_needs_the_register_model_capability(
