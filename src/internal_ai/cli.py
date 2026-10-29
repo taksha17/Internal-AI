@@ -726,6 +726,7 @@ def cmd_data_build_tree(args: argparse.Namespace) -> int:
 def cmd_ask(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.agentic import AgenticSearcher
+        from internal_ai.services.build import served_embedder, written_answer
         from internal_ai.serving.service import Principal
 
         principal = Principal(
@@ -736,7 +737,7 @@ def cmd_ask(args: argparse.Namespace) -> int:
             platform.store,
             platform.audit,
             platform.budget,
-            embedder=None,
+            embedder=served_embedder(platform),
             llm=platform.runtime.llm if args.planner == "model" else None,
         )
         try:
@@ -749,6 +750,7 @@ def cmd_ask(args: argparse.Namespace) -> int:
                 cost_cap_usd=args.cost_cap,
                 actor=args.actor,
             )
+            result = written_answer(platform, result, args.dataset_id, actor=args.actor)
         except PermissionError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1

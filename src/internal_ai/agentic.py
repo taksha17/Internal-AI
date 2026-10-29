@@ -149,6 +149,9 @@ class AgenticSearchResult:
     steps_used: int = 0
     cost_usd: float = 0.0
     sufficient_evidence: bool = False
+    written_by: str = ""
+    citation_passed: bool | None = None
+    mismatches: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -160,6 +163,9 @@ class AgenticSearchResult:
             "steps_used": self.steps_used,
             "cost_usd": self.cost_usd,
             "sufficient_evidence": self.sufficient_evidence,
+            "written_by": self.written_by,
+            "citation_passed": self.citation_passed,
+            "mismatches": list(self.mismatches),
         }
 
 

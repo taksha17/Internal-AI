@@ -5,7 +5,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-LINE_NUMBER = re.compile(r"\bline\s+(\d+)\b", re.IGNORECASE)
+# Both the prose form ("line 12") and the hit form ("src/app.ts:12") count. A
+# digit before the colon is excluded so a clock time is not read as a citation.
+LINE_NUMBER = re.compile(r"(?:\bline\s+|(?<!\d):)(\d+)\b", re.IGNORECASE)
 
 # A run of characters that could be a path. Whether it names a file is decided
 # by its ending, not by where it sits in the sentence.

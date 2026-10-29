@@ -15,6 +15,8 @@
 <section class="card">
   <h2>Answer</h2>
   <p class="answer">{{ result.answer }}</p>
+  {% if result.citation_passed is sameas false %}<p class="callout">The writer moved a line onto a file it does not belong to, so the answer above is the hit list and the reply was not stored.</p>{% endif %}
+  {% if result.written_by %}<p class="muted small">Written by {{ result.written_by }} from the citations below, then checked.</p>{% endif %}
   {% if not result.sufficient_evidence %}<p class="callout">The evidence was thin; treat this answer with care.</p>{% endif %}
   <h3>Sources</h3>
   <ol>{% for citation in result.citations %}<li><code>{{ citation.document_id or citation.id }}</code> {{ citation.snippet or citation.text or "" }}</li>{% else %}<li class="muted">No citable records you may read.</li>{% endfor %}</ol>
