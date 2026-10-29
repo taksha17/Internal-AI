@@ -773,6 +773,22 @@ def cmd_people_approvers(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_serve_report(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.serving.report import serve_report
+
+        report = serve_report(platform, apply=args.apply)
+        print(
+            f"p50 {report['p50_ms']} ms  p95 {report['p95_ms']} ms  "
+            f"target {report['latency_target_ms']} ms  "
+            f"within_brief {str(report['within_brief']).lower()}"
+        )
+        print(f"cost_per_1000 {report['cost_per_1000']}")
+        verb = "dropped" if args.apply else "would drop"
+        print(f"{verb} {report['past_retention']} serving event(s) older than the brief timeline")
+    return 0
+
+
 def cmd_serve_model(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -822,6 +838,33 @@ def cmd_data_split(args: argparse.Namespace) -> int:
 
         result = split_corpus(platform, args.dataset_id, seed=args.seed)
         _print(result.stats)
+    return 0
+
+
+def cmd_dataset_trace(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.data.pipeline import DataPipeline
+
+        dataset = platform.store.get_dataset(args.dataset_id)
+        if dataset is None:
+            print(f"unknown dataset: {args.dataset_id}", file=sys.stderr)
+            return 1
+        report = DataPipeline(platform.store, platform.audit, platform.settings.root).trace_sample(
+            args.dataset_id, limit=args.sample, actor=args.by or "cli"
+        )
+        steps = ",".join(
+            str(step.get("step", ""))
+            for step in dataset.lineage.get("steps", [])
+            if step.get("step")
+        )
+        commit = str(dataset.lineage.get("code_commit", "unknown"))
+        rows = sorted(
+            platform.store.dataset_records(args.dataset_id), key=lambda row: row["record_key"]
+        )[: args.sample]
+        for row in rows:
+            print(f"{row['record_key']}\t{row['source_id']}\t{steps}\t{commit}")
+        if not steps or commit == "unknown" or not report["passed"]:
+            return 1
     return 0
 
 
@@ -987,6 +1030,21 @@ def cmd_model_promote(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_models_demote(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.workflows import demote_model
+
+        actor = _actor(platform, args, args.by, "ml_lead")
+        require(platform.audit, actor, Action.PROMOTE_MODEL, args.id)
+        try:
+            model = demote_model(platform, args.id, actor.id)
+        except (PermissionError, KeyError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        _print({"model_id": model.id, "status": model.status, "path": model.path})
+    return 0
+
+
 def cmd_model_card(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.workflows import model_card_markdown
@@ -1117,6 +1175,10 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--ssl-certfile", default=None)
     serve.add_argument("--ssl-keyfile", default=None)
     serve.set_defaults(func=cmd_serve)
+    serve_sub = serve.add_subparsers(dest="serve_command")
+    serve_report = serve_sub.add_parser("report", help="p50, p95 and cost from serving.request")
+    serve_report.add_argument("--apply", action="store_true")
+    serve_report.set_defaults(func=cmd_serve_report)
 
     console = sub.add_parser("console", help="browser console accounts and personal tokens")
     console_sub = console.add_subparsers(dest="console_command", required=True)
@@ -1239,6 +1301,13 @@ def build_parser() -> argparse.ArgumentParser:
     data_lineage = data_sub.add_parser("lineage")
     data_lineage.add_argument("--dataset-id", required=True)
     data_lineage.set_defaults(func=cmd_data_lineage)
+    dataset_cmd = sub.add_parser("dataset", help="dataset lineage sample")
+    dataset_sub = dataset_cmd.add_subparsers(dest="dataset_command", required=True)
+    dataset_trace = dataset_sub.add_parser("trace")
+    dataset_trace.add_argument("dataset_id")
+    dataset_trace.add_argument("--sample", type=int, default=20)
+    dataset_trace.add_argument("--by", default="cli")
+    dataset_trace.set_defaults(func=cmd_dataset_trace)
     data_release = data_sub.add_parser("release")
     data_release.add_argument("--dataset-id", required=True)
     data_release.add_argument("--by", default=None)
@@ -1336,6 +1405,12 @@ def build_parser() -> argparse.ArgumentParser:
     model_card = model_sub.add_parser("card")
     model_card.add_argument("--id", required=True)
     model_card.set_defaults(func=cmd_model_card)
+    models = sub.add_parser("models", help="serving decisions for registered models")
+    models_sub = models.add_subparsers(dest="models_command", required=True)
+    models_demote = models_sub.add_parser("demote")
+    models_demote.add_argument("id")
+    models_demote.add_argument("--by", default=None)
+    models_demote.set_defaults(func=cmd_models_demote)
 
     return parser
 
