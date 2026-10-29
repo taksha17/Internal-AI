@@ -281,6 +281,22 @@ class RetrievalService:
         return hits
 
 
+_HIDDEN_DETAIL_KEYS = frozenset({"question", "query", "prompt"})
+
+
+def public_details(extra: dict[str, Any] | None, question: str = "") -> dict[str, Any]:
+    """Details safe to store. The question is not one of them."""
+    hidden = {question} if question else set()
+    cleaned: dict[str, Any] = {}
+    for key, value in (extra or {}).items():
+        if key in _HIDDEN_DETAIL_KEYS:
+            continue
+        if isinstance(value, str) and any(secret and secret in value for secret in hidden):
+            continue
+        cleaned[key] = value
+    return cleaned
+
+
 def log_request(
     audit: AuditLog,
     principal: Principal,
@@ -288,6 +304,8 @@ def log_request(
     status_code: int,
     latency_ms: float,
     extra: dict[str, Any] | None = None,
+    question: str = "",
+    cost_usd: float = 0.0,
 ) -> None:
     audit.record(
         actor=principal.user_id,
@@ -298,6 +316,7 @@ def log_request(
         details={
             "status_code": status_code,
             "latency_ms": round(latency_ms, 3),
-            **(extra or {}),
+            **public_details(extra, question),
         },
+        cost_usd=cost_usd,
     )

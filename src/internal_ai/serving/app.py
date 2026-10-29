@@ -281,6 +281,7 @@ def create_serving_app(
             200,
             latency,
             {"hits": len(hits), "citation_passed": result.passed, "model": result.model},
+            question=request.question,
         )
         return {
             "text": result.text,

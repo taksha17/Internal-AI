@@ -773,6 +773,22 @@ def cmd_people_approvers(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_serve_report(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        from internal_ai.serving.report import serve_report
+
+        report = serve_report(platform, apply=args.apply)
+        print(
+            f"p50 {report['p50_ms']} ms  p95 {report['p95_ms']} ms  "
+            f"target {report['latency_target_ms']} ms  "
+            f"within_brief {str(report['within_brief']).lower()}"
+        )
+        print(f"cost_per_1000 {report['cost_per_1000']}")
+        verb = "dropped" if args.apply else "would drop"
+        print(f"{verb} {report['past_retention']} serving event(s) older than the brief timeline")
+    return 0
+
+
 def cmd_serve_model(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -1159,6 +1175,10 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--ssl-certfile", default=None)
     serve.add_argument("--ssl-keyfile", default=None)
     serve.set_defaults(func=cmd_serve)
+    serve_sub = serve.add_subparsers(dest="serve_command")
+    serve_report = serve_sub.add_parser("report", help="p50, p95 and cost from serving.request")
+    serve_report.add_argument("--apply", action="store_true")
+    serve_report.set_defaults(func=cmd_serve_report)
 
     console = sub.add_parser("console", help="browser console accounts and personal tokens")
     console_sub = console.add_subparsers(dest="console_command", required=True)
