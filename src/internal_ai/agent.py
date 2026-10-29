@@ -128,6 +128,31 @@ class AgentRuntime:
                 metadata={"mode": mode},
             )
         parsed = completion.as_json() or {}
+        from internal_ai.data.injection import instruction_kinds
+
+        kinds = instruction_kinds(f"{task.title}\n{task.description}")
+        requested = str(parsed.get("tool") or "")
+        if kinds:
+            self.audit.record(
+                actor=role.name,
+                action="agent.injection_refused",
+                subject=task.id,
+                outcome=AuditOutcome.DENIED,
+                actor_kind="agent",
+                details={"kinds": kinds, "tool": requested, "quoted": task.description},
+            )
+            return AgentResult(
+                task_id=task.id,
+                agent=role.name,
+                status="refused",
+                summary=task.description,
+                notes="quoted as data, not followed",
+                duration_s=time.monotonic() - started,
+                acceptance_criteria_met=False,
+                metadata={"mode": mode, "injection": kinds},
+            )
+        if requested:
+            self.tools.invoke(role, requested, parsed.get("tool_args") or {}, actor=role.name)
         summary = str(parsed.get("summary", completion.text[:2000]))
         artifacts = self._persist_artifacts(
             role, task, parsed.get("artifacts") or [], summary, mode
