@@ -159,7 +159,9 @@ def test_a_passing_report_is_served_and_marked_active(tmp_path: Path) -> None:
     platform.close()
     app = create_serving_app(
         root=tmp_path,
-        principals={"k": Principal(user_id="alice", groups=frozenset({"engineering"}), api_key="k")},
+        principals={
+            "k": Principal(user_id="alice", groups=frozenset({"engineering"}), api_key="k")
+        },
     )
     with TestClient(app) as client:
         response = client.get("/v1/models", headers={"X-Internal-Key": "k"})
