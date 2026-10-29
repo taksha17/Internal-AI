@@ -8,6 +8,7 @@ from pathlib import Path
 
 from conftest import enroll, session_csrf, sign_in
 from fastapi.testclient import TestClient
+from programme import actor_named, record_ready_programme
 
 from internal_ai.api import create_app
 from internal_ai.context import Platform
@@ -89,6 +90,7 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
             name="support-tickets",
             purpose="search over resolved tickets",
             acl="engineering",
+            legal_status="internal",
         )
         source = build.list_sources(platform)[0]
         assert source["gate_status"] == "pending"
@@ -107,6 +109,7 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
         overview = mo.get("/console/home")
         assert "Active jobs" in overview and "queue is clear" in overview
 
+        record_ready_programme(platform, actor_named(platform, "Mo Builder"))
         mo.post(f"/console/datasets/{dataset_id}/split")
         dana.post(f"/console/datasets/{dataset_id}/request-release")
         approve(platform, mo, GateType.DATASET_RELEASE, dataset_id)
@@ -117,6 +120,12 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
         page = mo.post(f"/console/datasets/{dataset_id}/tokenizer", vocab_size="600")
         assert "succeeded" in page
         assert build.tokenizer_path(platform, dataset_id) is not None
+        # The sample is below the tokens-per-parameter floor. Record a measured
+        # count large enough for the click-through to reach promotion.
+        counted = platform.store.get_dataset(dataset_id)
+        stats = dict(counted.stats)
+        stats["token_count_kind"] = "measured"
+        platform.store.update_dataset_tokens(dataset_id, 10**12, stats)
 
         dex.post(f"/console/datasets/{dataset_id}/eval-set", name="tickets-eval", count="16")
         eval_set = platform.store.list_eval_sets()[0]
@@ -132,13 +141,15 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
             name="tickets-embed",
             steps="80",
             cost_cap_usd="1",
+            vocab_rationale="600 tokens covers the ticket jargon in this sample",
         )
         assert "succeeded" in page
         run = app.state.jobs.list(kind="train_model")[0]
         mo.post(f"/console/runs/{run['id']}/register")
         model = platform.store.list_models()[0]
 
-        page = mo.post(f"/console/models/{model.id}/evaluate", eval_set_id=eval_set.id)
+        mo.post(f"/console/models/{model.id}/evaluate", ok=False, eval_set_id=eval_set.id)
+        page = mia.post(f"/console/models/{model.id}/evaluate", eval_set_id=eval_set.id)
         assert "succeeded" in page
         report = build.latest_report(platform, model.id)
         assert report is not None
