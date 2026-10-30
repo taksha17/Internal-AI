@@ -229,14 +229,48 @@ def served_model(store: Store, router: ModelRouter) -> ModelVersion | None:
 
 
 class RetrievalService:
-    """Dense retrieval with document-level permission enforcement (FR-18)."""
+    """Dense retrieval with document-level permission enforcement (FR-18).
+
+    Document vectors are computed once per released dataset version and model,
+    not once per query. The cache holds vectors for every record, and the
+    caller's ACLs are applied to the ranking, so a cached matrix can never
+    widen what a principal is allowed to read.
+    """
 
     def __init__(self, store: Store, audit: AuditLog) -> None:
         self.store = store
         self.audit = audit
+        self._cache: dict[str, tuple[str, np.ndarray]] = {}
+        self._cache_lock = threading.Lock()
 
     def corpus(self, dataset_id: str) -> list[dict[str, Any]]:
         return self.store.dataset_records(dataset_id)
+
+    def _embedder_identity(self, embedder: Any) -> str:
+        """What the cached vectors belong to. A different model must not hit them."""
+        return "|".join(
+            (
+                type(embedder).__name__,
+                str(getattr(embedder, "name", "")),
+                str(getattr(embedder, "max_seq_len", "")),
+            )
+        )
+
+    def _corpus_vectors(
+        self, embedder: Any, dataset_id: str, rows: list[dict[str, Any]]
+    ) -> np.ndarray:
+        dataset = self.store.get_dataset(dataset_id)
+        content_hash = dataset.content_hash if dataset is not None else ""
+        if not content_hash:
+            return embedder.embed([row["payload"] for row in rows])
+        key = f"{self._embedder_identity(embedder)}:{content_hash}:{len(rows)}"
+        cached = self._cache.get(dataset_id)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        vectors = embedder.embed([row["payload"] for row in rows])
+        with self._cache_lock:
+            self._cache[dataset_id] = (key, vectors)
+        return vectors
 
     def search(
         self,
@@ -249,16 +283,20 @@ class RetrievalService:
         rows = self.corpus(dataset_id)
         if not rows:
             return []
-        visible = [row for row in rows if principal.can_read(row["acl"], row["sensitivity"])]
+        visible = [
+            index
+            for index, row in enumerate(rows)
+            if principal.can_read(row["acl"], row["sensitivity"])
+        ]
         if not visible:
             return []
-        vectors = embedder.embed([row["payload"] for row in visible])
+        vectors = self._corpus_vectors(embedder, dataset_id, rows)
         query_vector = embedder.embed([query])[0]
-        scores = vectors @ query_vector
+        scores = vectors[visible] @ query_vector
         order = np.argsort(-scores)[:top_k]
         hits: list[RetrievalHit] = []
         for index in order:
-            row = visible[int(index)]
+            row = rows[visible[int(index)]]
             hits.append(
                 RetrievalHit(
                     document_id=row["record_key"],

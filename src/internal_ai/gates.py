@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
+from internal_ai.db import transaction
 from internal_ai.domain import GateDecision, GateRequest, GateStatus, GateType
 from internal_ai.ids import new_id, now_iso
 from internal_ai.store import Store
@@ -169,27 +171,32 @@ class GateService:
             note=note,
             created_at=now_iso(),
         )
-        self.store.add_gate_decision(decision)
-        decisions = [item for item in self.store.gate_decisions(gate_id) if item.approved]
-        approved_roles: set[str] = set()
-        for item in decisions:
-            approved_roles |= self.approver_roles(item.approver)
-        # One account can hold every required role. Dual control still needs a
-        # different person for each role, not one person wearing all of them.
-        distinct_approvers = {item.approver for item in decisions}
-        if not approved:
-            gate.status = GateStatus.REJECTED
-            gate.decided_at = now_iso()
-            gate.decision_note = note
-        elif set(gate.required_approvers) <= approved_roles and len(distinct_approvers) >= len(
-            gate.required_approvers
-        ):
-            gate.status = GateStatus.APPROVED
-            gate.decided_at = now_iso()
-            gate.decision_note = note
-        if evidence:
-            gate.evidence.update(evidence)
-        self.store.update_gate(gate)
+        try:
+            with transaction(self.store.conn):
+                self.store.add_gate_decision(decision)
+                decisions = [item for item in self.store.gate_decisions(gate_id) if item.approved]
+                approved_roles: set[str] = set()
+                for item in decisions:
+                    approved_roles |= self.approver_roles(item.approver)
+                # One account can hold every required role. Dual control still
+                # needs a different person for each role, not one person
+                # wearing all of them.
+                distinct_approvers = {item.approver for item in decisions}
+                if not approved:
+                    gate.status = GateStatus.REJECTED
+                    gate.decided_at = now_iso()
+                    gate.decision_note = note
+                elif set(gate.required_approvers) <= approved_roles and len(
+                    distinct_approvers
+                ) >= len(gate.required_approvers):
+                    gate.status = GateStatus.APPROVED
+                    gate.decided_at = now_iso()
+                    gate.decision_note = note
+                if evidence:
+                    gate.evidence.update(evidence)
+                self.store.update_gate(gate)
+        except sqlite3.IntegrityError as exc:
+            raise GateError(f"{approver} has already decided gate {gate_id}") from exc
         return gate
 
     def cancel(self, gate_id: str, actor: str, note: str = "") -> GateRequest:

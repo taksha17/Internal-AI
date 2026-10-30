@@ -142,6 +142,21 @@ CREATE TABLE IF NOT EXISTS spend_records (
 );
 CREATE INDEX IF NOT EXISTS idx_spend_scope ON spend_records(scope, key);
 
+CREATE TABLE IF NOT EXISTS spend_reservations (
+    id TEXT PRIMARY KEY,
+    group_id TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    key TEXT NOT NULL,
+    amount_usd REAL NOT NULL,
+    agent TEXT NOT NULL,
+    task_id TEXT,
+    job_id TEXT,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reservations_scope ON spend_reservations(scope, key);
+CREATE INDEX IF NOT EXISTS idx_reservations_group ON spend_reservations(group_id);
+
 CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL,
@@ -410,6 +425,19 @@ def init_db(conn: sqlite3.Connection) -> None:
     }
     if "judged_by" not in report_columns:
         conn.execute("ALTER TABLE eval_reports ADD COLUMN judged_by TEXT NOT NULL DEFAULT ''")
+    unique_decision = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'uq_gate_decisions_approver'"
+    ).fetchone()
+    if unique_decision is None:
+        # The oldest row is the first decision; a duplicate is a race that
+        # arrived after it and never counted towards the gate in its own right.
+        conn.execute(
+            "DELETE FROM gate_decisions WHERE rowid NOT IN "
+            "(SELECT MIN(rowid) FROM gate_decisions GROUP BY gate_id, approver)"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX uq_gate_decisions_approver ON gate_decisions(gate_id, approver)"
+        )
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES('version', ?) "
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",

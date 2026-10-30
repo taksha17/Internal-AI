@@ -88,21 +88,30 @@ What held:
 
 ### What the run found
 
-Three things, still tracked:
+Three gaps this run left open, all closed since (changes 0.2 to 0.4):
 
-1. **Budgets are a soft cap under concurrency.** `check` and `record_spend` are
-   separate steps, so concurrent callers pass the check before any spend is
-   written. Twenty-four threads against a $0.60 agent cap allowed 16 and
-   recorded $1.60, over the cap. A single spend path is capped; a burst is
-   bounded only by how many calls are in flight. (Change 0.2.)
-2. **One approver can be recorded more than once.** Eight simultaneous decisions
-   by the same person, over ten gates, left duplicate decision rows in nine of
-   ten rounds and up to seven rows for one approver on a single gate. Distinct
-   approvers still count, so no gate was decided by one person wearing two roles,
-   but the signoff record is not unique. (Change 0.3.)
-3. **Serving is not re-measured here.** `/v1/search` still re-embeds every
-   visible document per query, and this run was refused promotion, so no model
-   serves. A per-version index is the missing piece and is change 0.4.
+1. **Budgets hold under concurrency.** This run's probe read 16 grants and
+   $1.60 recorded against a $0.60 agent cap, because `check` and `record_spend`
+   were separate steps. `BudgetManager.reserve` now takes the hold inside one
+   `BEGIN IMMEDIATE` transaction and `settle` turns it into spend, so the same
+   probe grants 12 and records $0.60. `tests/test_budget_reservations.py`.
+2. **One signoff row per person per gate.** This run read up to seven decision
+   rows for one approver on a single gate. `gate_decisions` now carries a unique
+   index on (gate_id, approver), and `GateService.decide` reports the second
+   write as a refusal, so eight simultaneous decisions leave one row. Distinct
+   approvers still count, so no gate is decided by one person wearing two roles.
+   `tests/test_gate_decision_uniqueness.py`.
+3. **Serving embeds a dataset once per version.** `/v1/search` re-embedded every
+   visible document per query, which is why this run did not measure serving at
+   scale. `RetrievalService` now caches the document matrix against the released
+   content hash and the model's identity, and applies the caller's ACLs to the
+   ranking, so a warm dataset answers without re-embedding and a caller still
+   never sees a document their group cannot read.
+   `tests/test_retrieval_cache.py`.
+
+This run's model was refused promotion, so none of it serves from that run; the
+serving change is proven by the tests and becomes visible on the next passing
+promotion.
 
 Quality is equally blunt. The slim demo model diverged and reached a recall@10 of
 0.000 on 60 held-out queries: it edges the keyword baseline on MRR and is far

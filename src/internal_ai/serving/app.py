@@ -145,7 +145,11 @@ def create_serving_app(
                 if not candidates:
                     raise HTTPException(status_code=500, detail="no tokenizer available")
                 tokenizer_path = candidates[-1]
-            embedders[model_path] = TorchEmbedder(Path(model_path), Tokenizer.load(tokenizer_path))
+            embedders[model_path] = TorchEmbedder(
+                Path(model_path),
+                Tokenizer.load(tokenizer_path),
+                name=f"torch-embedder:{Path(model_path).name}",
+            )
         return embedders[model_path]
 
     @app.get("/health")

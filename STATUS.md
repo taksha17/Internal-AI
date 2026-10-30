@@ -10,7 +10,14 @@ The authoritative PRD is `../PRD Agent-Driven In-House LLM Build Platform.md`
 
 ## Verification
 
-- Tests: `.venv/bin/python -m pytest` → **442 passed**, exit 0 (torch 2.14.1+cpu).
+- Tests: `.venv/bin/python -m pytest` → **442 passed**, exit 0, at the last
+  full Linux run (torch 2.14.1+cpu). Phase 0 changes 0.2 to 0.4 add 12 tests,
+  so the suite collects 454. The re-run for those changes was made on the 16 GB
+  Windows test machine, since the Linux workstation used for the edit cannot
+  hold a full run: the 12 new tests pass there and `ruff` is clean, while the
+  18 failures that machine reports fail identically on a pristine `HEAD`
+  checkout there (missing external binaries and PDF tooling in that
+  environment), so none of them comes from this change.
 - Lint and format: `.venv/bin/ruff check .` → clean; `.venv/bin/ruff format --check .`
   → clean.
 - Phase 0 change 0.1 (`docs/yc-plan/PLAN.md`), 2026-10-30: `scripts/stress.py`
@@ -19,6 +26,14 @@ The authoritative PRD is `../PRD Agent-Driven In-House LLM Build Platform.md`
   tokens-per-parameter floor, so the script completes (exit 0). The README
   "Verified at scale" numbers are regenerated from a real run on a 16 GB AMD
   Ryzen 5 5600H Windows PC. Record: `docs/changes/29-stress-language-gate.md`.
+- Phase 0 changes 0.2 to 0.4, 2026-10-30: budgets hold under concurrency
+  (`reserve`/`settle`/`release` inside one `START IMMEDIATE` transaction, so 24
+  threads against a $0.60 cap grant 12 and record $0.60 instead of granting 16
+  and recording $1.60); one person leaves one decision row per gate (a unique
+  index on `gate_decisions(gate_id, approver)`, with the duplicate reported as
+  a `GateError`); and serving embeds a released dataset once per version and
+  model instead of once per query, with the caller's ACLs applied to the
+  ranking. Record: `docs/changes/30-phase-0-concurrency.md`.
 - Tester-facing gaps closed on 2026-10-23: the serving API now reports the
   version the router actually serves as `active`, and the agentic search path
   enforces document ACLs like the serving API does. The agentic path had no

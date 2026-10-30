@@ -626,6 +626,57 @@ class Store:
         ).fetchone()
         return float(row["total"])
 
+    def add_spend_reservation(
+        self,
+        *,
+        reservation_id: str,
+        group_id: str,
+        scope: BudgetScope,
+        key: str,
+        amount_usd: float,
+        agent: str,
+        task_id: str | None,
+        job_id: str | None,
+        created_at: str,
+        expires_at: str,
+    ) -> None:
+        self.conn.execute(
+            "INSERT INTO spend_reservations (id, group_id, scope, key, amount_usd, agent,"
+            " task_id, job_id, created_at, expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (
+                reservation_id,
+                group_id,
+                str(scope),
+                key,
+                amount_usd,
+                agent,
+                task_id,
+                job_id,
+                created_at,
+                expires_at,
+            ),
+        )
+
+    def reserved_spend(self, scope: BudgetScope, key: str, now: str) -> float:
+        row = self.conn.execute(
+            "SELECT COALESCE(SUM(amount_usd), 0) AS total FROM spend_reservations "
+            "WHERE scope = ? AND key = ? AND expires_at > ?",
+            (str(scope), key, now),
+        ).fetchone()
+        return float(row["total"])
+
+    def reservation_rows(self, group_id: str) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT * FROM spend_reservations WHERE group_id = ? ORDER BY scope",
+            (group_id,),
+        ).fetchall()
+
+    def delete_spend_reservations(self, group_id: str) -> None:
+        self.conn.execute("DELETE FROM spend_reservations WHERE group_id = ?", (group_id,))
+
+    def expire_spend_reservations(self, now: str) -> None:
+        self.conn.execute("DELETE FROM spend_reservations WHERE expires_at <= ?", (now,))
+
     def spend_totals(self) -> dict[str, float]:
         rows = self.conn.execute(
             "SELECT scope, key, COALESCE(SUM(amount_usd), 0) AS total FROM spend_records "
