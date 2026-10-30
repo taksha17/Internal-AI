@@ -16,8 +16,17 @@ from internal_ai.services.jobs import JobRunner
 from internal_ai.services.permissions import PermissionDenied
 from internal_ai.training.alpha.pin import PRIMARY, BaseRefused
 from internal_ai.training.alpha.promote import register_alpha
+from internal_ai.training.provenance import OPEN_WEIGHT_ALLOWED
 
 ADAPTER_BYTES = b"not a real adapter, but a real file"
+
+
+def enable_open_weights(platform) -> None:
+    """An install that has decided it may adapt a base (see tests/test_provenance.py)."""
+    decision = platform.policy.get("P6")
+    decision.current_value = OPEN_WEIGHT_ALLOWED
+    decision.status = "decided"
+    platform.store.upsert_policy(decision)
 
 
 def released_dataset(platform, *, released: bool = True) -> str:
@@ -64,6 +73,7 @@ def stub_training(base, root, texts, out, layers=2, sequences=4, seed=0) -> dict
 @pytest.fixture()
 def governed(platform, enroll_person, monkeypatch):
     actor = enroll_person(platform, "Ada Lovelace", ["ml_lead"])
+    enable_open_weights(platform)
     monkeypatch.setattr(alpha_service, "available_base", lambda root: PRIMARY)
     monkeypatch.setattr(alpha_service, "train_prefix", stub_training)
     return platform, actor
@@ -111,6 +121,7 @@ def test_adaptation_is_denied_to_a_role_that_may_not_train(platform, enroll_pers
 
 def test_no_allowed_base_runs_nothing(platform, enroll_person, monkeypatch) -> None:
     actor = enroll_person(platform, "Katherine Johnson", ["ml_lead"])
+    enable_open_weights(platform)
     dataset_id = released_dataset(platform)
 
     def refuse(root):

@@ -66,6 +66,16 @@ POLICY_ITEMS: tuple[PolicyItem, ...] = (
         default_value="exclude_pii_customer_confidential_regulated",
         rationale="Defines the scrubbing and exclusion scope.",
     ),
+    PolicyItem(
+        id="P6",
+        question="May this install load a pretrained open base to adapt?",
+        default_value="scratch_only",
+        rationale=(
+            "The default keeps the no-pretrained-weights promise. open_weight_allowed "
+            "lets the adapter track load a hash-pinned, licence-allowlisted base whose "
+            "name, revision and licence appear on every model card."
+        ),
+    ),
 )
 
 POLICY_BY_ID = {item.id: item for item in POLICY_ITEMS}

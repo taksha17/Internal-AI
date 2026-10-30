@@ -27,6 +27,7 @@ from internal_ai.services.permissions import Action, deny, require
 from internal_ai.training.alpha.pin import RECIPE, PinnedBase, available_base
 from internal_ai.training.alpha.train import train_prefix
 from internal_ai.training.ownership import require_released_dataset
+from internal_ai.training.provenance import require_open_weights
 
 REPRODUCIBILITY_FILE = "reproducibility.json"
 
@@ -109,6 +110,7 @@ def train_alpha(
 ) -> dict[str, Any]:
     """Adapt the pinned base on a released dataset, as a job with a record."""
     require(platform.audit, actor, Action.TRAIN_MODEL, dataset_id)
+    mode = require_open_weights(platform, "adapting a base model")
     dataset = require_released_dataset(platform.store.get_dataset(dataset_id))
     if not 1 <= layers <= 4:
         raise ValueError("adapt between one and four layers; the recipe is streamed by layer")
@@ -141,6 +143,7 @@ def train_alpha(
         record = {
             "run_id": run_id,
             "track": "alpha",
+            "provenance_mode": mode,
             "commit": _commit(platform.settings.root),
             "base": {
                 "repo_id": chosen.repo_id,
@@ -196,6 +199,7 @@ def train_alpha(
                 "base_repo_id": chosen.repo_id,
                 "base_revision": chosen.revision,
                 "license_class": record["base"]["license_class"],
+                "provenance_mode": mode,
                 "dataset_id": dataset.id,
                 "seed": seed,
             },

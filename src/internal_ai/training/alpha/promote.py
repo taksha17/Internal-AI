@@ -20,6 +20,7 @@ from internal_ai.training.alpha.card import alpha_card
 from internal_ai.training.alpha.citations import AskHit, CitationReport, score_answer
 from internal_ai.training.alpha.pin import FALLBACK, PRIMARY, RECIPE, LicenseClass, PinnedBase
 from internal_ai.training.ownership import require_released_dataset
+from internal_ai.training.provenance import provenance_mode
 from internal_ai.workflows import latest_frozen_pass, model_card_markdown, promote_model
 
 
@@ -54,6 +55,7 @@ def register_alpha(
         dataset.content_hash,
         digest,
     )
+    card["provenance_mode"] = provenance_mode(platform)
     record = reproducibility_beside(adapter_path)
     if record:
         card["reproducibility"] = record
