@@ -10,10 +10,11 @@ The authoritative PRD is `../PRD Agent-Driven In-House LLM Build Platform.md`
 
 ## Verification
 
-- Tests: `.venv/bin/python -m pytest` → **454 passed, 0 failed**, exit 0, in
-  104 s on the 16 GB Windows test machine (torch 2.14.1+cpu), for the Phase 0
-  changes; the Linux workstation used for the edit cannot hold a full run. 442
-  of those tests were green on Linux before the change and 0.2 to 0.4 add 12.
+- Tests: `.venv/bin/python -m pytest` → **463 passed, 0 failed**, exit 0, in
+  110 s on the Linux workstation (2026-10-30, after the base-licence and
+  console-palette changes). The last full Windows run (16 GB, torch 2.14.1+cpu)
+  for the Phase 0 changes took 104 s and covered 454 of them; 442 of those were
+  green on Linux before the change and 0.2 to 0.4 add 12.
   Two things matter there. Run it from a checkout, not an exported copy:
   `DataPipeline.release` stamps `git rev-parse HEAD` and refuses "code commit is
   unknown", so a copy without `.git` fails every release test. The interpreter
@@ -70,6 +71,14 @@ The authoritative PRD is `../PRD Agent-Driven In-House LLM Build Platform.md`
   verified audit chain. Governance writes on the JSON API refuse a shared
   key that tries to name the actor; `scripts/probe.py` checks that. The
   command line keeps asserted names only while a root has no accounts.
+- Console palette, 2026-10-30: the console now wears Aqua Jade, Midnight
+  Abyss and a faint Baby pink. Light mode is jade-white paper with cool
+  jade-grey lines; the rail and the dark workspace are midnight; jade carries
+  every action and link; pink is an essence only — the 1px gate stripe, the
+  page kicker, the text selection and a 10% aura at the foot of the rail and
+  the sign-in panel. Every colour still comes from the token block at the top
+  of `console.css`, and every declared pair clears 4.5:1 in both schemes.
+  Record: `docs/changes/33-aqua-jade-midnight-blush.md`.
 
 ## Real-data pilot (2026-10-22, second pass)
 
