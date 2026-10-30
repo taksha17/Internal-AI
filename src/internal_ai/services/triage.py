@@ -12,10 +12,13 @@ from __future__ import annotations
 from typing import Any
 
 from internal_ai.context import Platform
+from internal_ai.data.supervision import ingest_supervision
+from internal_ai.domain import DatasetVersion
 from internal_ai.evals.harness import EvalHarness
 from internal_ai.services.actor import Actor
 from internal_ai.services.permissions import Action, require
 from internal_ai.serving.trace import Trace, get_trace, triage
+from internal_ai.training.alpha.citations import AskHit, score_answer
 
 
 def triage_view(platform: Platform, actor: Actor, limit: int = 25) -> dict[str, list[Trace]]:
@@ -82,3 +85,99 @@ def eval_case_from_trace(
         },
     )
     return eval_set
+
+
+def sft_draft(platform: Platform, actor: Actor, trace_id: str) -> Trace:
+    """The trace a person is about to correct, if they may read it at all."""
+    require(platform.audit, actor, Action.VIEW_TRACES, trace_id)
+    return get_trace(platform.store, actor.principal(), trace_id)
+
+
+def _supervision_rows(platform: Platform, previous: DatasetVersion | None) -> list[dict[str, str]]:
+    if previous is None:
+        return []
+    rows = []
+    for row in platform.store.dataset_records(previous.id):
+        meta = row["meta"] or {}
+        rows.append(
+            {
+                "instruction": str(meta.get("instruction", "")),
+                "response": str(meta.get("response", "")),
+                "authored_by": str(meta.get("authored_by", "")),
+                "source_id": str(row["source_id"]),
+            }
+        )
+    return rows
+
+
+def sft_example_from_trace(
+    platform: Platform,
+    actor: Actor,
+    trace_id: str,
+    answer: str,
+    name: str = "trace-sft",
+) -> DatasetVersion:
+    """A person's corrected answer becomes the next version of a supervision set.
+
+    The trace supplies the question, never the answer: training on the reply the
+    model got wrong would teach the mistake. What the person writes is checked
+    against the lines the question was answered from before it is stored, and
+    the new version carries the previous one forward, so the set grows instead
+    of being replaced. The result is unreleased; releasing it still needs the
+    gate that every dataset needs.
+    """
+    require(platform.audit, actor, Action.BUILD_DATASET, trace_id)
+    trace = get_trace(platform.store, actor.principal(), trace_id)
+    if not trace.failure:
+        raise ValueError("only a failed answer needs a person's correction; this one passed")
+    corrected = answer.strip()
+    if not corrected:
+        raise ValueError("a supervision example needs the answer a person would have given")
+    if corrected == trace.answer.strip():
+        raise ValueError("this repeats the failed answer, which is not a correction")
+    hits = [
+        AskHit(str(item.get("path") or ""), int(item.get("line") or 0)) for item in trace.citations
+    ]
+    hits = [hit for hit in hits if hit.path and hit.line > 0]
+    if not hits:
+        raise ValueError("this trace cites no line, so a correction has nothing to check against")
+    report = score_answer(corrected, hits)
+    if not report.passed:
+        raise ValueError(
+            "the correction must cite a line this question was answered from: "
+            + "; ".join(report.mismatches[:3])
+        )
+    existing = list(platform.store.list_datasets(name=name))
+    previous = existing[-1] if existing else None
+    carried = _supervision_rows(platform, previous)
+    if any(row["source_id"] == trace_id for row in carried):
+        raise ValueError(f"trace {trace_id} already has an example in {name}")
+    rows = [
+        *carried,
+        {
+            "instruction": trace.question,
+            "response": corrected,
+            "authored_by": actor.id,
+            "source_id": trace_id,
+        },
+    ]
+    dataset = ingest_supervision(
+        platform,
+        rows,
+        name=name,
+        version=(previous.version + 1) if previous else 1,
+        lineage={"trace_ids": [trace_id], "previous": previous.id if previous else ""},
+    )
+    platform.audit.record(
+        actor=actor.id,
+        actor_kind=actor.kind,
+        action="sft.example_from_trace",
+        subject=dataset.id,
+        details={
+            "trace_id": trace_id,
+            "name": name,
+            "version": dataset.version,
+            "carried": len(carried),
+        },
+    )
+    return dataset

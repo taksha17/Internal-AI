@@ -23,25 +23,41 @@ REFUSAL_PROMPTS = (
 )
 
 
-def ingest_supervision(platform: Platform, rows: list[dict[str, str]]) -> DatasetVersion:
-    """Store instruction and response pairs. ``authored_by=model`` is refused."""
+def require_supervision_row(platform: Platform, row: dict[str, str]) -> None:
+    """The refusals a pair must survive, callable before a batch is assembled."""
+    author = row.get("authored_by", "")
+    if author == "model":
+        platform.audit.record(
+            actor="data_owner",
+            actor_kind="human",
+            action="supervision.rejected",
+            subject=row.get("source_id", ""),
+            details={"authored_by": "model"},
+        )
+        raise ValueError("authored_by=model is not a supervision source")
+    response = row.get("response", "")
+    source = row.get("source_id", "")
+    if NOT_TRAINING in response or source.startswith("alpha"):
+        raise ValueError("alpha output is not training data for the from-scratch track")
+    if author not in {"internal_document"} and not author.startswith("ppl_"):
+        raise ValueError("authored_by is a person id or internal_document")
+
+
+def ingest_supervision(
+    platform: Platform,
+    rows: list[dict[str, str]],
+    name: str = "supervision",
+    version: int = 1,
+    lineage: dict[str, Any] | None = None,
+) -> DatasetVersion:
+    """Store instruction and response pairs. ``authored_by=model`` is refused.
+
+    ``name`` and ``version`` exist so a later version can carry an earlier one
+    forward. Every carried row goes through the same refusals as a new one, so a
+    dataset cannot gain a model-authored row by being copied.
+    """
     for row in rows:
-        author = row.get("authored_by", "")
-        if author == "model":
-            platform.audit.record(
-                actor="data_owner",
-                actor_kind="human",
-                action="supervision.rejected",
-                subject=row.get("source_id", ""),
-                details={"authored_by": "model"},
-            )
-            raise ValueError("authored_by=model is not a supervision source")
-        response = row.get("response", "")
-        source = row.get("source_id", "")
-        if NOT_TRAINING in response or source.startswith("alpha"):
-            raise ValueError("alpha output is not training data for the from-scratch track")
-        if author not in {"internal_document"} and not author.startswith("ppl_"):
-            raise ValueError("authored_by is a person id or internal_document")
+        require_supervision_row(platform, row)
     dataset_id = new_id("ds")
     records = []
     for index, row in enumerate(rows):
@@ -61,13 +77,17 @@ def ingest_supervision(platform: Platform, rows: list[dict[str, str]]) -> Datase
         )
     dataset = DatasetVersion(
         id=dataset_id,
-        name="supervision",
-        version=1,
+        name=name,
+        version=version,
         content_hash=content_hash({"rows": records}),
         record_count=len(records),
         token_count=sum(max(1, len(item["payload"]) // 4) for item in records),
         created_at=now_iso(),
-        lineage={"kind": "supervision", "sources": sorted({row["source_id"] for row in rows})},
+        lineage={
+            "kind": "supervision",
+            "sources": sorted({row["source_id"] for row in rows}),
+            **(lineage or {}),
+        },
         stats={"kind": "supervision"},
     )
     platform.store.add_dataset(dataset)

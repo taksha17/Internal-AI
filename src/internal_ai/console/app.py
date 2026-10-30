@@ -50,7 +50,12 @@ from internal_ai.services.identity import (
 )
 from internal_ai.services.jobs import JobRunner
 from internal_ai.services.permissions import Action, PermissionDenied, allowed, deny, reason
-from internal_ai.services.triage import eval_case_from_trace, triage_view
+from internal_ai.services.triage import (
+    eval_case_from_trace,
+    sft_draft,
+    sft_example_from_trace,
+    triage_view,
+)
 from internal_ai.serving.guardrails import INSTALL_POLICY_KEY, configured_install_policy
 from internal_ai.serving.service import out_of_service
 from internal_ai.store import ALLOWED_TRANSITIONS, TransitionError
@@ -687,6 +692,34 @@ def mount_console(
                 "freeze it before a model is measured against it"
             ),
             to="/console/evals",
+        )
+
+    @app.get("/console/traces/{trace_id}/sft", include_in_schema=False)
+    def trace_sft_page(request: Request, trace_id: str) -> Response:
+        ctx = context(request)
+        try:
+            trace = sft_draft(ctx.platform, ctx.actor, trace_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except PermissionDenied as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        return render(ctx, "trace_sft.html", trace=trace)
+
+    @app.post("/console/traces/{trace_id}/sft", include_in_schema=False)
+    async def trace_sft_save(request: Request, trace_id: str) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        return await act(
+            ctx,
+            f"/console/traces/{trace_id}/sft",
+            lambda: sft_example_from_trace(
+                ctx.platform, ctx.actor, trace_id, form.get("answer", "")
+            ),
+            lambda dataset: (
+                f"{trace_id} is now an example in {dataset.name} v{dataset.version}; "
+                "it stays unreleased until a release gate approves it"
+            ),
+            to="/console/datasets",
         )
 
     @app.get("/console/search", include_in_schema=False)

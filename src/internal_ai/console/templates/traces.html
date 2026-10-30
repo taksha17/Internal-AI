@@ -14,7 +14,7 @@
   <div class="card-head">
     <div>
       <h2>The answer moved a citation</h2>
-      <p class="card-sub">Every line number must stay on the file the hit named. These are the answers that did not, which makes them the best candidates for a new eval case.</p>
+      <p class="card-sub">Every line number must stay on the file the hit named. These are the answers that did not, which makes them the best candidates for a new eval case, or for an example a person writes correctly.</p>
     </div>
     <span class="badge {{ 'badge-failed' if buckets.citation_mismatch else 'badge-approved' }}">{{ buckets.citation_mismatch | length }}</span>
   </div>
@@ -26,7 +26,7 @@
       <td>{{ trace.user_id }}</td>
       <td>{{ trace.created_at | when }}</td>
       <td>{% if trace.redactions %}{% for kind, count in trace.redactions.items() %}{{ kind }} {{ count }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}<span class="muted">none</span>{% endif %}</td>
-      <td><form method="post" action="/console/traces/{{ trace.id }}/eval-case" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="btn-sm">Make a regression case</button></form></td>
+      <td><form method="post" action="/console/traces/{{ trace.id }}/eval-case" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="btn-sm">Make a regression case</button></form> <a class="button btn-sm" href="/console/traces/{{ trace.id }}/sft">Write an example</a></td>
     </tr>
     {% else %}
     {{ m.empty_row(6, "No citation failures", "An answer that keeps its line numbers stays out of this list.", "/console/approvals", "See what is waiting") }}
