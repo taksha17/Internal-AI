@@ -265,6 +265,7 @@ def create_serving_app(
         import os
 
         from internal_ai.llm import LocalRunnerAdapter
+        from internal_ai.serving.trace import FAILURE_CITATION, FAILURE_GUARDRAIL, record_trace
         from internal_ai.training.alpha.answer import cited_answer
         from internal_ai.training.alpha.citations import AskHit
 
@@ -318,6 +319,7 @@ def create_serving_app(
                 "guardrail_policy": policy,
                 "guardrail_violations": guardrail_violations,
             }
+            citations = [{"path": item.path, "line": item.line} for item in request.hits]
             if policy == GUARDRAIL_REFUSE and guardrail_violations:
                 log_request(
                     get_platform().audit,
@@ -327,6 +329,19 @@ def create_serving_app(
                     latency,
                     details,
                     question=request.question,
+                )
+                record_trace(
+                    get_platform().store,
+                    get_platform().audit,
+                    principal,
+                    endpoint="/v1/answer",
+                    model_id=model.id,
+                    question=request.question,
+                    answer=result.text,
+                    citations=citations,
+                    latency_ms=latency,
+                    status_code=422,
+                    failure=FAILURE_GUARDRAIL,
                 )
                 raise HTTPException(
                     status_code=422,
@@ -343,6 +358,19 @@ def create_serving_app(
                 latency,
                 details,
                 question=request.question,
+            )
+            record_trace(
+                get_platform().store,
+                get_platform().audit,
+                principal,
+                endpoint="/v1/answer",
+                model_id=model.id,
+                question=request.question,
+                answer=result.text,
+                citations=citations,
+                latency_ms=latency,
+                status_code=200,
+                failure="" if result.passed else FAILURE_CITATION,
             )
             return {
                 "text": result.text,
