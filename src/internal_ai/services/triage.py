@@ -15,6 +15,7 @@ from internal_ai.context import Platform
 from internal_ai.data.supervision import ingest_supervision
 from internal_ai.domain import DatasetVersion
 from internal_ai.evals.harness import EvalHarness
+from internal_ai.preferences import file_preference
 from internal_ai.services.actor import Actor
 from internal_ai.services.permissions import Action, require
 from internal_ai.serving.trace import Trace, get_trace, triage
@@ -110,24 +111,13 @@ def _supervision_rows(platform: Platform, previous: DatasetVersion | None) -> li
     return rows
 
 
-def sft_example_from_trace(
-    platform: Platform,
-    actor: Actor,
-    trace_id: str,
-    answer: str,
-    name: str = "trace-sft",
-) -> DatasetVersion:
-    """A person's corrected answer becomes the next version of a supervision set.
+def _corrected_answer(trace: Trace, answer: str) -> str:
+    """A correction must be new, and cite a line the question was answered from.
 
-    The trace supplies the question, never the answer: training on the reply the
-    model got wrong would teach the mistake. What the person writes is checked
-    against the lines the question was answered from before it is stored, and
-    the new version carries the previous one forward, so the set grows instead
-    of being replaced. The result is unreleased; releasing it still needs the
-    gate that every dataset needs.
+    Both promotions call this before writing anything. An uncited answer that
+    slipped through would become a dataset row the next evaluation scores as a
+    failure, which reads as the model's mistake rather than the author's.
     """
-    require(platform.audit, actor, Action.BUILD_DATASET, trace_id)
-    trace = get_trace(platform.store, actor.principal(), trace_id)
     if not trace.failure:
         raise ValueError("only a failed answer needs a person's correction; this one passed")
     corrected = answer.strip()
@@ -147,6 +137,61 @@ def sft_example_from_trace(
             "the correction must cite a line this question was answered from: "
             + "; ".join(report.mismatches[:3])
         )
+    return corrected
+
+
+def preference_from_trace(
+    platform: Platform, actor: Actor, trace_id: str, answer: str
+) -> dict[str, str]:
+    """The person's answer preferred over the model's failed one.
+
+    A preference is an opinion, not training data, so it files the same
+    ``preference`` row the CLI files: the ``domain_expert`` check and the
+    refusal of a model-authored pair are the ones that already existed. The
+    trace id is written to the audit log, where ``export_preferences`` reads it
+    back to put the lineage on the dataset.
+    """
+    require(platform.audit, actor, Action.VIEW_TRACES, trace_id)
+    trace = get_trace(platform.store, actor.principal(), trace_id)
+    corrected = _corrected_answer(trace, answer)
+    row = file_preference(
+        platform,
+        actor,
+        question=trace.question,
+        answer_a=corrected,
+        answer_b=trace.answer.strip(),
+        preferred="a",
+        source_id=trace_id,
+    )
+    platform.audit.record(
+        actor=actor.id,
+        actor_kind=actor.kind,
+        action="preference.from_trace",
+        subject=row["id"],
+        details={"trace_id": trace_id},
+    )
+    return row
+
+
+def sft_example_from_trace(
+    platform: Platform,
+    actor: Actor,
+    trace_id: str,
+    answer: str,
+    name: str = "trace-sft",
+) -> DatasetVersion:
+    """A person's corrected answer becomes the next version of a supervision set.
+
+    The trace supplies the question, never the answer: training on the reply the
+    model got wrong would teach the mistake. What the person writes is checked
+    against the lines the question was answered from before it is stored, and
+    the new version carries the previous one forward, so the set grows instead
+    of being replaced. The result is unreleased; releasing it still needs the
+    gate that every dataset needs.
+    """
+    require(platform.audit, actor, Action.BUILD_DATASET, trace_id)
+    trace = get_trace(platform.store, actor.principal(), trace_id)
+    corrected = _corrected_answer(trace, answer)
     existing = list(platform.store.list_datasets(name=name))
     previous = existing[-1] if existing else None
     carried = _supervision_rows(platform, previous)

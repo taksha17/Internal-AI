@@ -26,7 +26,7 @@
       <td>{{ trace.user_id }}</td>
       <td>{{ trace.created_at | when }}</td>
       <td>{% if trace.redactions %}{% for kind, count in trace.redactions.items() %}{{ kind }} {{ count }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}<span class="muted">none</span>{% endif %}</td>
-      <td><form method="post" action="/console/traces/{{ trace.id }}/eval-case" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="btn-sm">Make a regression case</button></form> <a class="button btn-sm" href="/console/traces/{{ trace.id }}/sft">Write an example</a></td>
+      <td><form method="post" action="/console/traces/{{ trace.id }}/eval-case" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="btn-sm">Make a regression case</button></form> <a class="button btn-sm" href="/console/traces/{{ trace.id }}/sft">Write an answer</a></td>
     </tr>
     {% else %}
     {{ m.empty_row(6, "No citation failures", "An answer that keeps its line numbers stays out of this list.", "/console/approvals", "See what is waiting") }}

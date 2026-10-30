@@ -28,6 +28,10 @@
     <textarea name="answer" rows="8" required maxlength="4000" placeholder="Name at least one of the lines above, with its file, so the correction is checkable."></textarea>
     <span class="muted small">A correction has to cite a line from this question. The next version of the set carries every earlier example forward, and it stays unreleased until a release gate approves it.</span>
   </label>
-  <button type="submit" class="primary">Add to supervision</button>
+  <div class="row-actions">
+    <button type="submit" class="primary">Add to supervision</button>
+    <button type="submit" class="button" formaction="/console/traces/{{ trace.id }}/preference">File as my preferred answer</button>
+  </div>
+  <p class="muted small">Supervision stores the pair as training data once its release gate passes. A preference records that you prefer your answer to the model's; it is an opinion, so it stays marked as not training data when it is exported.</p>
 </form>
 {% endblock %}

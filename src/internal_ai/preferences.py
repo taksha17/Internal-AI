@@ -97,6 +97,19 @@ def list_preferences(platform: Platform) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def _trace_ids(platform: Platform, preference_ids: list[str]) -> list[str]:
+    """Traces a person promoted into a preference. The link is kept in the audit log."""
+    wanted = set(preference_ids)
+    events = platform.store.list_audit(action="preference.from_trace", limit=5000)
+    return sorted(
+        {
+            str(event.details.get("trace_id"))
+            for event in events
+            if event.subject in wanted and event.details.get("trace_id")
+        }
+    )
+
+
 def export_preferences(platform: Platform, actor: Actor) -> DatasetVersion:
     """A new unreleased dataset. Release still needs its gate; nothing trains here."""
     if not actor.holds(PREFERENCE_ROLE):
@@ -143,6 +156,7 @@ def export_preferences(platform: Platform, actor: Actor) -> DatasetVersion:
             "config_hash": content_hash({"kind": "preference", "rows": len(records)}),
             "code_commit": _git_commit(platform.settings.root),
             "preference_ids": [row["id"] for row in rows],
+            "trace_ids": _trace_ids(platform, [row["id"] for row in rows]),
         },
         stats={"kind": "preference", "training_data": False, "token_count_kind": "measured"},
         released=False,

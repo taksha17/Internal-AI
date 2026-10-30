@@ -52,6 +52,7 @@ from internal_ai.services.jobs import JobRunner
 from internal_ai.services.permissions import Action, PermissionDenied, allowed, deny, reason
 from internal_ai.services.triage import (
     eval_case_from_trace,
+    preference_from_trace,
     sft_draft,
     sft_example_from_trace,
     triage_view,
@@ -720,6 +721,23 @@ def mount_console(
                 "it stays unreleased until a release gate approves it"
             ),
             to="/console/datasets",
+        )
+
+    @app.post("/console/traces/{trace_id}/preference", include_in_schema=False)
+    async def trace_preference_save(request: Request, trace_id: str) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        return await act(
+            ctx,
+            f"/console/traces/{trace_id}/sft",
+            lambda: preference_from_trace(
+                ctx.platform, ctx.actor, trace_id, form.get("answer", "")
+            ),
+            lambda row: (
+                f"{row['id']} files your answer ahead of the model's; it joins a "
+                "preference set at export, and stays marked as not training data"
+            ),
+            to="/console/traces",
         )
 
     @app.get("/console/search", include_in_schema=False)
