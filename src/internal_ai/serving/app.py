@@ -261,16 +261,12 @@ def create_serving_app(
     def answer(
         request: AnswerRequest, principal: Principal = Depends(authenticate)
     ) -> dict[str, Any]:
-        """Generate from the on-prem runner. A mixed citation is replaced by the hits."""
-        import os
-
-        from internal_ai.llm import LocalRunnerAdapter
+        """Generate on this machine, or from the runner if one is configured."""
         from internal_ai.serving.trace import FAILURE_CITATION, FAILURE_GUARDRAIL, record_trace
         from internal_ai.training.alpha.answer import cited_answer
         from internal_ai.training.alpha.citations import AskHit
+        from internal_ai.training.alpha.local import LocalGenerationUnavailable, answer_adapter
 
-        if not os.environ.get("INTERNAL_AI_LOCAL_RUNNER", "").strip():
-            raise HTTPException(status_code=503, detail="no on-prem runner is configured")
         if not request.question.strip() or not request.hits:
             raise HTTPException(
                 status_code=400, detail="a question and at least one hit are required"
@@ -282,8 +278,14 @@ def create_serving_app(
             hits = [AskHit(item.path, item.line) for item in request.hits]
             excerpts = [item.text for item in request.hits]
             try:
+                generator = answer_adapter(get_platform(), model)
+            except PermissionError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            try:
                 result = cited_answer(
-                    LocalRunnerAdapter(),
+                    generator,
                     request.question,
                     hits,
                     excerpts,
@@ -291,6 +293,12 @@ def create_serving_app(
                 )
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
+            except FileNotFoundError as exc:
+                raise HTTPException(
+                    status_code=503, detail=f"the local model is not on disk: {exc}"
+                ) from exc
+            except LocalGenerationUnavailable as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
             latency = (time.monotonic() - started) * 1000
 
             # Enforce latency target from model config if set
