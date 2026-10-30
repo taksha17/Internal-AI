@@ -1,60 +1,70 @@
 # PRODUCT.md
 
-## What this is
+## What it is
 
-Internal-AI is the control plane for a multi-agent engineering organisation that
-builds language models from scratch on company data. Platform web.
+The platform a company uses to build and own a language model on its own
+machines: register sources, release datasets, train, evaluate, gate and serve —
+with records and prompts that never leave the building.
 
-The console is one client of the platform services, alongside the CLI and the
-JSON API. It is mounted at `/console`, server-rendered, and shares the same
-governance as every other client.
+The browser console is one client of those services, alongside the CLI and the
+JSON API. It is mounted at `/console` and shares their governance.
 
 ## Who uses it
 
-A person moving a model from company data through human gates. They register
-sources, release datasets, request gates, read eval reports, promote models, and
-watch jobs and spend.
+A person moving a model from company data to production: registering sources,
+releasing datasets, requesting gates, reading eval reports, promoting models,
+watching jobs and spend. They need no AI background, and they should always be
+able to see what the platform is waiting on and who can unblock it.
 
-A gate is decided by a person other than the one who requested it. Agents can
-request and prepare; they cannot approve.
+Agents request and prepare. They never approve: a gate is decided by a person,
+and never by the person who asked for it.
 
 ## Stack
 
-Existing FastAPI application, Jinja templates, and a vendored htmx under
-`src/internal_ai/console/static/`. No CDN. No inline script and no inline style,
-enforced by the console tests and the content security policy.
+One FastAPI process serving Jinja templates and the JSON API, with htmx
+vendored under `src/internal_ai/console/static/`. No CDN, no Node build, no
+frontend framework, no inline script and no inline style — enforced by tests
+and by the content security policy.
 
 ## Binding rules
 
-The kill switch, the audit log, and the rules in `AGENTS.md` stay binding in
-every redesign:
+`AGENTS.md` holds the full set. These stay true through every redesign:
 
-- No pretrained weights. Models train from random initialisation on approved
-  internal data only.
+- The default install trains from random initialisation on approved internal
+  data only, and no path reads pretrained parameters outside
+  `internal_ai/training/alpha/`.
 - No training on third-party model output.
 - No raw records leave for an external API.
 - Frozen eval sets are write-protected; a change is a new version.
-- Gates are human-only, and the requester cannot decide their own gate.
+- Gates are human-only, and the requester cannot decide their own.
 - `audit_events` is append-only and hash-chained; writes go through
   `AuditLog.record`.
 - Spend goes through `BudgetManager` at every scope.
-- Releasing the kill switch needs a different person from the one who engaged
-  it.
+- Engaging the kill switch is immediate; releasing it needs a different person.
 
-## Brand commitments
+## Brand
 
-- The name is `internal-ai`.
-- The supplied marks in `Logo/` are the brand; the three SVGs the app serves are
-  copied to `src/internal_ai/console/static/brand/`.
-- The palette is three notes around those marks: Aqua Jade, Midnight Abyss and
-  a faint Baby pink. Paper `#F2F7F5`, ink `#0F1A1E`, rail `#0B1220`, dark field
-  `#080E15`, dark ink `#E8F1EE`; jade `#0E6B5C` as light-mode text and `#5FE0C5`
-  on the rail; pink `#F3C6D3` as an accent only, never a surface.
+- The name is `internal-ai`. The marks in `Logo/` are the brand; the three SVGs
+  the app serves are copied to `console/static/brand/`. The favicon is
+  `internal-ai-icon.svg`. The signed-in rail carries the icon with the wordmark
+  set in HTML, never the full lockup; sign-in carries the lockup, light and
+  dark, in two images.
+- Colour is three notes around the marks. Paper `#F2F7F5`, ink `#0F1A1E`,
+  cards white; rail `#0B1220` with `#EEF3F2` text in both schemes; dark field
+  `#080E15`, dark ink `#E8F1EE`.
+- Aqua Jade is the accent. `#0E6B5C` carries light-mode text, `#6FE6CB` dark
+  mode, `#5FE0C5` on the rail; `#2FB89E` is a fill only, under `#06231D` ink.
+  The primary button is `#0D5C50` with ivory text. Approve `#17694E`, reject and
+  the kill switch `#8E2F3C`, pending `#F6E7C4` under `#6B4A0E`; those three are
+  never jade.
+- Baby pink `#F3C6D3` is an accent, never a surface: selection, the gate
+  stripe, the kicker, a faint aura at the foot of the rail.
 - Type names Inter first, then the system UI face. No font is downloaded.
-- Appearance follows `prefers-color-scheme`. There is no theme toggle.
+  Appearance follows `prefers-color-scheme`; there is no theme toggle.
 - Session and form cookies are `SameSite=Strict`.
 
-## Vocabulary the interface keeps
+## Vocabulary
 
 Task states, gate types, roles, budget scopes, dataset versions and job states
-are the domain's words. The console prints them; it does not invent synonyms.
+are the domain's words. The interface prints them and never invents synonyms for
+them.
