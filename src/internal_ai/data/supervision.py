@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from internal_ai.context import Platform
+from internal_ai.data.pipeline import _git_commit
 from internal_ai.data.records import Record
 from internal_ai.data.tokenizer import Tokenizer
 from internal_ai.domain import DatasetVersion
@@ -41,6 +42,30 @@ def require_supervision_row(platform: Platform, row: dict[str, str]) -> None:
         raise ValueError("alpha output is not training data for the from-scratch track")
     if author not in {"internal_document"} and not author.startswith("ppl_"):
         raise ValueError("authored_by is a person id or internal_document")
+
+
+def _source_lineage(
+    rows: list[dict[str, str]], records: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """One entry per source, in the shape every lineage reader expects.
+
+    ``sample_lineage`` looks each record's source up by id and refuses an entry
+    with no content hash, so a list of bare ids left a supervision set
+    unreleasable: the release crashed on the row it was supposed to trace.
+    """
+    hashes: dict[str, list[str]] = {}
+    for row, record in zip(rows, records, strict=True):
+        hashes.setdefault(row["source_id"], []).append(str(record["payload"]))
+    return [
+        {
+            "source_id": source_id,
+            "path": source_id,
+            "content_hash": content_hash({"source_id": source_id, "rows": payloads}),
+            "owner": "data_owner",
+            "approved": True,
+        }
+        for source_id, payloads in sorted(hashes.items())
+    ]
 
 
 def ingest_supervision(
@@ -85,7 +110,9 @@ def ingest_supervision(
         created_at=now_iso(),
         lineage={
             "kind": "supervision",
-            "sources": sorted({row["source_id"] for row in rows}),
+            "sources": _source_lineage(rows, records),
+            "config_hash": content_hash({"kind": "supervision", "rows": len(records)}),
+            "code_commit": _git_commit(platform.settings.root),
             **(lineage or {}),
         },
         stats={"kind": "supervision"},
