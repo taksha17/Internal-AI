@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
 {% block title %}Budget{% endblock %}
+{% block crumb %}Budget{% endblock %}
 {% block content %}
 {{ m.page_head("Budget limits", "Lowering or adding a limit takes effect at once. Raising one needs an approved budget_increase gate whose subject is the limit's scope:key.", "Admin") }}
 <p class="tabs"><a href="/console/admin/people">People</a><a href="/console/admin/policy">Policy</a><a href="/console/admin/budget" class="active">Budget</a></p>

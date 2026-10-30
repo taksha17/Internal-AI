@@ -11,12 +11,12 @@
 <div class="stat-grid two">
   <div class="stat">
     <p class="stat-label">Active runs</p>
-    <p class="stat-figure">{{ "%02d" % active_jobs }}</p>
+    <p class="stat-figure">{{ active_jobs }}</p>
     <p class="stat-meta"><span class="stat-state {{ 'is-ok' if active_jobs else 'is-idle' }}">{{ "In progress" if active_jobs else "Queue is clear" }}</span></p>
   </div>
   <div class="stat">
     <p class="stat-label">Pending approvals</p>
-    <p class="stat-figure">{{ "%02d" % inbox }}</p>
+    <p class="stat-figure">{{ inbox }}</p>
     <p class="stat-meta"><span class="stat-state {{ 'is-warn' if inbox else 'is-idle' }}">{{ "Needs review" if inbox else "Nothing waiting" }}</span></p>
   </div>
 </div>

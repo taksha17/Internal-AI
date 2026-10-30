@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
 {% block title %}Ask{% endblock %}
+{% block crumb %}Ask{% endblock %}
 {% block content %}
 {{ m.page_head("Ask", "Answers come only from records your groups (" ~ (actor.groups | sort | join(", ") or "none") ~ ") may read, in a released dataset, and every answer cites its sources. On small data keyword search answers first; a trained model joins in only when it earns its place.", "Runs") }}
 <form method="post" action="/console/ask" class="stack card">

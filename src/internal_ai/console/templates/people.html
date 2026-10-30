@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
 {% block title %}People and accounts{% endblock %}
+{% block crumb %}People{% endblock %}
 {% block content %}
 {{ m.page_head("People and accounts", "Roles decide what a person may do and which gates they may approve. Groups decide which records they may read. Placeholder people from the PRD cannot sign in until they are replaced with a real person.", "Admin") }}
 <p class="tabs"><a href="/console/admin/people" class="active">People</a><a href="/console/admin/policy">Policy</a><a href="/console/admin/budget">Budget</a></p>

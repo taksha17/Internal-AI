@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
 {% block title %}Plan{% endblock %}
+{% block crumb %}Pipelines{% endblock %}
 {% block content %}
 {{ m.page_head("Plan and tasks", "The orchestrator turns a goal into tasks for role agents. A lead submits and approves the plan; agents then work it, and every gate still waits for a person.", "Runs") }}
 {% if not brief.complete %}

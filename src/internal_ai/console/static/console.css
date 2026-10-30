@@ -231,7 +231,7 @@ body.signed-out main { max-width: none; padding: 0; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.2rem; flex-wrap: wrap; margin: 0 0 1.15rem; }
 .page-head h1 { margin: 0.3rem 0 0; font-size: 1.5rem; }
 .lede { margin: 0.4rem 0 0; max-width: 70ch; color: var(--muted); font-size: 0.92rem; }
-.eyebrow { margin: 0; color: var(--clay); font-size: 0.68rem; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; }
+.eyebrow { margin: 0 0 0.15rem; color: var(--clay); font-size: 0.78rem; font-weight: 600; letter-spacing: 0; text-transform: none; }
 .head-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
 .head-chip { display: grid; place-items: center; width: 2.15rem; height: 2.15rem; border: 1px solid var(--line); border-radius: 0.62rem; background: var(--sage-wash); color: var(--sage); }
 .head-chip .icon { width: 1.1rem; height: 1.1rem; }
@@ -246,7 +246,7 @@ main > h1:first-child + p.muted { margin: -0.1rem 0 1.7rem; max-width: 66ch; fon
 .stat-top { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
 .stat-icon { display: grid; place-items: center; width: 1.9rem; height: 1.9rem; border-radius: 0.55rem; background: var(--sage-wash); color: var(--sage); }
 .stat.clay .stat-icon { background: var(--clay-wash); color: var(--clay-strong); }
-.stat-label { margin: 0; color: var(--muted); font-size: 0.72rem; font-weight: 750; letter-spacing: 0.12em; text-transform: uppercase; max-width: none; }
+.stat-label { margin: 0; color: var(--muted); font-size: 0.8rem; font-weight: 600; letter-spacing: 0; text-transform: none; max-width: none; }
 .stat-figure { margin: 0.55rem 0 0; font-size: 1.8rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; font-variant-numeric: tabular-nums; max-width: none; }
 .stat-figure small { font-size: 1rem; color: var(--muted); font-weight: 600; letter-spacing: 0; }
 .stat-meta { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; margin: 0.3rem 0 0; color: var(--muted); font-size: 0.8rem; max-width: none; }
@@ -266,7 +266,7 @@ main > h1:first-child + p.muted { margin: -0.1rem 0 1.7rem; max-width: 66ch; fon
 /* ---------- surfaces ---------- */
 .card, .callout { padding: 1.05rem 1.1rem; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--lift); }
 .card { margin: 0 0 0.9rem; }
-.callout { max-width: none; margin: 0 0 1.15rem; background: var(--sage-wash); border-color: color-mix(in srgb, var(--sage) 18%, var(--line)); }
+.callout { max-width: none; margin: 0 0 1.1rem; padding: 0.1rem 0 0.1rem 0.9rem; background: none; border: 0; border-left: 2px solid var(--sage-fill); border-radius: 0; box-shadow: none; }
 .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin: 0 0 0.95rem; }
 .card-head h2, .card-head h3, .card-head p { margin: 0; }
 .card-head .card-sub, .card-sub { margin-top: 0.35rem; color: var(--muted); font-size: 0.88rem; max-width: 66ch; }
@@ -289,6 +289,9 @@ main > h1:first-child + p.muted { margin: -0.1rem 0 1.7rem; max-width: 66ch; fon
 .grid-2 > .card { margin: 0; }
 .stack { display: flex; flex-direction: column; gap: 0.95rem; max-width: 34rem; }
 .stack > button, .stack > .button { align-self: flex-start; }
+.field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0.9rem 1.1rem; margin: 0 0 1rem; }
+.field-grid label { min-width: 0; }
+.field-grid .field-wide { grid-column: 1 / -1; }
 .narrow { max-width: 30rem; margin: 0 auto; padding: 1.7rem 1.6rem 1.5rem; }
 .narrow h1 { margin-top: 0; }
 .inline-form { display: inline-flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: 0; }
@@ -362,7 +365,7 @@ a, button, .button, .btn, input, select, textarea { transition: color var(--beat
 table, table.data { width: 100%; margin: 0 0 1.15rem; border: 1px solid var(--line); border-collapse: separate; border-spacing: 0; border-radius: var(--radius); overflow: hidden; background: var(--card); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
 .table-wrap table, .table-wrap table.data { margin: 0; border: 0; border-radius: 0; }
 th, td { padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
-thead th { background: var(--panel); color: var(--muted); font-size: 0.68rem; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; }
+thead th { background: var(--panel); color: var(--muted); font-size: 0.8rem; font-weight: 600; letter-spacing: 0; text-transform: none; }
 thead th:first-child { border-top-left-radius: var(--radius); }
 thead th:last-child { border-top-right-radius: var(--radius); }
 .table-wrap thead th:first-child, .table-wrap thead th:last-child { border-radius: 0; }

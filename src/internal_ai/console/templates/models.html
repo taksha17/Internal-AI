@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
 {% block title %}Models{% endblock %}
+{% block crumb %}Models{% endblock %}
 {% block content %}
 {{ m.page_head("Models", "Models are trained from random initialisation on a released dataset. No pretrained weights are ever loaded.", "Workspace") }}
 
@@ -21,10 +22,11 @@
 {% endif %}
 
 {% if can("train_model") %}
-<form method="post" action="/console/models/train" class="stack card">
+<form method="post" action="/console/models/train" class="card">
   {{ m.csrf_field() }}
   <h2>Train a model</h2>
   {% if datasets %}
+  <div class="field-grid">
   <label>Released dataset
     <select name="dataset_id" required>
       {% for row in datasets %}<option value="{{ row.dataset.id }}" {{ '' if row.tokenizer else 'disabled' }}>{{ row.dataset.name }} v{{ row.dataset.version }}{{ '' if row.tokenizer else ' (train a tokenizer first)' }}</option>{% endfor %}
@@ -51,6 +53,7 @@
     <span class="muted small">Above ${{ "%.0f" % cost_gate_usd }} the run needs an approved <a href="/console/gates/new?gate_type=training_run_above_threshold">training cost gate</a> with subject <code>dataset_id:model_name</code>. The run is refused if any budget has less left than this cap.</span></label>
   <label>Training pairs <select name="pair_mode"><option value="paraphrase">paraphrase</option><option value="title">title</option></select></label>
   <label>Why this vocabulary size <input type="text" name="vocab_rationale" required maxlength="300" placeholder="600 tokens covers the ticket jargon"></label>
+  </div>
   <button type="submit" class="primary">Start training</button>
   {% else %}
   <p class="muted">Release a dataset first.</p>
@@ -72,11 +75,12 @@
 {% endif %}
 
 {% if can('train_model') %}
-<form method="post" action="/console/models/classifier" class="stack card">
+<form method="post" action="/console/models/classifier" class="card">
   {{ m.csrf_field() }}
   <h2>Train a classifier</h2>
   <p class="card-sub">A task classifier is a small head over an encoder you already trained. It learns the answers your data carries when the source had an answer column, and falls back to the built-in routing rules otherwise. It is not promotable: promotion asks for an evaluation on a frozen retrieval set, and a classifier's held-out split is not one.</p>
   {% if datasets and encoders %}
+  <div class="field-grid">
   <label>Released dataset
     <select name="dataset_id" required>
       {% for row in datasets %}<option value="{{ row.dataset.id }}" {{ '' if row.tokenizer else 'disabled' }}>{{ row.dataset.name }} v{{ row.dataset.version }} · {{ 'you supplied the answers' if row.labels else 'built-in routing rules' }}{{ '' if row.tokenizer else ' (train a tokenizer first)' }}</option>{% endfor %}
@@ -90,6 +94,7 @@
   <label>Classifier name <input type="text" name="name" value="router-v1" required pattern="[A-Za-z0-9_.-]+"></label>
   <label>Training epochs <input type="number" name="epochs" value="40" min="1" max="500"></label>
   <label>Cost cap (USD) <input type="number" name="cost_cap_usd" value="2" min="0.01" step="0.01"></label>
+  </div>
   <button type="submit" class="primary">Start classifier</button>
   {% elif not datasets %}
   <p class="muted">Release a dataset first.</p>

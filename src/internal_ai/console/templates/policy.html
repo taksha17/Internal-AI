@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_macros.html" as m with context %}
 {% block title %}Policy{% endblock %}
+{% block crumb %}Policy{% endblock %}
 {% block content %}
 {{ m.page_head("Policy decisions", "Open questions from the PRD. A proposal opens a policy gate; once a second person approves it, confirm it to make it current.", "Admin") }}
 <p class="tabs"><a href="/console/admin/people">People</a><a href="/console/admin/policy" class="active">Policy</a><a href="/console/admin/budget">Budget</a></p>
