@@ -215,11 +215,12 @@ def test_the_alpha_evaluation_scores_the_answers_against_a_frozen_set(
     model = register_alpha(platform, PRIMARY, adapter, "ds_alpha", person)
     eval_set_id = alpha_eval_set(platform, [ALPHA_ITEM])
 
-    good = evaluate_alpha(platform, model.id, eval_set_id, [GOOD_ANSWER])
+    good = evaluate_alpha(platform, model.id, eval_set_id, [GOOD_ANSWER], [MOVED_ANSWER])
     assert good.passed is True, good.checks
     assert good.metrics["citation_pass_rate"] == 1.0
+    assert good.baseline_metrics["citation_pass_rate"] == 0.0
 
-    moved = evaluate_alpha(platform, model.id, eval_set_id, [MOVED_ANSWER])
+    moved = evaluate_alpha(platform, model.id, eval_set_id, [MOVED_ANSWER], [GOOD_ANSWER])
     assert moved.passed is False
     assert moved.checks["citations"]["passed"] is False
 
@@ -239,7 +240,7 @@ def test_the_alpha_evaluation_refuses_an_unfrozen_eval_set(
     eval_set = harness.create_eval_set("alpha", [ALPHA_ITEM])
 
     with pytest.raises(PermissionError, match="frozen"):
-        evaluate_alpha(platform, model.id, eval_set.id, [GOOD_ANSWER])
+        evaluate_alpha(platform, model.id, eval_set.id, [GOOD_ANSWER], [GOOD_ANSWER])
 
 
 def test_an_alpha_model_is_not_served_without_a_passing_frozen_report(
@@ -255,7 +256,7 @@ def test_an_alpha_model_is_not_served_without_a_passing_frozen_report(
     gate = request_alpha_promotion(platform, person, model.id, GOOD_ANSWER, HITS)
     approve_gate(platform, gate.id)
     eval_set_id = alpha_eval_set(platform, [ALPHA_ITEM])
-    evaluate_alpha(platform, model.id, eval_set_id, [MOVED_ANSWER])
+    evaluate_alpha(platform, model.id, eval_set_id, [MOVED_ANSWER], [MOVED_ANSWER])
 
     with pytest.raises(PermissionError, match="frozen"):
         serve_alpha(platform, model.id, tmp_path / "runner")
@@ -275,7 +276,7 @@ def test_serving_an_alpha_model_promotes_it_and_records_the_report(
     gate = request_alpha_promotion(platform, person, model.id, GOOD_ANSWER, HITS)
     approve_gate(platform, gate.id)
     eval_set_id = alpha_eval_set(platform, [ALPHA_ITEM])
-    report = evaluate_alpha(platform, model.id, eval_set_id, [GOOD_ANSWER])
+    report = evaluate_alpha(platform, model.id, eval_set_id, [GOOD_ANSWER], [MOVED_ANSWER])
 
     manifest = serve_alpha(platform, model.id, tmp_path / "runner")
     body = manifest.read_text(encoding="utf-8")
@@ -287,6 +288,7 @@ def test_serving_an_alpha_model_promotes_it_and_records_the_report(
     assert promoted.card["eval_report_id"] == report.id
     assert promoted.card["promoted_by"]
     assert promoted.eval_report_id == report.id
+    assert promoted.card["baseline_metrics"]["citation_pass_rate"] == 0.0
 
 
 def test_registering_an_alpha_model_needs_the_register_model_capability(
