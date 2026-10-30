@@ -13,14 +13,14 @@ rail and one content column.- The rail is `18rem` wide, `position: sticky`, `hei
   charcoal `--rail` with a `--rail-line` hairline on its right and a faint
   `--rail-active` glow at the top. The brand block is the shield at about
   `30px` on a pale sage chip, the wordmark in HTML, and a muted
-  `PRIVATE BY DESIGN` micro-cap, above a hairline. Destinations sit in three
-  labelled groups — Workspace, Runs, Governance — each under a muted caps
-  heading. Each row is `2.45rem`: a `1.05rem` stroke icon from the sprite, the
-  label, and the approvals count as a sage pill. The active row is
-  `--rail-active` with a `2px` `--rail-sage` inset bar and icon,
-  `aria-current="page"`, and the same fill on hover so it does not flicker.
-  The bottom holds a sage-bordered readiness note, then the person: an initial
-  disc, the name, the roles, and Sign out. The rail does not change with the
+  `PRIVATE BY DESIGN` micro-cap, above a hairline. Destinations are one flat
+  list with no group headings: Overview, Pipelines, Datasets, Training,
+  Evaluations, Approvals, Audit log, a hairline, then Inbox, Data, Models,
+  Brief, Ask and Admin. Each row is `2.45rem`: a `1.05rem` stroke icon from the
+  sprite, the label, and the approvals count as a sage pill. The active row is
+  `--rail-active` with a `--rail-sage` icon, `aria-current="page"`, and the
+  same fill on hover so it does not flicker. The bottom holds the person: an
+  initial disc, the name, the roles, and Sign out. The rail does not change with the
   colour scheme; only the workspace does.
 - The content column holds a sticky topbar and then `main`, capped at `76rem`
   and padded `2rem` by side. The topbar blurs the paper behind it and carries
@@ -44,26 +44,26 @@ lockups stay in the markup and the scheme still chooses between them.
 
 ## Colour
 
-Lockup-matched workspace: paper `#F7F8F6` straight from the Option B lockup
-background, ink `#202A31` from the lockup wordmark, sage fill `#8AA99B` from
-the middle icon pill, clay `#9A5B23` from the bottom pill, rail `#202A31` so
-the chrome reads as the same slate as the mark. The token block at the top of
-`console.css` is the whole theme: rules read names, never hex, and
+Warm workspace: paper `#F4F3ED` and warm-white cards under ink `#252B27`, sage
+text `#3D5A48`, a muted sage fill `#829A87` for surfaces under `#222B25` ink,
+and one warm charcoal rail `#202522` in both schemes. Clay `#96602B` keeps the
+workspace from reading all-sage. The token block at the top of `console.css` is
+the whole theme: rules read names, never hex, and
 `tests/test_console_palette.py` fails the build if one carries a colour of its
 own.
 
 | Token | Light | Dark |
 | --- | --- | --- |
-| `--paper` | `#F7F8F6` | `#141917` |
-| `--panel` | `#EAEDE7` | `#1f2622` |
+| `--paper` | `#F4F3ED` | `#141917` |
+| `--panel` | `#E9E7DD` | `#1f2622` |
 | `--card` / `--field` | `#ffffff` | `#1a211d` |
-| `--ink` | `#202A31` | `#ecf0ec` |
-| `--muted` | `#5C6670` | `#a4aea6` |
-| `--line` / `--line-strong` | `#DDE1DA` / `#C3CBC0` | `#2e3631` / `#3d463f` |
-| `--sage` | `#3F5C4E` | `#a9c3b0` |
-| `--sage-fill` / `--on-sage` | `#8AA99B` / `#222B25` | `#8AA99B` / `#222B25` |
-| `--sage-wash` | `#dce8de` | `#26312b` |
-| `--forest` / `--forest-hover` / `--on-forest` | `#315B40` / `#27492F` / `#F7F8F6` | `#3c6b4c` / `#336042` / `#F7F8F6` |
+| `--ink` | `#252B27` | `#ecf0ec` |
+| `--muted` | `#5C6157` | `#a4aea6` |
+| `--line` / `--line-strong` | `#DCDAD0` / `#C4C2B4` | `#2e3631` / `#3d463f` |
+| `--sage` | `#3D5A48` | `#a9c3b0` |
+| `--sage-fill` / `--on-sage` | `#829A87` / `#222B25` | `#829A87` / `#222B25` |
+| `--sage-wash` | `#DFE6DC` | `#26312b` |
+| `--forest` / `--forest-hover` / `--on-forest` | `#315B40` / `#27492F` / `#F4F3ED` | `#3c6b4c` / `#336042` / `#F4F3ED` |
 | `--ok` / `--ok-hover` / `--on-ok` | `#2f6b45` / `#27593a` / `#f4f3ed` | `#6ec99a` / `#5fba8d` / `#16201a` |
 | `--danger-fill` / `--danger-hover` / `--on-danger` | `#9c3a3a` / `#832e2e` / `#fbeeec` | `#8f3b3b` / `#7a3131` / `#fbeeec` |
 | `--tone-ok-bg` / `-ink` | `#d8f0e2` / `#145c38` | `#1c3328` / `#a9dcc0` |
@@ -72,11 +72,11 @@ own.
 | `--tone-idle-bg` / `-ink` | `#E8E9E2` / `#4e5751` | `#262c28` / `#b6c0b8` |
 
 Rail tokens are declared once, outside the scheme block, because the rail is
-the same slate as the mark in both: `--rail #202A31`, `--rail-ink #F1F4EF`,
-`--rail-item #CFD8D1`, `--rail-sage #A9C3B0`, `--rail-muted #9BA69D`,
-`--rail-line #36434D`, `--rail-active #2B3640`, `--rail-hover #263038`,
-`--rail-chip #dce8de`. `--rail-item` is the nav text: `10.67` on the charcoal
-and `9.78` on the hover fill, where plain `--rail-ink` would glare.
+the same warm charcoal in both: `--rail #202522`, `--rail-ink #F1F4EF`,
+`--rail-item #D2D8D1`, `--rail-sage #A9C3B0`, `--rail-muted #9AA39A`,
+`--rail-line #333A34`, `--rail-active #2C332D`, `--rail-hover #272E28`,
+`--rail-chip #DCE4DA`. `--rail-item` is the nav text: `10.74` on the charcoal
+and `9.61` on the hover fill, where plain `--rail-ink` would glare.
 
 The card lift is a token too, `--lift`, built from `--shade` with `color-mix`
 so a card has an edge without a hex in a rule: `0 1px 2px` at 5% plus
@@ -87,8 +87,7 @@ with `color-scheme` set in both. There is no toggle.
 
 Sage separates into two jobs. `--sage` is text, links, focus rings, the active
 nav mark and the gate stripe. `--sage-fill` is a surface only — progress,
-the nav count pill, the done step — always under `--on-sage` ink. The lighter
-sage is not used as text anywhere: it measures 2.73 on ivory, 3.03 on white.
+the nav count pill, the done step — always under `--on-sage` ink.The lighter sage is not used as text anywhere: it measures 2.73 on paper, 3.03 on white.
 The primary button is `--forest` with `--on-forest` ivory text; ok, reject and
 the kill control keep their own reds and greens and never become sage.
 
@@ -105,16 +104,16 @@ a light and a dark duplicate, and a state added later has to pick a tone.
 Tone borders are `color-mix` of the tone ink, which keeps edges out of the token
 block without adding eight more literals.
 
-Measured contrast, light then dark: ink on paper 13.72 / 15.44, muted on paper
-5.49 / 7.77, sage on paper 6.91 / 9.41, ink on the sage fill 5.71 in both,
-ivory on forest 6.99 / 5.61, ivory on ok 5.71, dark ink on the dark ok 8.35,
+Measured contrast, light then dark: ink on paper 13.00 / 15.44, muted on paper
+5.72 / 7.77, sage on paper 6.86 / 9.41, ink on the sage fill 4.81 in both,
+ivory on forest 6.99 / 5.56, ivory on ok 5.71, dark ink on the dark ok 8.35,
 tone ink on tone wash 6.68 / 8.81 ok, 6.57 / 10.19 warn, 7.10 / 8.75 bad,
-5.97 / 7.62 idle, and the same inks on a card 8.02 / 10.70, 8.04 / 13.20,
-9.26 / 9.95, 7.48 / 8.77; muted on the table-header wash 4.98 / 6.76; rail
-ink 14.03, rail item 10.67, rail ink on the active fill 10.77, rail sage 8.24,
-rail muted 6.18. The muted
-grey-green `#747c75` that a warmer palette suggests measures 3.87 on ivory, so
-the muted tone is `#5c665f`; it clears 4.5:1 on paper, on `--panel` and on the
+6.09 / 7.62 idle, and the same inks on a card 8.02 / 10.70, 8.04 / 13.20,
+9.26 / 9.95, 7.65 / 8.77; muted on the table-header wash 5.13 / 6.76; rail
+ink 14.03, rail item 10.74, rail ink on the active fill 11.69, rail sage 8.24,
+rail muted 5.99. The muted
+grey-green `#747c75` that a warmer palette suggests measures 3.87 on paper, so
+the muted tone is `#5c6157`; it clears 4.5:1 on paper, on `--panel` and on the
 sage wash.
 
 ## Type
@@ -165,12 +164,13 @@ in `.table-wrap`, which carries the border so the table inside stays flush.
 over the `h1`, a muted `.lede` under it, and any primary action right-aligned
 and vertically bottom-aligned with the text. Every page uses one.
 
-`.stat-grid` is a responsive row of four `.stat`s. A stat is a card with a
-`0.72rem` uppercase muted label beside a tinted icon tile, the figure at
-`2.15rem`/720 in tabular figures, and a `.stat-meta` line pairing a short
-state with a decorative aria-hidden sparkline. Alternate stats take the
-`.clay` treatment — clay icon wash, clay sparkline, clay radial glow. The
-glyph never carries the meaning alone; the words do.
+`.stat-grid` is a responsive row of `.stat`s, and the overview uses two of them
+under the `.two` modifier. A stat is a card with a `0.72rem` uppercase muted
+label, the figure at `1.8rem`/700 in tabular figures — zero-padded to two
+digits where it counts runs — and a `.stat-meta` line whose `.stat-state`
+carries a small tone-coloured dot beside the words: ok for work in progress,
+warn for work waiting on a person, idle when there is none. The dot never
+carries the meaning alone; the words do.
 
 Icons are one inline sprite per page, `_macros.html:sprite()`, referenced with
 `<use href="#i-name">` through `icon()`. There is no icon font, no extra request
@@ -223,11 +223,21 @@ controls inverted to a `color-mix` ivory outline so they read on the red.
 
 ## Home
 
-`home.html` is the reference page. It opens with `.page-head` — eyebrow,
-"Mission control for *private* models", the lede, and a primary Review button
-when the inbox is not empty — then four stats: active jobs, pending approvals
-for this person, weekly spend from the budget scopes, and steps complete. The
-weekly stat finds the `week` scope in the template; counts stay in the route.
+`home.html` is the reference page. It opens with `.page-head` — "System
+overview", the lede "Your private model engineering workspace", and a
+`.head-chip` holding the gauge icon at the right edge — then two stats: active
+runs (queued and running jobs, zero-padded) and pending approvals for this
+person. Counts stay in the route; the template only formats them.
+
+Under the stats sits the evaluation card. It names its state in a
+`badge-unpromoted` pill (or `badge-approved` once promoted), says in one
+sentence what that state blocks — "Model promotion is blocked until evaluation
+criteria are met." — fills a `6px` `.meter` with the share of the report's
+checks that passed, prints "Evaluation pipeline · N% complete", and ends in a
+full-width forest button that opens that model. With no model registered the
+same card says so and the button offers training instead; the badge, the
+figure and the button all read from the latest registered model and its newest
+report.
 
 The step card carries the same `<ol>` and the same words. A `.meter` above it
 is a native `<progress>` at `6px` on `--line` filled with `--sage-fill`, which

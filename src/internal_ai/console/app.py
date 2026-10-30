@@ -71,18 +71,18 @@ REFUSALS = (
 )
 
 NAV = [
-    ("Home", "/console/home"),
-    ("Brief", "/console/brief"),
-    ("Inbox", "/console/inbox"),
-    ("Approvals", "/console/approvals"),
-    ("Data", "/console/sources"),
+    ("Overview", "/console/home"),
+    ("Pipelines", "/console/plan"),
     ("Datasets", "/console/datasets"),
-    ("Eval sets", "/console/evals"),
+    ("Training", "/console/jobs"),
+    ("Evaluations", "/console/evals"),
+    ("Approvals", "/console/approvals"),
+    ("Audit log", "/console/audit"),
+    ("Inbox", "/console/inbox"),
+    ("Data", "/console/sources"),
     ("Models", "/console/models"),
-    ("Jobs", "/console/jobs"),
+    ("Brief", "/console/brief"),
     ("Ask", "/console/ask"),
-    ("Plan", "/console/plan"),
-    ("Audit", "/console/audit"),
     ("Admin", "/console/admin/people"),
 ]
 
@@ -596,6 +596,21 @@ def mount_console(
             (stage["name"] for stage in stages if not stage["done"]), "every stage is recorded"
         )
         jobs = get_jobs().list(limit=50)
+        models = platform.store.list_models()
+        latest = models[-1] if models else None
+        report = build.latest_report(platform, latest.id) if latest is not None else None
+        checks = [
+            value
+            for value in ((report.checks if report is not None else None) or {}).values()
+            if isinstance(value, dict) and "passed" in value
+        ]
+        share = (
+            round(100 * sum(1 for value in checks if value["passed"]) / len(checks))
+            if checks
+            else 0
+        )
+        if report is not None and report.passed:
+            share = 100
         return render(
             ctx,
             "home.html",
@@ -607,6 +622,9 @@ def mount_console(
             budget=platform.budget.all_status(),
             jobs=jobs,
             alerts=alerts,
+            latest=latest,
+            report=report,
+            eval_share=share,
         )
 
     @app.get("/console/brief", include_in_schema=False)

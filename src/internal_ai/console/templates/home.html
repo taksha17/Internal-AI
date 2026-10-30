@@ -3,52 +3,34 @@
 {% block title %}Overview{% endblock %}
 {% block crumb %}Overview{% endblock %}
 {% block content %}
-{% call m.page_head("Mission control for private models", "Everything a model learns comes from approved company data, moves through human gates, and is written to an append-only audit log.", "Overview") %}
-  {% if inbox %}<a class="button primary" href="/console/approvals">Review {{ inbox }} approval{{ "s" if inbox != 1 }}</a>{% endif %}
+{% set promoted = latest and latest.status == "promoted" %}
+{% call m.page_head("System overview", "Your private model engineering workspace") %}
+  <span class="head-chip">{{ m.icon("gauge") }}</span>
 {% endcall %}
 
-{% set ns = namespace(week=None) %}
-{% for item in budget %}{% if "week" in item.scope %}{% set ns.week = item %}{% endif %}{% endfor %}
-
-<div class="stat-grid">
+<div class="stat-grid two">
   <div class="stat">
-    <div class="stat-top">
-      <p class="stat-label">Active jobs</p>
-      <span class="stat-icon">{{ m.icon("activity") }}</span>
-    </div>
-    <p class="stat-figure">{{ active_jobs }}</p>
-    <p class="stat-meta"><span>{{ "in progress" if active_jobs else "queue is clear" }}</span></p>
-  </div>
-  <div class="stat clay">
-    <div class="stat-top">
-      <p class="stat-label">Pending approvals</p>
-      <span class="stat-icon">{{ m.icon("check-circle") }}</span>
-    </div>
-    <p class="stat-figure">{{ inbox }}</p>
-    <p class="stat-meta"><span>{{ "needs your review" if inbox else "nothing waiting" }}</span></p>
+    <p class="stat-label">Active runs</p>
+    <p class="stat-figure">{{ "%02d" % active_jobs }}</p>
+    <p class="stat-meta"><span class="stat-state {{ 'is-ok' if active_jobs else 'is-idle' }}">{{ "In progress" if active_jobs else "Queue is clear" }}</span></p>
   </div>
   <div class="stat">
-    <div class="stat-top">
-      <p class="stat-label">Weekly spend</p>
-      <span class="stat-icon">{{ m.icon("gauge") }}</span>
-    </div>
-    {% if ns.week %}
-    <p class="stat-figure">${{ "%.0f" % ns.week.spent_usd }}<small> of ${{ "%.0f" % ns.week.limit_usd }}</small></p>
-    <p class="stat-meta"><span>of the weekly cap</span></p>
-    {% else %}
-    <p class="stat-figure">—</p>
-    <p class="stat-meta"><span>no weekly cap set</span></p>
-    {% endif %}
-  </div>
-  <div class="stat clay">
-    <div class="stat-top">
-      <p class="stat-label">Steps complete</p>
-      <span class="stat-icon">{{ m.icon("map") }}</span>
-    </div>
-    <p class="stat-figure">{{ steps_done }}<small> / {{ step_total }}</small></p>
-    <p class="stat-meta"><span>{{ "the path is done" if steps_done == step_total else "step " ~ (steps_done + 1) ~ " is next" }}</span></p>
+    <p class="stat-label">Pending approvals</p>
+    <p class="stat-figure">{{ "%02d" % inbox }}</p>
+    <p class="stat-meta"><span class="stat-state {{ 'is-warn' if inbox else 'is-idle' }}">{{ "Needs review" if inbox else "Nothing waiting" }}</span></p>
   </div>
 </div>
+
+<section class="card eval-card">
+  <div class="card-head">
+    <h2>Latest evaluation</h2>
+    <span class="badge {{ 'badge-approved' if promoted else 'badge-unpromoted' }}">{{ "Promoted" if promoted else "Not promoted" }}</span>
+  </div>
+  <p class="eval-note">{% if not latest %}No model is registered, so there is no evaluation to promote.{% elif promoted %}This model passed its evaluation and its promotion gate, so it may serve.{% else %}Model promotion is blocked until evaluation criteria are met.{% endif %}</p>
+  <progress class="meter" value="{{ eval_share }}" max="100" aria-label="Evaluation pipeline"></progress>
+  <p class="eval-caption">Evaluation pipeline · {% if latest %}{{ eval_share }}% complete{% else %}not started{% endif %}</p>
+  <p class="card-action"><a class="button primary" href="{% if latest %}/console/models/{{ latest.id }}{% else %}/console/jobs{% endif %}">{{ "Review evaluation" if latest else "Start training" }}</a></p>
+</section>
 
 <section class="card">
   <div class="card-head">

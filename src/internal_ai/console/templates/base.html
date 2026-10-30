@@ -14,8 +14,8 @@
 {{ m.sprite() }}
 {% if actor %}<a class="skip" href="#main">Skip to content</a>{% endif %}
 {% if actor %}
-{% set nav_icons = {"Home": "home", "Brief": "clipboard", "Inbox": "inbox", "Approvals": "check-circle", "Data": "database", "Datasets": "layers", "Eval sets": "clipboard", "Models": "cube", "Jobs": "activity", "Ask": "chat", "Plan": "map", "Audit": "list", "Admin": "users"} %}
-{% set nav_groups = {"Workspace": ["Home", "Brief", "Data", "Datasets", "Eval sets", "Models"], "Runs": ["Jobs", "Ask", "Plan"], "Governance": ["Inbox", "Approvals", "Audit", "Admin"]} %}
+{% set nav_icons = {"Overview": "home", "Pipelines": "map", "Datasets": "layers", "Training": "activity", "Evaluations": "clipboard", "Approvals": "check-circle", "Audit log": "list", "Inbox": "inbox", "Data": "database", "Models": "cube", "Brief": "gauge", "Ask": "chat", "Admin": "users"} %}
+{% set nav_rows = [("", "Overview"), ("", "Pipelines"), ("", "Datasets"), ("", "Training"), ("", "Evaluations"), ("", "Approvals"), ("", "Audit log"), ("rule", ""), ("", "Inbox"), ("", "Data"), ("", "Models"), ("", "Brief"), ("", "Ask"), ("", "Admin")] %}
 {% set nav_by_label = dict(nav) %}
 <aside class="rail">
   <a class="brand" href="/console/home">
@@ -23,22 +23,17 @@
     <span><span>internal<span class="brand-ai">-ai</span></span><span class="brand-sub">PRIVATE BY DESIGN</span></span>
   </a>
   <nav class="rail-nav" aria-label="Console">
-    {% for group, labels in nav_groups.items() %}
-    <div class="nav-group">
-      <h2 class="nav-title">{{ group }}</h2>
-      {% for label in labels %}
-      {% set href = nav_by_label[label] %}
-      {% set here = path.startswith(href) %}
-      <a href="{{ href }}" class="{{ 'active' if here else '' }}"{% if here %} aria-current="page"{% endif %}>{{ m.icon(nav_icons.get(label, "home")) }}<span class="nav-label">{{ label }}</span>{% if label == "Inbox" and attention %}<span class="count">{{ attention }}</span>{% endif %}</a>
-      {% endfor %}
-    </div>
+    {% for kind, label in nav_rows %}
+    {% if kind == "rule" %}
+    <span class="nav-rule" aria-hidden="true"></span>
+    {% else %}
+    {% set href = nav_by_label[label] %}
+    {% set here = path.startswith(href) %}
+    <a href="{{ href }}" class="{{ 'active' if here else '' }}"{% if here %} aria-current="page"{% endif %}>{{ m.icon(nav_icons.get(label, "home")) }}<span class="nav-label">{{ label }}</span>{% if label == "Approvals" and attention %}<span class="count">{{ attention }}</span>{% endif %}</a>
+    {% endif %}
     {% endfor %}
   </nav>
   <div class="side-foot">
-    <div class="side-card">
-      <strong>Kill switch ready</strong>
-      Engaging stops new jobs and spend at once. Releasing needs a different person.
-    </div>
     <div class="who">
       <span class="avatar" aria-hidden="true">{{ actor.name.split()[:2] | map("first") | join("") | upper }}</span>
       <span class="who-text">
