@@ -46,9 +46,10 @@ every redesign:
 - The name is `internal-ai`.
 - The supplied marks in `Logo/` are the brand; the three SVGs the app serves are
   copied to `src/internal_ai/console/static/brand/`.
-- The palette is the one drawn in those marks: paper `#F7F8F6`, ink `#202A31`,
-  dark field `#171D22`, dark ink `#F0F3F1`, sage `#8AA99B` as the accent, and
-  `#3F5C4E` for sage text on paper.
+- The palette is three notes around those marks: Aqua Jade, Midnight Abyss and
+  a faint Baby pink. Paper `#F2F7F5`, ink `#0F1A1E`, rail `#0B1220`, dark field
+  `#080E15`, dark ink `#E8F1EE`; jade `#0E6B5C` as light-mode text and `#5FE0C5`
+  on the rail; pink `#F3C6D3` as an accent only, never a surface.
 - Type names Inter first, then the system UI face. No font is downloaded.
 - Appearance follows `prefers-color-scheme`. There is no theme toggle.
 - Session and form cookies are `SameSite=Strict`.

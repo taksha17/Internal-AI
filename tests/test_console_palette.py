@@ -39,6 +39,11 @@ PAIRS = [
     ("tone-warn-ink", "card"),
     ("tone-bad-ink", "card"),
     ("tone-idle-ink", "card"),
+    ("ink", "blush-wash"),
+    ("blush-ink", "blush"),
+    ("blush-text", "paper"),
+    ("blush-text", "card"),
+    ("blush-text", "panel"),
     ("rail-ink", "rail"),
     ("rail-item", "rail"),
     ("rail-item", "rail-hover"),
@@ -131,7 +136,7 @@ def test_no_rule_carries_a_colour_of_its_own() -> None:
     )
 
 
-def test_the_rail_keeps_one_charcoal_in_both_schemes() -> None:
+def test_the_rail_keeps_one_midnight_in_both_schemes() -> None:
     text = _read()
     dark_body = _block(text, "@media (prefers-color-scheme: dark)", 0)[0]
     redefined = [

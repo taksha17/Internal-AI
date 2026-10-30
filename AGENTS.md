@@ -88,23 +88,25 @@ Brand marks:
 - Favicon on every page: `internal-ai-icon.svg`.
 - Signed-in header: the icon at about 28px on a pale sage chip, then the
   wordmark in HTML (`internal` in rail ink, `-ai` in rail sage). The chip is
-  there because the mark's own ink is dark and the rail is charcoal. Do not put
+  there because the mark's own ink is dark and the rail is midnight. Do not put
   the lockup SVG in the bar. Its solid card does not fit there.
 - Sign-in: the full lockup. Light and dark are two images. The dark one is
   hidden until `prefers-color-scheme: dark`. The tagline stays inside the
   artwork. No theme toggle and no extra script.
 
-Color comes from those marks, warmed. Light paper is `#F4F3ED`, ink `#252B27`,
-cards white. The rail is one warm charcoal `#202522` carrying `#F1F4EF` text in
-both schemes: only the workspace follows `prefers-color-scheme`, where the field
-is `#141917` and ink `#ECF0EC`.
+Color is three notes around the marks: Aqua Jade, Midnight Abyss and a faint
+Baby pink. Light paper is a cool jade-white `#F2F7F5`, ink `#0F1A1E`, cards
+white. The rail is Midnight Abyss `#0B1220` carrying `#EEF3F2` text in both
+schemes: only the workspace follows `prefers-color-scheme`, where the field is
+`#080E15` and ink `#E8F1EE`.
 
-Sage is the accent but not as text in every place. `#3D5A48` carries light-mode
-text, links and focus; `#A9C3B0` does it in dark mode and on the rail. The
-lighter `#829A87` is a fill only, under `#222B25` ink, because it measures 2.73
-as text on paper. The primary button is deep forest `#315B40` with ivory text.
-Approve is `#2F6B45`, reject and the kill switch `#9C3A3A`, pending `#F6E7C4`
-under `#6B4A0E`; those three never become sage.
+Aqua Jade is the accent but not as text in every place. `#0E6B5C` carries
+light-mode text, links and focus; `#6FE6CB` does it in dark mode and `#5FE0C5`
+on the rail. `#2FB89E` is a fill only, under `#06231D` ink. The primary button
+is abyss-jade `#0D5C50` with ivory text. Approve is `#17694E`, reject and the
+kill switch `#8E2F3C`, pending `#F6E7C4` under `#6B4A0E`; those three never
+become jade. Baby pink `#F3C6D3` is an essence, never a surface: selection, the
+gate stripe, the kicker and a faint aura at the foot of the rail.
 
 Body text stays at or above 4.5:1 and a test holds it:
 `tests/test_console_palette.py`. Colours live only in the token block at the top

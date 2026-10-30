@@ -1,11 +1,11 @@
 /* Tokens first. Rules below read names, never hex, so a theme is this block. */
 :root {
-  --ink: #252B27;
-  --muted: #5C6157;
-  --line: #DCDAD0;
-  --line-strong: #C4C2B4;
-  --paper: #F4F3ED;
-  --panel: #E9E7DD;
+  --ink: #0F1A1E;
+  --muted: #4E5C5D;
+  --line: #D3E0DB;
+  --line-strong: #B9CBC5;
+  --paper: #F2F7F5;
+  --panel: #E4EFEA;
   --card: #ffffff;
   --field: #ffffff;
   --shade: #000000;
@@ -13,42 +13,47 @@
     0 2px 14px color-mix(in srgb, var(--shade) 5%, transparent);
   --lift-sm: 0 1px 0 color-mix(in srgb, var(--shade) 4%, transparent);
 
-  --sage: #3D5A48;
-  --sage-fill: #829A87;
-  --on-sage: #222B25;
-  --sage-wash: #DFE6DC;
-  --clay: #96602B;
-  --clay-strong: #7A4A1E;
-  --clay-wash: #F0E0C6;
+  --sage: #0E6B5C;
+  --sage-fill: #2FB89E;
+  --on-sage: #06231D;
+  --sage-wash: #DCEDE7;
+  --clay: #8A5A22;
+  --clay-strong: #6E4614;
+  --clay-wash: #F3E3CB;
 
-  --forest: #315B40;
-  --forest-hover: #27492F;
-  --on-forest: #F4F3ED;
-  --ok: #2F6B45;
-  --ok-hover: #27593A;
-  --on-ok: #F4F3ED;
-  --danger-fill: #9c3a3a;
-  --danger-hover: #832e2e;
+  --forest: #0D5C50;
+  --forest-hover: #0A4A40;
+  --on-forest: #F2F7F5;
+  --ok: #17694E;
+  --ok-hover: #125A42;
+  --on-ok: #F2F7F5;
+  --danger-fill: #8E2F3C;
+  --danger-hover: #772433;
   --on-danger: #fbeeec;
 
-  --tone-ok-bg: #d8f0e2;
-  --tone-ok-ink: #145c38;
+  --tone-ok-bg: #d6efe4;
+  --tone-ok-ink: #0b5a3e;
   --tone-warn-bg: #f6e7c4;
   --tone-warn-ink: #6b4a0e;
-  --tone-bad-bg: #fbdad6;
-  --tone-bad-ink: #8a1d16;
-  --tone-idle-bg: #E6E6DC;
-  --tone-idle-ink: #4F554F;
+  --tone-bad-bg: #fbd9de;
+  --tone-bad-ink: #7e1a28;
+  --tone-idle-bg: #e3ebe7;
+  --tone-idle-ink: #45534e;
 
-  --rail: #202522;
-  --rail-ink: #F1F4EF;
-  --rail-item: #D2D8D1;
-  --rail-sage: #A9C3B0;
-  --rail-muted: #9AA39A;
-  --rail-line: #333A34;
-  --rail-active: #2C332D;
-  --rail-hover: #272E28;
-  --rail-chip: #DCE4DA;
+  --rail: #0B1220;
+  --rail-ink: #EEF3F2;
+  --rail-item: #C2CFCC;
+  --rail-sage: #5FE0C5;
+  --rail-muted: #8FA0A2;
+  --rail-line: #1D2A38;
+  --rail-active: #14202E;
+  --rail-hover: #0F1926;
+  --rail-chip: #DDF3EC;
+
+  --blush: #F3C6D3;
+  --blush-ink: #4A1C2A;
+  --blush-wash: #FBEDF1;
+  --blush-text: #7A2C42;
 
   --radius: 12px;
   --control-radius: 8px;
@@ -60,42 +65,46 @@
   background: var(--paper);
 }
 
-/* Only the workspace changes scheme. The rail keeps one charcoal in both. */
+/* Only the workspace changes scheme. The rail keeps one midnight in both. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --ink: #ecf0ec;
-    --muted: #a4aea6;
-    --line: #2e3631;
-    --line-strong: #3d463f;
-    --paper: #141917;
-    --panel: #1f2622;
-    --card: #1a211d;
-    --field: #1a211d;
+    --ink: #E8F1EE;
+    --muted: #93A5A1;
+    --line: #1E2A37;
+    --line-strong: #2B3B4A;
+    --paper: #080E15;
+    --panel: #0E1622;
+    --card: #111A27;
+    --field: #111A27;
     --lift: 0 1px 2px color-mix(in srgb, var(--shade) 48%, transparent);
     --lift-sm: 0 1px 0 color-mix(in srgb, var(--shade) 34%, transparent);
 
-    --sage: #a9c3b0;
-    --sage-wash: #26312b;
-    --clay: #e0a35c;
-    --clay-strong: #e0a35c;
-    --clay-wash: #33261a;
+    --sage: #6FE6CB;
+    --sage-wash: #0F2A26;
+    --clay: #E8B77A;
+    --clay-strong: #E8B77A;
+    --clay-wash: #2C2317;
 
-    --forest: #3c6b4c;
-    --forest-hover: #336042;
-    --ok: #6ec99a;
-    --ok-hover: #5fba8d;
-    --on-ok: #16201a;
-    --danger-fill: #8f3b3b;
-    --danger-hover: #7a3131;
+    --forest: #0F6E58;
+    --forest-hover: #0C5D4A;
+    --ok: #63D6A8;
+    --ok-hover: #56C297;
+    --on-ok: #06231A;
+    --danger-fill: #A83E4A;
+    --danger-hover: #933442;
 
-    --tone-ok-bg: #1c3328;
-    --tone-ok-ink: #a9dcc0;
+    --tone-ok-bg: #12332a;
+    --tone-ok-ink: #a8e6c9;
     --tone-warn-bg: #3a3220;
     --tone-warn-ink: #f3e6c0;
-    --tone-bad-bg: #3a2422;
-    --tone-bad-ink: #f2bdb6;
-    --tone-idle-bg: #262c28;
-    --tone-idle-ink: #b6c0b8;
+    --tone-bad-bg: #3a2228;
+    --tone-bad-ink: #f4bdc6;
+    --tone-idle-bg: #1b2624;
+    --tone-idle-ink: #b4c3bf;
+
+    --blush-ink: #3A1420;
+    --blush-wash: #2E1B22;
+    --blush-text: #F3C6D3;
     color-scheme: dark;
   }
 }
@@ -133,7 +142,7 @@ a { color: var(--sage); text-decoration: underline; text-decoration-thickness: 1
 a:hover { text-decoration-thickness: 2px; }
 code, pre { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 0.86em; }
 pre { max-width: none; margin: 0 0 1rem; padding: 0.9rem 1rem; overflow-x: auto; white-space: pre-wrap; word-break: break-word; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
-::selection { background: var(--sage-wash); color: var(--ink); }
+::selection { background: var(--blush-wash); color: var(--ink); }
 ::placeholder { color: var(--muted); opacity: 1; }
 input, textarea { caret-color: var(--sage); }
 * { scrollbar-color: var(--line) transparent; }
@@ -154,6 +163,7 @@ input, textarea { caret-color: var(--sage); }
   overflow-y: auto;
   background:
     radial-gradient(26rem 14rem at 18% 0%, color-mix(in srgb, var(--rail-active) 78%, transparent), transparent 72%),
+    radial-gradient(18rem 12rem at 96% 100%, color-mix(in srgb, var(--blush) 10%, transparent), transparent 72%),
     var(--rail);
   border-right: 1px solid var(--rail-line);
   color: var(--rail-ink);
@@ -231,7 +241,7 @@ body.signed-out main { max-width: none; padding: 0; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.2rem; flex-wrap: wrap; margin: 0 0 1.15rem; }
 .page-head h1 { margin: 0.3rem 0 0; font-size: 1.5rem; }
 .lede { margin: 0.4rem 0 0; max-width: 70ch; color: var(--muted); font-size: 0.92rem; }
-.eyebrow { margin: 0 0 0.15rem; color: var(--clay); font-size: 0.78rem; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.eyebrow { margin: 0 0 0.15rem; color: var(--blush-text); font-size: 0.78rem; font-weight: 600; letter-spacing: 0; text-transform: none; }
 .head-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
 .head-chip { display: grid; place-items: center; width: 2.15rem; height: 2.15rem; border: 1px solid var(--line); border-radius: 0.62rem; background: var(--sage-wash); color: var(--sage); }
 .head-chip .icon { width: 1.1rem; height: 1.1rem; }
@@ -476,7 +486,7 @@ th a.sort.on { color: var(--ink); }
 /* ---------- gates, evidence, answers ---------- */
 .gate { margin: 0.9rem 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--control-radius); background: var(--card); box-shadow: var(--lift-sm); }
 .gate + .gate { margin-top: 0.8rem; }
-.gate-stripe { height: 1px; background: var(--sage-fill); }
+.gate-stripe { height: 1px; background: var(--blush); }
 .gate-body { padding: 1rem 1.1rem 1.05rem; }
 .gate-head { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
 .gate-title { font-size: 1rem; }
@@ -495,6 +505,7 @@ details.evidence summary { cursor: pointer; color: var(--sage); font-weight: 650
 .signin { display: grid; grid-template-columns: minmax(20rem, 25rem) minmax(0, 1fr); min-height: 100vh; }
 .signin-aside { display: flex; flex-direction: column; gap: 1.1rem; padding: 2.1rem 1.9rem 2.2rem; color: var(--rail-ink); background:
     radial-gradient(30rem 18rem at 20% 0%, color-mix(in srgb, var(--rail-active) 80%, transparent), transparent 72%),
+    radial-gradient(18rem 12rem at 96% 100%, color-mix(in srgb, var(--blush) 10%, transparent), transparent 72%),
     var(--rail);
   border-right: 1px solid var(--rail-line);
 }
