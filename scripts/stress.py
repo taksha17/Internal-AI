@@ -3,9 +3,14 @@
 
 Every number the README quotes about scale comes from this script. It runs the
 real services in-process for the build path and over HTTP for the two servers,
-so a failure here is a failure a person would meet.
+so a failure here is a failure a person would meet. A domain expert reviews the
+seeded language sample before the dataset releases, exactly as the console does.
 
-    .venv/bin/python scripts/stress.py --records 5000 --steps 200
+The demo model is a slim encoder rather than the smallest shape the platform
+names, so a synthetic corpus that fits on one workstation still clears the
+tokens-per-parameter floor the trainer enforces before it takes its first step.
+
+    .venv/bin/python scripts/stress.py --records 45000 --steps 80
 """
 
 from __future__ import annotations
@@ -31,6 +36,7 @@ from internal_ai.brief import Metric, ProjectBrief, programme_gaps
 from internal_ai.brief import load as load_brief
 from internal_ai.brief import save as save_brief
 from internal_ai.context import Platform
+from internal_ai.data.language import language_sample, submit_language_review
 from internal_ai.data.pipeline import DataPipeline
 from internal_ai.data.samples import generate_corpus
 from internal_ai.domain import GateType
@@ -496,8 +502,8 @@ def console_phase(root: Path, person: str) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default="var_stress")
-    parser.add_argument("--records", type=int, default=5000)
-    parser.add_argument("--steps", type=int, default=200)
+    parser.add_argument("--records", type=int, default=45000)
+    parser.add_argument("--steps", type=int, default=80)
     parser.add_argument("--requests", type=int, default=120)
     parser.add_argument("--concurrency", type=int, default=12)
     parser.add_argument("--pair-mode", choices=("paraphrase", "title"), default="paraphrase")
@@ -508,6 +514,9 @@ def main() -> int:
         help="the recall@10 bar the harness records in its brief; a company sets its own",
     )
     parser.add_argument("--skip-serving", action="store_true")
+    parser.add_argument(
+        "--skip-console", action="store_true", help="skip the console sign-in phase"
+    )
     parser.add_argument("--keep", action="store_true", help="reuse an existing root")
     args = parser.parse_args()
 
@@ -563,7 +572,7 @@ def main() -> int:
         report["splits"] = counts
 
         clock.start("tokenizer")
-        tokenizer, coverage = train_tokenizer_for(platform, dataset_id, vocab_size=8000)
+        tokenizer, coverage = train_tokenizer_for(platform, dataset_id, vocab_size=1500)
         clock.stop(vocab=tokenizer.vocab_size, tokens=coverage.get("tokens"))
         report["tokenizer"] = {
             "vocab": tokenizer.vocab_size,
@@ -572,6 +581,12 @@ def main() -> int:
         }
 
         clock.start("release")
+        language_review = submit_language_review(
+            platform.store,
+            Actor.from_person(people["domain_expert"], authenticated=True),
+            dataset_id,
+            {row["id"]: "correct" for row in language_sample(platform.store, dataset_id)},
+        )
         release_gate = request_and_approve(
             platform,
             GateType.DATASET_RELEASE,
@@ -584,7 +599,7 @@ def main() -> int:
         DataPipeline(platform.store, platform.audit, platform.settings.root).release(
             dataset_id, "ml_lead", gate_approved=True
         )
-        clock.stop(gate=release_gate)
+        clock.stop(gate=release_gate, language_reviewed=language_review["sampled"])
 
         clock.start("train")
         config = TrainConfig(
@@ -592,14 +607,18 @@ def main() -> int:
             steps=args.steps,
             batch_size=16,
             seq_len=128,
-            d_model=128,
+            d_model=64,
             n_layers=4,
             n_heads=4,
-            d_ff=512,
+            d_ff=128,
             checkpoint_interval=50,
             log_interval=10,
             eval_interval=25,
             learning_rate=3e-4,
+            vocab_rationale=(
+                "1500 covers the synthetic corpus above the 20-tokens-per-parameter "
+                "floor the tokenizer coverage report measures"
+            ),
         )
         outcome = train_embedding_model(
             platform,
@@ -721,13 +740,14 @@ def main() -> int:
             report["rate_limit"] = rate_limit_phase(root)
             clock.stop()
 
-        identity = IdentityService(platform)
-        admin = Actor.from_person(people["ml_lead"], authenticated=False)
-        one_time = identity.create_account(people["compliance"]["id"], created_by=admin)
-        identity.change_password(people["compliance"]["id"], one_time, PASSWORD)
-        clock.start("console")
-        report["console"] = console_phase(root, people["compliance"]["name"])
-        clock.stop()
+        if not args.skip_console:
+            identity = IdentityService(platform)
+            admin = Actor.from_person(people["ml_lead"], authenticated=False)
+            one_time = identity.create_account(people["compliance"]["id"], created_by=admin)
+            identity.change_password(people["compliance"]["id"], one_time, PASSWORD)
+            clock.start("console")
+            report["console"] = console_phase(root, people["compliance"]["name"])
+            clock.stop()
 
         report["stages"] = clock.stages
         report["brief_after"] = load_brief(platform.store).missing

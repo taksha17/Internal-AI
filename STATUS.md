@@ -10,9 +10,15 @@ The authoritative PRD is `../PRD Agent-Driven In-House LLM Build Platform.md`
 
 ## Verification
 
-- Tests: `.venv/bin/python -m pytest` → **88 passed**, exit 0 (torch 2.14.1+cpu).
+- Tests: `.venv/bin/python -m pytest` → **442 passed**, exit 0 (torch 2.14.1+cpu).
 - Lint and format: `.venv/bin/ruff check .` → clean; `.venv/bin/ruff format --check .`
   → clean.
+- Phase 0 change 0.1 (`docs/yc-plan/PLAN.md`), 2026-10-30: `scripts/stress.py`
+  now satisfies the language-review release gate (a domain expert files the
+  review before release) and the demo model is resized to clear the
+  tokens-per-parameter floor, so the script completes (exit 0). The README
+  "Verified at scale" numbers are regenerated from a real run on a 16 GB AMD
+  Ryzen 5 5600H Windows PC. Record: `docs/changes/29-stress-language-gate.md`.
 - Tester-facing gaps closed on 2026-10-23: the serving API now reports the
   version the router actually serves as `active`, and the agentic search path
   enforces document ACLs like the serving API does. The agentic path had no
