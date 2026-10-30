@@ -10,14 +10,15 @@ The authoritative PRD is `../PRD Agent-Driven In-House LLM Build Platform.md`
 
 ## Verification
 
-- Tests: `.venv/bin/python -m pytest` → **442 passed**, exit 0, at the last
-  full Linux run (torch 2.14.1+cpu). Phase 0 changes 0.2 to 0.4 add 12 tests,
-  so the suite collects 454. The re-run for those changes was made on the 16 GB
-  Windows test machine, since the Linux workstation used for the edit cannot
-  hold a full run: the 12 new tests pass there and `ruff` is clean, while the
-  18 failures that machine reports fail identically on a pristine `HEAD`
-  checkout there (missing external binaries and PDF tooling in that
-  environment), so none of them comes from this change.
+- Tests: `.venv/bin/python -m pytest` → **454 passed, 0 failed**, exit 0, in
+  104 s on the 16 GB Windows test machine (torch 2.14.1+cpu), for the Phase 0
+  changes; the Linux workstation used for the edit cannot hold a full run. 442
+  of those tests were green on Linux before the change and 0.2 to 0.4 add 12.
+  Two things matter there. Run it from a checkout, not an exported copy:
+  `DataPipeline.release` stamps `git rev-parse HEAD` and refuses "code commit is
+  unknown", so a copy without `.git` fails every release test. The interpreter
+  needs the core dependencies (`pip install -e .`), not only the `dev` extra,
+  or the PDF tests stop on a missing `pypdf`.
 - Lint and format: `.venv/bin/ruff check .` → clean; `.venv/bin/ruff format --check .`
   → clean.
 - Phase 0 change 0.1 (`docs/yc-plan/PLAN.md`), 2026-10-30: `scripts/stress.py`

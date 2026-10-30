@@ -54,14 +54,16 @@ but the code still had:
   queries; a warm query answers in under 100 ms; a contractor sees only
   permitted documents after an admin warmed the cache; a changed content hash
   re-embeds.
-- The suite was run on the 16 GB Windows test machine (`D:\Internal-AI`),
-  because the Linux workstation used for the edit cannot hold a full run. The
-  12 new tests pass there, and `ruff check .` and `ruff format --check .` are
-  clean (219 files). That machine reports 18 failures in release, PDF and
-  scheduler tests; every one of them fails identically on a pristine `HEAD`
-  checkout there, so they come from that environment, not from this change.
-  The Linux runner was green at 442 passed before this change and collects 454
-  with it.
+- The suite was run on the 16 GB Windows test machine, because the Linux
+  workstation used for the edit cannot hold a full run: **454 passed, 0
+  failed**, exit 0, in 104 s, from a clone of this branch. `ruff check .` and
+  `ruff format --check .` are clean (219 files). The Linux runner was green at
+  442 passed before this change; the 12 tests above make 454.
+- Where it runs matters. An exported copy of the tree fails every release test
+  with "code commit is unknown", because `DataPipeline.release` stamps `git
+  rev-parse HEAD` and there is no `.git`; an interpreter carrying only the
+  `dev` extra fails the PDF tests on a missing `pypdf`. Both looked like
+  platform failures the first time and neither was.
 
 ## Out of scope
 
