@@ -11,6 +11,11 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     fetch = commands.add_parser("fetch")
     fetch.add_argument("root", type=Path)
+    fetch.add_argument(
+        "--allow-research-licence",
+        action="store_true",
+        help="fall back to the research-licensed 3B pin when the 4B download fails",
+    )
     smoke = commands.add_parser("smoke")
     smoke.add_argument("root", type=Path)
     smoke.add_argument("out", type=Path)
@@ -24,7 +29,9 @@ def main() -> None:
     if args.command == "fetch":
         from internal_ai.training.alpha.fetch import fetch_primary_or_fallback
 
-        base = fetch_primary_or_fallback(args.root)
+        base = fetch_primary_or_fallback(
+            args.root, allow_research_licence=args.allow_research_licence
+        )
         print(f"{base.repo_id} {base.revision}", flush=True)
         return
     if args.command == "train":

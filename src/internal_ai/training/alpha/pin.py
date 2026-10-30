@@ -3,9 +3,38 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 from internal_ai.ids import file_hash
+
+
+class LicenseClass(StrEnum):
+    """How far a licence lets a company use the weights it covers."""
+
+    PERMISSIVE = "permissive"
+    RESTRICTED = "restricted"
+    RESEARCH_ONLY = "research_only"
+
+
+PERMISSIVE_LICENSES = frozenset({"Apache-2.0", "MIT"})
+RESTRICTED_LICENSES = frozenset(
+    {"Llama-3.1-Community", "Llama-3-Community", "Gemma", "CC-BY-NC-4.0"}
+)
+DEFAULT_ALLOWED: frozenset[LicenseClass] = frozenset({LicenseClass.PERMISSIVE})
+
+
+class BaseRefused(PermissionError):
+    """A base this install may not load. The message names the class that blocked it."""
+
+
+def license_class_of(spdx: str) -> LicenseClass:
+    """An unreviewed licence gets the strictest class, never the permissive one."""
+    if spdx in PERMISSIVE_LICENSES:
+        return LicenseClass.PERMISSIVE
+    if spdx in RESTRICTED_LICENSES:
+        return LicenseClass.RESTRICTED
+    return LicenseClass.RESEARCH_ONLY
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +54,10 @@ class PinnedBase:
     def directory(self, root: Path) -> Path:
         safe = self.repo_id.replace("/", "--")
         return root / safe / self.revision
+
+    @property
+    def license_class(self) -> LicenseClass:
+        return license_class_of(self.license)
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,11 +130,37 @@ def verify_snapshot(base: PinnedBase, root: Path) -> Path:
     return directory
 
 
-def available_base(root: Path) -> PinnedBase:
-    """Qwen3-4B when its shards match, otherwise the 3B model already trained here."""
-    try:
-        verify_snapshot(PRIMARY, root)
-    except (FileNotFoundError, ValueError):
-        verify_snapshot(FALLBACK, root)
-        return FALLBACK
-    return PRIMARY
+PINNED: tuple[PinnedBase, ...] = (PRIMARY, FALLBACK)
+
+
+def available_base(
+    root: Path,
+    allowed: frozenset[LicenseClass] = DEFAULT_ALLOWED,
+    bases: tuple[PinnedBase, ...] = PINNED,
+) -> PinnedBase:
+    """The first pinned base on disk whose licence is allowed.
+
+    A base that fails verification is skipped, not replaced by a worse one: the
+    3B pin is research-licensed, so reaching it because the 4B pin is missing
+    would hand a company a licence it cannot use while telling it nothing.
+    """
+    missing: list[str] = []
+    refused: list[str] = []
+    for base in bases:
+        try:
+            verify_snapshot(base, root)
+        except (FileNotFoundError, ValueError) as exc:
+            missing.append(f"{base.repo_id}: {exc}")
+            continue
+        if base.license_class not in allowed:
+            refused.append(f"{base.repo_id} is {base.license} ({base.license_class})")
+            continue
+        return base
+    if refused:
+        classes = ", ".join(sorted(allowed))
+        raise BaseRefused(
+            "no allowed pinned base is on disk; "
+            + "; ".join(refused)
+            + f"; this install allows {classes}"
+        )
+    raise BaseRefused("no pinned base is on disk: " + "; ".join(missing))

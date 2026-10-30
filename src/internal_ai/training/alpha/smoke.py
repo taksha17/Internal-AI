@@ -43,14 +43,25 @@ def _step(base, root: Path, out: Path) -> dict[str, str]:
 
 
 def smoke(root: Path, out: Path) -> dict[str, str]:
-    """One streamed step. A GPU out-of-memory error uses the local 3B pin."""
-    from internal_ai.training.alpha.pin import FALLBACK, verify_snapshot
+    """One streamed step. Running out of memory does not swap in a research licence."""
+    from internal_ai.training.alpha.pin import (
+        DEFAULT_ALLOWED,
+        FALLBACK,
+        BaseRefused,
+        verify_snapshot,
+    )
 
     base = available_base(root)
     try:
         return _step(base, root, out)
     except RuntimeError as exc:
-        if base.repo_id == FALLBACK.repo_id or "out of memory" not in str(exc).lower():
+        if "out of memory" not in str(exc).lower():
             raise
+        if FALLBACK.license_class not in DEFAULT_ALLOWED:
+            raise BaseRefused(
+                f"{base.repo_id} ran out of memory and {FALLBACK.repo_id} is "
+                f"{FALLBACK.license} ({FALLBACK.license_class}); using it needs an approved "
+                "base_model_exception"
+            ) from exc
         verify_snapshot(FALLBACK, root)
         return _step(FALLBACK, root, out)

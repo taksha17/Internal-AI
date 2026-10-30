@@ -17,7 +17,7 @@ from internal_ai.services.actor import Actor
 from internal_ai.services.permissions import Action, require
 from internal_ai.training.alpha.card import alpha_card
 from internal_ai.training.alpha.citations import AskHit, CitationReport, score_answer
-from internal_ai.training.alpha.pin import FALLBACK, PRIMARY, RECIPE, PinnedBase
+from internal_ai.training.alpha.pin import FALLBACK, PRIMARY, RECIPE, LicenseClass, PinnedBase
 from internal_ai.training.ownership import require_released_dataset
 from internal_ai.workflows import latest_frozen_pass, model_card_markdown, promote_model
 
@@ -38,6 +38,12 @@ def register_alpha(
     require(platform.audit, actor, Action.REGISTER_MODEL, str(adapter_path))
     if base not in (PRIMARY, FALLBACK):
         raise PermissionError("alpha may load only the pinned base named in this package")
+    if base.license_class != LicenseClass.PERMISSIVE:
+        raise PermissionError(
+            f"{base.repo_id} is {base.license} ({base.license_class}); registering an adapter "
+            "on it needs an approved base_model_exception, and this install allows "
+            f"{LicenseClass.PERMISSIVE}"
+        )
     dataset = require_released_dataset(platform.store.get_dataset(dataset_id))
     digest = file_hash(adapter_path)
     card = alpha_card(

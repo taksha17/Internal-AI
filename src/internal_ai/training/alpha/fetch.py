@@ -7,7 +7,14 @@ from pathlib import Path
 
 from internal_ai.config import offline_mode
 from internal_ai.ids import file_hash
-from internal_ai.training.alpha.pin import FALLBACK, PRIMARY, PinnedBase, verify_snapshot
+from internal_ai.training.alpha.pin import (
+    DEFAULT_ALLOWED,
+    FALLBACK,
+    PRIMARY,
+    BaseRefused,
+    PinnedBase,
+    verify_snapshot,
+)
 
 
 def _url(base: PinnedBase, name: str) -> str:
@@ -57,11 +64,22 @@ def fetch_base(base: PinnedBase, root: Path) -> Path:
     return verify_snapshot(base, root)
 
 
-def fetch_primary_or_fallback(root: Path) -> PinnedBase:
-    """Qwen3-4B first. A failed smoke download leaves the proven 3B pin to try."""
+def fetch_primary_or_fallback(root: Path, *, allow_research_licence: bool = False) -> PinnedBase:
+    """Qwen3-4B first. The research-licensed 3B pin is fetched only when named.
+
+    A failed download used to fall through to the 3B model silently. An install
+    that later trains and ships an adapter would then owe its provenance to a
+    licence nobody approved, so the fallback now needs the caller to ask.
+    """
     try:
         fetch_base(PRIMARY, root)
-    except (OSError, ValueError):
+    except (OSError, ValueError) as exc:
+        if FALLBACK.license_class not in DEFAULT_ALLOWED and not allow_research_licence:
+            raise BaseRefused(
+                f"{PRIMARY.repo_id} could not be fetched and {FALLBACK.repo_id} is "
+                f"{FALLBACK.license} ({FALLBACK.license_class}); it is fetched only when "
+                "allow_research_licence is set"
+            ) from exc
         fetch_base(FALLBACK, root)
         return FALLBACK
     return PRIMARY
