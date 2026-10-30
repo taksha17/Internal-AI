@@ -50,7 +50,7 @@ from internal_ai.services.identity import (
 )
 from internal_ai.services.jobs import JobRunner
 from internal_ai.services.permissions import Action, PermissionDenied, allowed, deny, reason
-from internal_ai.services.triage import triage_view
+from internal_ai.services.triage import eval_case_from_trace, triage_view
 from internal_ai.serving.guardrails import INSTALL_POLICY_KEY, configured_install_policy
 from internal_ai.serving.service import out_of_service
 from internal_ai.store import ALLOWED_TRANSITIONS, TransitionError
@@ -673,6 +673,21 @@ def mount_console(
         except PermissionDenied as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         return render(ctx, "traces.html", buckets=buckets)
+
+    @app.post("/console/traces/{trace_id}/eval-case", include_in_schema=False)
+    async def trace_eval_case(request: Request, trace_id: str) -> Response:
+        ctx = context(request)
+        await posted(ctx)
+        return await act(
+            ctx,
+            "/console/traces",
+            lambda: eval_case_from_trace(ctx.platform, ctx.actor, trace_id),
+            lambda eval_set: (
+                f"{trace_id} is now a case in {eval_set.name} v{eval_set.version}; "
+                "freeze it before a model is measured against it"
+            ),
+            to="/console/evals",
+        )
 
     @app.get("/console/search", include_in_schema=False)
     def search_page(request: Request, q: str = "") -> Response:

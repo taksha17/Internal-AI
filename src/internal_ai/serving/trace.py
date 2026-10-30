@@ -204,6 +204,22 @@ def _row_to_trace(row: Any) -> Trace:
     )
 
 
+def get_trace(store: Store, principal: Principal, trace_id: str) -> Trace:
+    """One trace, if this principal may read it. Another group's trace is not a 404.
+
+    It is refused as a permission error rather than hidden, because the caller
+    typed an id that exists: pretending it does not would make a shared store
+    look emptier than it is without making it safer.
+    """
+    row = store.conn.execute("SELECT * FROM traces WHERE id = ?", (trace_id,)).fetchone()
+    if row is None:
+        raise KeyError(f"unknown trace: {trace_id}")
+    trace = _row_to_trace(row)
+    if not principal.can_read(trace.acl, trace.sensitivity):
+        raise PermissionError("this trace belongs to a group you are not in")
+    return trace
+
+
 def list_traces(
     store: Store,
     principal: Principal,

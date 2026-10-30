@@ -18,7 +18,7 @@
     </div>
     <span class="badge {{ 'badge-failed' if buckets.citation_mismatch else 'badge-approved' }}">{{ buckets.citation_mismatch | length }}</span>
   </div>
-  {% call m.data_table([("Question",), ("Model",), ("Who asked",), ("When",), ("Redactions",)]) %}
+  {% call m.data_table([("Question",), ("Model",), ("Who asked",), ("When",), ("Redactions",), ("Action",)]) %}
     {% for trace in buckets.citation_mismatch %}
     <tr>
       <td class="row-title">{{ trace.question | truncate(140) }}<br><span class="row-sub">{{ trace.endpoint }} · {{ trace.citations | length }} cited line{{ "s" if trace.citations | length != 1 }} · {{ trace.latency_ms }} ms</span></td>
@@ -26,9 +26,10 @@
       <td>{{ trace.user_id }}</td>
       <td>{{ trace.created_at | when }}</td>
       <td>{% if trace.redactions %}{% for kind, count in trace.redactions.items() %}{{ kind }} {{ count }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}<span class="muted">none</span>{% endif %}</td>
+      <td><form method="post" action="/console/traces/{{ trace.id }}/eval-case" class="inline-form">{{ m.csrf_field() }}<button type="submit" class="btn-sm">Make a regression case</button></form></td>
     </tr>
     {% else %}
-    {{ m.empty_row(5, "No citation failures", "An answer that keeps its line numbers stays out of this list.", "/console/approvals", "See what is waiting") }}
+    {{ m.empty_row(6, "No citation failures", "An answer that keeps its line numbers stays out of this list.", "/console/approvals", "See what is waiting") }}
     {% endfor %}
   {% endcall %}
 </section>
