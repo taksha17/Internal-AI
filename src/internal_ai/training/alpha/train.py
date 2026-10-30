@@ -33,6 +33,7 @@ def train_prefix(
     out: Path,
     layers: int = 2,
     sequences: int = 4,
+    seed: int = 0,
 ) -> dict[str, Any]:
     """Adapt the first ``layers`` of the pinned base on ``texts``."""
     import torch
@@ -50,7 +51,7 @@ def train_prefix(
     embed = embed.half().to(device) if device == "cuda" else embed.to(device)
     query_out = shape.heads * shape.head_dim
     scale = RECIPE.alpha / RECIPE.rank
-    torch.manual_seed(0)
+    torch.manual_seed(seed)
     pairs: dict[int, tuple[Any, Any]] = {}
     for layer in range(depth):
         left = torch.randn(RECIPE.rank, shape.hidden, device=device) * 0.02
@@ -112,6 +113,7 @@ def train_prefix(
             "rank": RECIPE.rank,
             "max_seq_len": RECIPE.max_seq_len,
             "quantization": RECIPE.quantization,
+            "seed": seed,
             "losses": losses,
             "trained_layers": depth,
         },

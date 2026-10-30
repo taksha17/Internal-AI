@@ -25,6 +25,7 @@ def main() -> None:
     train.add_argument("out", type=Path)
     train.add_argument("--layers", type=int, default=2)
     train.add_argument("--sequences", type=int, default=4)
+    train.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
     if args.command == "fetch":
         from internal_ai.training.alpha.fetch import fetch_primary_or_fallback
@@ -41,6 +42,11 @@ def main() -> None:
         texts = [
             line for line in args.texts.read_text(encoding="utf-8").splitlines() if line.strip()
         ]
+        print(
+            "ungoverned: this writes no run row, no reproducibility record and no audit "
+            "event; use services.alpha.train_alpha for anything you keep",
+            flush=True,
+        )
         result = train_prefix(
             available_base(args.root),
             args.root,
@@ -48,6 +54,7 @@ def main() -> None:
             args.out,
             layers=args.layers,
             sequences=args.sequences,
+            seed=args.seed,
         )
         print(
             f"{result['base_repo_id']} layers={result['layers']} "

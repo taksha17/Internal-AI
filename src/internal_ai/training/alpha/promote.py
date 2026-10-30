@@ -14,6 +14,7 @@ from internal_ai.domain import AuditOutcome, EvalReport, EvalSet, GateType, Mode
 from internal_ai.ids import content_hash, file_hash, new_id, now_iso
 from internal_ai.services import governance
 from internal_ai.services.actor import Actor
+from internal_ai.services.alpha import reproducibility_beside
 from internal_ai.services.permissions import Action, require
 from internal_ai.training.alpha.card import alpha_card
 from internal_ai.training.alpha.citations import AskHit, CitationReport, score_answer
@@ -53,6 +54,12 @@ def register_alpha(
         dataset.content_hash,
         digest,
     )
+    record = reproducibility_beside(adapter_path)
+    if record:
+        card["reproducibility"] = record
+        card["commit"] = record.get("commit")
+        card["seed"] = record.get("seed")
+        card["run_id"] = record.get("run_id")
     existing = platform.store.list_models(name=base.repo_id.split("/")[-1].lower())
     version = max((item.version for item in existing), default=0) + 1
     model = ModelVersion(
