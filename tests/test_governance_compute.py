@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -314,7 +315,7 @@ def test_job_scheduler_runs_a_job(platform) -> None:
     job = scheduler.submit(
         JobSpec(
             name="smoke",
-            command=["echo", "hello"],
+            command=[sys.executable, "-c", "print('hello')"],
             agent="infra_engineer",
             tokens=1000,
             parameters=1000,
