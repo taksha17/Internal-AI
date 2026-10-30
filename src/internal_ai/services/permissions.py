@@ -39,6 +39,7 @@ class Action(StrEnum):
     SET_SERVING_POLICY = "set_serving_policy"
     DECIDE_POLICY = "decide_policy"
     WRITE_BRIEF = "write_brief"
+    WRITE_RECIPE = "write_recipe"
     MANAGE_PEOPLE = "manage_people"
     VIEW_TRACES = "view_traces"
 
@@ -69,6 +70,7 @@ ACTION_ROLES: dict[Action, frozenset[str]] = {
     Action.SET_SERVING_POLICY: frozenset({"ml_lead"}),
     Action.DECIDE_POLICY: frozenset({"program_lead", "legal"}),
     Action.WRITE_BRIEF: frozenset({"program_lead", "ml_lead"}),
+    Action.WRITE_RECIPE: frozenset({"ml_lead", "program_lead"}),
     Action.MANAGE_PEOPLE: frozenset({"program_lead", "engineering_manager"}),
     Action.VIEW_TRACES: frozenset({"ml_lead", "program_lead", "compliance", "domain_expert"}),
 }
