@@ -49,7 +49,8 @@ from internal_ai.services.identity import (
     Session,
 )
 from internal_ai.services.jobs import JobRunner
-from internal_ai.services.permissions import Action, allowed, deny, reason
+from internal_ai.services.permissions import Action, PermissionDenied, allowed, deny, reason
+from internal_ai.services.triage import triage_view
 from internal_ai.serving.guardrails import INSTALL_POLICY_KEY, configured_install_policy
 from internal_ai.serving.service import out_of_service
 from internal_ai.store import ALLOWED_TRANSITIONS, TransitionError
@@ -79,6 +80,7 @@ NAV = [
     ("Approvals", "/console/approvals"),
     ("Audit log", "/console/audit"),
     ("Inbox", "/console/inbox"),
+    ("Failed answers", "/console/traces"),
     ("Data", "/console/sources"),
     ("Models", "/console/models"),
     ("Brief", "/console/brief"),
@@ -662,6 +664,15 @@ def mount_console(
     def inbox_page(request: Request) -> Response:
         ctx = context(request)
         return render(ctx, "inbox.html")
+
+    @app.get("/console/traces", include_in_schema=False)
+    def traces_page(request: Request) -> Response:
+        ctx = context(request)
+        try:
+            buckets = triage_view(ctx.platform, ctx.actor)
+        except PermissionDenied as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        return render(ctx, "traces.html", buckets=buckets)
 
     @app.get("/console/search", include_in_schema=False)
     def search_page(request: Request, q: str = "") -> Response:

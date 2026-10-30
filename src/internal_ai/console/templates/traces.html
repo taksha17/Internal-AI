@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Failed answers{% endblock %}
+{% block crumb %}Failed answers{% endblock %}
+{% block content %}
+{{ m.page_head("Failed answers", "Questions that did not come back clean, grouped by why. A trace is scrubbed and tagged with its asker's groups before it is stored, so what you read here is already safe to read.", "Triage") }}
+
+{% set total = buckets.citation_mismatch | length + buckets.guardrail_block | length + buckets.no_evidence | length %}
+{% if total == 0 %}
+{{ m.empty("Nothing to triage", "A failed citation, a withheld answer or a question with no evidence lands here the moment it happens.", "/console/home", "Back to the overview") }}
+{% else %}
+
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>The answer moved a citation</h2>
+      <p class="card-sub">Every line number must stay on the file the hit named. These are the answers that did not, which makes them the best candidates for a new eval case.</p>
+    </div>
+    <span class="badge {{ 'badge-failed' if buckets.citation_mismatch else 'badge-approved' }}">{{ buckets.citation_mismatch | length }}</span>
+  </div>
+  {% call m.data_table([("Question",), ("Model",), ("Who asked",), ("When",), ("Redactions",)]) %}
+    {% for trace in buckets.citation_mismatch %}
+    <tr>
+      <td class="row-title">{{ trace.question | truncate(140) }}<br><span class="row-sub">{{ trace.endpoint }} · {{ trace.citations | length }} cited line{{ "s" if trace.citations | length != 1 }} · {{ trace.latency_ms }} ms</span></td>
+      <td>{{ trace.model_id or "unknown" }}</td>
+      <td>{{ trace.user_id }}</td>
+      <td>{{ trace.created_at | when }}</td>
+      <td>{% if trace.redactions %}{% for kind, count in trace.redactions.items() %}{{ kind }} {{ count }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}<span class="muted">none</span>{% endif %}</td>
+    </tr>
+    {% else %}
+    {{ m.empty_row(5, "No citation failures", "An answer that keeps its line numbers stays out of this list.", "/console/approvals", "See what is waiting") }}
+    {% endfor %}
+  {% endcall %}
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>The guardrail withheld the answer</h2>
+      <p class="card-sub">Either the install refuses answers that trip a detector, or the model was promoted with a policy that only warns. A block here is the policy working; the question still tells you what people are asking for.</p>
+    </div>
+    <span class="badge {{ 'badge-pending' if buckets.guardrail_block else 'badge-approved' }}">{{ buckets.guardrail_block | length }}</span>
+  </div>
+  {% call m.data_table([("Question",), ("Model",), ("Who asked",), ("When",)]) %}
+    {% for trace in buckets.guardrail_block %}
+    <tr>
+      <td class="row-title">{{ trace.question | truncate(140) }}<br><span class="row-sub">{{ trace.endpoint }} · status {{ trace.status_code }}</span></td>
+      <td>{{ trace.model_id or "unknown" }}</td>
+      <td>{{ trace.user_id }}</td>
+      <td>{{ trace.created_at | when }}</td>
+    </tr>
+    {% else %}
+    {{ m.empty_row(4, "No withheld answers", "A request the guardrail refused appears here with its status.", "/console/models", "Review guardrail policy") }}
+    {% endfor %}
+  {% endcall %}
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h2>No supporting evidence</h2>
+      <p class="card-sub">The retrieval found nothing the asker was allowed to read. Either the corpus is missing the material, or the question is asked in words the index does not carry.</p>
+    </div>
+    <span class="badge {{ 'badge-pending' if buckets.no_evidence else 'badge-approved' }}">{{ buckets.no_evidence | length }}</span>
+  </div>
+  {% call m.data_table([("Question",), ("Model",), ("Who asked",), ("When",)]) %}
+    {% for trace in buckets.no_evidence %}
+    <tr>
+      <td class="row-title">{{ trace.question | truncate(140) }}<br><span class="row-sub">{{ trace.endpoint }}</span></td>
+      <td>{{ trace.model_id or "unknown" }}</td>
+      <td>{{ trace.user_id }}</td>
+      <td>{{ trace.created_at | when }}</td>
+    </tr>
+    {% else %}
+    {{ m.empty_row(4, "Nothing came back empty", "A question whose retrieval found no readable document appears here.", "/console/datasets", "Review datasets") }}
+    {% endfor %}
+  {% endcall %}
+</section>
+
+<p class="muted small">Traces are kept for thirty days and then deleted. The text here was scrubbed before it was stored: a redaction count means the detector fired, not that the question was clean.</p>
+{% endif %}
+{% endblock %}
