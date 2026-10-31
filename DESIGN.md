@@ -9,145 +9,153 @@ one.
 ## Shape
 
 The console is one instrument, not a set of pages. A signed-in page is a pinned
-rail and one content column.- The rail is `18rem` wide, `position: sticky`, `height: 100vh`, on the one
-  charcoal `--rail` with a `--rail-line` hairline on its right and a faint
-  `--rail-active` glow at the top. The brand block is the shield at about
-  `30px` on a pale sage chip, the wordmark in HTML, and a muted
+rail and one content column.
+
+- The rail is `18rem` wide, `position: fixed`, `height: 100vh`, on the one
+  midnight `--rail` with a `--rail-line` hairline on its right and a faint
+  `--rail-active` glow at the top. It is pinned rather than sticky, so the
+  topbar is the only element that owns the top edge of the screen. The brand
+  block is the shield on a pale sage chip, the wordmark in HTML, and a muted
   `PRIVATE BY DESIGN` micro-cap, above a hairline. Destinations are one flat
   list with no group headings: Overview, Pipelines, Datasets, Training,
-  Evaluations, Approvals, Audit log, a hairline, then Inbox, Data, Models,
-  Brief, Ask and Admin. Each row is `2.45rem`: a `1.05rem` stroke icon from the
-  sprite, the label, and the approvals count as a sage pill. The active row is
-  `--rail-active` with a `--rail-sage` icon, `aria-current="page"`, and the
-  same fill on hover so it does not flicker. The bottom holds the person: an
-  initial disc, the name, the roles, and Sign out. The rail does not change with the
-  colour scheme; only the workspace does.
-- The content column holds a sticky topbar and then `main`, capped at `76rem`
-  and padded `2rem` by side. The topbar blurs the paper behind it and carries
-  a breadcrumb, a `Local · no external calls` scope pill, and the kill switch
-  as a pill: status label, a reason field that grows to fill, and
-  Engage/Release. Idle it is card on hairline; engaged it is `--danger-fill`
-  with `--on-danger` text.
+  Evaluations, Approvals, Audit log, a hairline, then Inbox, Failed answers,
+  Data, Models, Brief, Ask and Admin. Each row is `2.45rem`: a `1.05rem` stroke
+  icon from the sprite, the label, and the approvals count as a jade pill. The
+  active row is `--rail-active` with a `--rail-sage` icon, `aria-current="page"`,
+  and the same fill on hover so it does not flicker. The bottom holds the
+  person: an initial disc, the name, the roles, and Sign out. The rail does not
+  change with the colour scheme; only the workspace does.
+- The content column is `.column`, `margin-left: 18rem`, holding a sticky
+  topbar and then `main`, capped at `80rem` and padded `2rem` by side. The
+  topbar blurs the paper behind it and carries a breadcrumb, a search field,
+  a `Local · no external calls` scope pill, and the kill switch as a chip.
 - Below `900px` the grid collapses to one column. The rail becomes a top band:
-  mark, then the grouped links in one horizontally scrolling row
-  (`overflow-x: auto`, scrollbar hidden), each keeping its icon, then the
-  person. No menu, no script, no destination hidden. The readiness note hides;
-  the topbar wraps.
-- On narrow widths `main` is itself horizontally scrollable, so a wide table
-  scrolls inside the page instead of pushing the shell sideways.
+  mark, then the links in one horizontally scrolling row (`overflow-x: auto`,
+  the scrollbar visible and thin), each keeping its icon, then the person. The
+  active destination is first in the row (`order: -1`), so the band always
+  opens on where you are. No menu, no script, no destination hidden. The
+  topbar wraps, and the controls grow to `2.65rem` for a finger.
+- `html, body` carry `overflow-x: clip`, so a wide table scrolls inside its own
+  `.table-wrap` instead of pushing the shell sideways.
 
-Sign-in is the one page without the rail: a charcoal brand panel with the
+Sign-in is the one page without the rail: a midnight brand panel with the
 mark, "Private by design.", the product facts and three audited guarantees,
-beside an ivory form panel that holds the theme-aware lockup and the form at
+beside a paper form panel that holds the theme-aware lockup and the form at
 `22.5rem`. Below `900px` the panel is dropped and the form stands alone. Both
-lockups stay in the markup and the scheme still chooses between them.
+lockups stay in the markup and the scheme still chooses between them. The
+panel is midnight, so its focus ring is the rail's jade rather than the
+workspace sage, which would sit under 3:1 on that ground.
 
 ## Colour
 
-Warm workspace: paper `#F4F3ED` and warm-white cards under ink `#252B27`, sage
-text `#3D5A48`, a muted sage fill `#829A87` for surfaces under `#222B25` ink,
-and one warm charcoal rail `#202522` in both schemes. Clay `#96602B` keeps the
-workspace from reading all-sage. The token block at the top of `console.css` is
-the whole theme: rules read names, never hex, and
-`tests/test_console_palette.py` fails the build if one carries a colour of its
-own.
+Cool workspace: paper `#F2F7F5` and white cards under ink `#0F1A1E`, muted
+`#4E5C5D`, a jade accent `#0E6B5C` for text, links, focus and the active mark,
+a jade fill `#2FB89E` for surfaces only, and one midnight rail `#0B1220` in
+both schemes. Clay `#8A5A22` keeps the workspace from reading all-jade. The
+token block at the top of `console.css` is the whole theme: rules read names,
+never hex, and `tests/test_console_palette.py` fails the build if one carries a
+colour of its own.
 
 | Token | Light | Dark |
 | --- | --- | --- |
-| `--paper` | `#F4F3ED` | `#141917` |
-| `--panel` | `#E9E7DD` | `#1f2622` |
-| `--card` / `--field` | `#ffffff` | `#1a211d` |
-| `--ink` | `#252B27` | `#ecf0ec` |
-| `--muted` | `#5C6157` | `#a4aea6` |
-| `--line` / `--line-strong` | `#DCDAD0` / `#C4C2B4` | `#2e3631` / `#3d463f` |
-| `--sage` | `#3D5A48` | `#a9c3b0` |
-| `--sage-fill` / `--on-sage` | `#829A87` / `#222B25` | `#829A87` / `#222B25` |
-| `--sage-wash` | `#DFE6DC` | `#26312b` |
-| `--forest` / `--forest-hover` / `--on-forest` | `#315B40` / `#27492F` / `#F4F3ED` | `#3c6b4c` / `#336042` / `#F4F3ED` |
-| `--ok` / `--ok-hover` / `--on-ok` | `#2f6b45` / `#27593a` / `#f4f3ed` | `#6ec99a` / `#5fba8d` / `#16201a` |
-| `--danger-fill` / `--danger-hover` / `--on-danger` | `#9c3a3a` / `#832e2e` / `#fbeeec` | `#8f3b3b` / `#7a3131` / `#fbeeec` |
-| `--tone-ok-bg` / `-ink` | `#d8f0e2` / `#145c38` | `#1c3328` / `#a9dcc0` |
+| `--paper` | `#F2F7F5` | `#080E15` |
+| `--panel` | `#E4EFEA` | `#0E1622` |
+| `--card` / `--field` | `#ffffff` | `#111A27` |
+| `--ink` | `#0F1A1E` | `#E8F1EE` |
+| `--muted` | `#4E5C5D` | `#93A5A1` |
+| `--line` / `--line-strong` | `#D3E0DB` / `#B9CBC5` | `#1E2A37` / `#2B3B4A` |
+| `--sage` | `#0E6B5C` | `#6FE6CB` |
+| `--sage-fill` / `--on-sage` | `#2FB89E` / `#06231D` | `#2FB89E` / `#06231D` |
+| `--sage-wash` | `#DCEDE7` | `#0F2A26` |
+| `--forest` / `--forest-hover` / `--on-forest` | `#0D5C50` / `#0A4A40` / `#F2F7F5` | `#0F6E58` / `#0C5D4A` / `#F2F7F5` |
+| `--ok` / `--ok-hover` / `--on-ok` | `#17694E` / `#125A42` / `#F2F7F5` | `#63D6A8` / `#56C297` / `#06231A` |
+| `--danger-fill` / `--danger-hover` / `--on-danger` | `#8E2F3C` / `#772433` / `#fbeeec` | `#A83E4A` / `#933442` / `#fbeeec` |
+| `--tone-ok-bg` / `-ink` | `#d6efe4` / `#0b5a3e` | `#12332a` / `#a8e6c9` |
 | `--tone-warn-bg` / `-ink` | `#f6e7c4` / `#6b4a0e` | `#3a3220` / `#f3e6c0` |
-| `--tone-bad-bg` / `-ink` | `#fbdad6` / `#8a1d16` | `#3a2422` / `#f2bdb6` |
-| `--tone-idle-bg` / `-ink` | `#E8E9E2` / `#4e5751` | `#262c28` / `#b6c0b8` |
+| `--tone-bad-bg` / `-ink` | `#fbd9de` / `#7e1a28` | `#3a2228` / `#f4bdc6` |
+| `--tone-idle-bg` / `-ink` | `#e3ebe7` / `#45534e` | `#1b2624` / `#b4c3bf` |
 
 Rail tokens are declared once, outside the scheme block, because the rail is
-the same warm charcoal in both: `--rail #202522`, `--rail-ink #F1F4EF`,
-`--rail-item #D2D8D1`, `--rail-sage #A9C3B0`, `--rail-muted #9AA39A`,
-`--rail-line #333A34`, `--rail-active #2C332D`, `--rail-hover #272E28`,
-`--rail-chip #DCE4DA`. `--rail-item` is the nav text: `10.74` on the charcoal
-and `9.61` on the hover fill, where plain `--rail-ink` would glare.
+the same midnight in both: `--rail #0B1220`, `--rail-ink #EEF3F2`,
+`--rail-item #C2CFCC`, `--rail-sage #5FE0C5`, `--rail-muted #8FA0A2`,
+`--rail-line #1D2A38`, `--rail-active #14202E`, `--rail-hover #0F1926`,
+`--rail-chip #DDF3EC`.
 
 The card lift is a token too, `--lift`, built from `--shade` with `color-mix`
 so a card has an edge without a hex in a rule: `0 1px 2px` at 5% plus
-`0 2px 10px` at 4% in light, one `0 1px 2px` at 45% in dark.
+`0 2px 14px` at 5% in light, one `0 1px 2px` at 48% in dark.
 
 Dark values live in one `@media (prefers-color-scheme: dark)` block on `:root`,
 with `color-scheme` set in both. There is no toggle.
 
 Sage separates into two jobs. `--sage` is text, links, focus rings, the active
-nav mark and the gate stripe. `--sage-fill` is a surface only — progress,
-the nav count pill, the done step — always under `--on-sage` ink.The lighter sage is not used as text anywhere: it measures 2.73 on paper, 3.03 on white.
-The primary button is `--forest` with `--on-forest` ivory text; ok, reject and
-the kill control keep their own reds and greens and never become sage.
+nav mark and the callout rule. `--sage-fill` is a surface only: progress, the
+nav count pill, the done step, always under `--on-sage` ink. The primary
+button is `--forest` with `--on-forest`; ok, reject and the kill control keep
+their own reds and greens and never become sage.
 
 A second accent, clay, keeps the workspace from reading all-teal. `--clay`
-(`#9a5b23` light, `#e0a35c` dark) carries eyebrows, the headline highlight,
-alternate stat icons and sparklines; `--clay-strong` inks text on it and
-`--clay-wash` washes behind it. Clay never marks governance: approvals,
-rejections, pending states, focus and the active nav stay on their own
-colours.
+(`#8A5A22` light, `#E8B77A` dark) carries the `.pop` word inside a headline
+and the alternate stat icon; `--clay-strong` inks text on it and `--clay-wash`
+washes behind it. Clay never marks governance: approvals, rejections, pending
+states, focus and the active nav stay on their own colours.
 
 States are tones, not colours. `.badge-*`, `.flash-*`, `.refusal` and `tr.warn`
-all read `--tone-*-bg` / `--tone-*-ink`, so there is one rule per tone instead of
-a light and a dark duplicate, and a state added later has to pick a tone.
-Tone borders are `color-mix` of the tone ink, which keeps edges out of the token
-block without adding eight more literals.
+all read `--tone-*-bg` / `--tone-*-ink`, so there is one rule per tone instead
+of a light and a dark duplicate, and a state added later has to pick a tone.
+Tone borders are `color-mix` of the tone ink, which keeps edges out of the
+token block without adding eight more literals.
 
-Measured contrast, light then dark: ink on paper 13.00 / 15.44, muted on paper
-5.72 / 7.77, sage on paper 6.86 / 9.41, ink on the sage fill 4.81 in both,
-ivory on forest 6.99 / 5.56, ivory on ok 5.71, dark ink on the dark ok 8.35,
-tone ink on tone wash 6.68 / 8.81 ok, 6.57 / 10.19 warn, 7.10 / 8.75 bad,
-6.09 / 7.62 idle, and the same inks on a card 8.02 / 10.70, 8.04 / 13.20,
-9.26 / 9.95, 7.65 / 8.77; muted on the table-header wash 5.13 / 6.76; rail
-ink 14.03, rail item 10.74, rail ink on the active fill 11.69, rail sage 8.24,
-rail muted 5.99. The muted
-grey-green `#747c75` that a warmer palette suggests measures 3.87 on paper, so
-the muted tone is `#5c6157`; it clears 4.5:1 on paper, on `--panel` and on the
-sage wash.
+A field's edge is not decoration and has to be seen: inputs, selects and
+textareas take `--muted` for their border, which clears 3:1 on paper, on a
+card and on the panel. Buttons keep `--line-strong`, because a button on a
+card already has a fill under it.
+
+Measured contrast, light then dark: ink on paper 16.34 / 16.83, on a card
+17.69 / 15.20, on the panel 15.03 / 15.78, on the sage wash 14.59 / 13.23;
+muted on paper 6.44 / 7.51, on a card 6.97 / 6.78, on the panel 5.92 / 7.04;
+sage on paper 5.92 / 12.78, on a card 6.41 / 11.54, on the panel 5.44 / 11.98;
+dark ink on the jade fill 6.69 in both, ivory on forest 7.28 / 5.72, ivory on
+ok 6.12 / 9.27, ivory on danger 7.07 / 5.37; tone ink on tone wash 6.80 / 9.67
+ok, 6.57 / 10.19 warn, 7.79 / 8.99 bad, 6.65 / 8.52 idle, and the same inks on
+a card 8.25 / 12.35, 8.04 / 14.07, 10.17 / 10.78, 8.08 / 9.58; rail ink 16.71,
+rail item 11.67 and 11.03 on the hover fill, rail sage 11.55, rail muted 6.88,
+rail ink on the active fill 14.69.
 
 ## Type
 
 `Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`. No font is
-downloaded. Body `0.96rem`, line-height `1.58`, over a faint `--sage-wash`
-radial glow plus a fainter `--clay-wash` glow at the top of the paper, so the
-all-sage field picks up the logo's clay second voice without a new paint.
+downloaded. Body `0.9375rem`, line-height `1.55`. Four weights and no more:
+`400`, `500`, `600`, `700`.
 
-h1 `1.6rem`/700, h2 `1.05rem`/620, h3 `0.94rem`/620, letter-spacing `-0.028em`,
-with the overview headline scaling to `2.9rem` under `.page-head`. A `.pop`
-word inside a headline renders in clay italics.
+h1 `1.5rem`/700, h2 `1.05rem`/600, h3 `0.94rem`/600, letter-spacing `-0.028em`,
 with more air above than below; a heading at the top of a page, card or callout
-loses its top margin. A page's `h1` is followed by its muted subtitle, which
-keeps the `0.95rem` size and gains `1.7rem` of air below, so every page starts
-the same way whether or not it uses `.page-head`. Prose and lists cap at `68ch`;
-tables, grids and step lists do not. Money and counts use
-`font-variant-numeric: tabular-nums`, on tables, tiles and the nav count.
+loses its top margin. Every heading carries `overflow-wrap: break-word` and
+`min-width: 0`, so a long name in a narrow column wraps instead of pushing the
+page sideways. A page's `h1` is followed by its muted subtitle, so every page
+starts the same way whether or not it uses `.page-head`. Prose and lists cap at
+`72ch`, the lede and the callout at `70ch`; tables, grids and step lists do
+not. Money and counts use `font-variant-numeric: tabular-nums`, on tables,
+tiles and the nav count. Code and `pre` read `--font-mono`, a token like every
+other face.
 
 ## Surfaces
 
-One radius (`--radius: 14px`), one hairline (`--line`) and one padding
-(`1.35rem 1.4rem`) are shared by `.card` and `.callout`, with a two-layer
-`--lift` under both. `.flash` and `.refusal` take the radius and their own
-tint. Controls sit on a tighter `--control-radius: 10px` so a button inside a
-card is not as round as the card. Tables that need their own scroll region sit
-in `.table-wrap`, which carries the border so the table inside stays flush.
+One radius (`--radius: 12px`), one hairline (`--line`) and one padding
+(`1.05rem 1.1rem`) are shared by `.card` and `.callout`, with a two-layer
+`--lift` under both. Controls sit on a tighter `--control-radius: 8px` so a
+button inside a card is not as round as the card. Tables that need their own
+scroll region sit in `.table-wrap`, which carries the border so the table
+inside stays flush.
 
+- `.callout` is not a box: no fill, no shadow, a `2px` jade rule down its left
+  edge and a `70ch` measure. It says something in passing.
 - `.card-head` is the row a card opens with: title and subtitle left, a badge or
   a `.quiet-link` right, wrapping on narrow widths.
-- Header rows sit on the `--panel` wash in `0.7rem` uppercase muted caps; body
-  rows separate with a hairline; the last row drops it; row hover is
-  `--sage-wash`; `tr.warn` keeps the amber pair through hover. Corner radii are
-  repeated on the corner cells so a rounded table actually looks rounded.
+- Header rows sit on the `--panel` wash in `0.8rem` muted semibold; body rows
+  separate with a hairline; the last row drops it; row hover is `--sage-wash`;
+  `tr.warn` keeps the amber pair through hover. Corner radii are repeated on
+  the corner cells so a rounded table actually looks rounded.
 - A table inside a card loses its own border and corner radius: the card is the
   box, the table is a pane in it.
 - Lists (`.plain`) separate items with a hairline and drop the last one; a
@@ -160,17 +168,24 @@ in `.table-wrap`, which carries the border so the table inside stays flush.
 
 ## Header, tiles and icons
 
-`.page-head` is the page's opening row: an `.eyebrow` in `0.7rem` clay caps
-over the `h1`, a muted `.lede` under it, and any primary action right-aligned
-and vertically bottom-aligned with the text. Every page uses one.
+`.page-head` is the page's opening row: the `h1`, a muted `.lede` under it,
+and any primary action right-aligned and aligned to the text. Every page uses
+one. There is no eyebrow: the breadcrumb already says where you are, and a
+line of small capitals above every title was noise.
+
+A page may carry its state in the head, as a `.badge` beside the title: the
+badge names the state of the thing the heading names, and it is the same mark
+on every page that has one. It stays inside the heading because that is the
+one place the state belongs. (Hallmark gate 38iii notes this as an accented
+word in a heading; it is deliberate and recorded rather than rebuilt.)
 
 `.stat-grid` is a responsive row of `.stat`s, and the overview uses two of them
-under the `.two` modifier. A stat is a card with a `0.72rem` uppercase muted
-label, the figure at `1.8rem`/700 in tabular figures — zero-padded to two
-digits where it counts runs — and a `.stat-meta` line whose `.stat-state`
-carries a small tone-coloured dot beside the words: ok for work in progress,
-warn for work waiting on a person, idle when there is none. The dot never
-carries the meaning alone; the words do.
+under the `.two` modifier, which is one column on a phone. A stat is a card
+with a `0.8rem` muted label, the figure at `1.8rem`/700 in tabular figures,
+and a `.stat-meta` line whose `.stat-state` carries a small tone-coloured dot
+beside the words: ok for work in progress, warn for work waiting on a person,
+idle when there is none. The dot never carries the meaning alone; the words
+do.
 
 Icons are one inline sprite per page, `_macros.html:sprite()`, referenced with
 `<use href="#i-name">` through `icon()`. There is no icon font, no extra request
@@ -180,23 +195,33 @@ colour of whatever they sit in, including the rail.
 
 ## Controls
 
-`--control: 2.65rem`. Inputs, selects and buttons share that height, the radius,
-the border and the focus treatment: a 2px sage outline at `2px` offset for
-links and buttons, and a sage border with a 3px `color-mix` sage halo for
-fields, which would otherwise show two rings. Control text is `0.92rem` at
-line-height `1.4`; labels are `0.86rem`.
+`--control: 2.25rem`, and `2.65rem` on a phone. Inputs, selects and buttons
+share that height, the radius, the border and the focus treatment: a 2px sage
+outline at `2px` offset for links and buttons, and a sage border with a 3px
+`color-mix` sage halo for fields, which would otherwise show two rings.
+Control text is `0.92rem` at line-height `1.4`; labels are `0.86rem`.
 
 A button in a stacked form is content width (`align-self: flex-start`); the
 sign-in button stretches. Inline forms keep fields on one line and wrap only
 when they must; the gate decision form (`.gate-actions`) grows its reason
 field to fill the row, with Approve and Reject beside it. Buttons in the kill
-pill are `2rem` and `0.8rem`, on the pill's own radius.
+chip are `2rem` and `0.8rem`, on the chip's own radius.
 
 Buttons are ink on card, primary is `--on-forest` ivory on `--forest` (with
 `--forest-hover` rather than a lighter tint), `ok` is `--on-ok` on `--ok`,
 `danger` is `--on-danger` on `--danger-fill`, and `.link` is a sage underlined
 button with no fill, which turns `--rail-sage` inside the rail so it stays
-readable on charcoal. Disabled controls sit at `0.55` opacity.
+readable on midnight. Pressing a control says so once, in place: it moves a
+pixel and does not light up a second colour. Disabled controls sit at `0.55`
+opacity.
+
+## Copy
+
+The console writes plain ASCII, and it does not join facts with a middle dot
+or a dash. A meta line is separated by commas and colons, a page title carries
+its state as a badge, and a pager says "1 to 50 of 120" rather than a range
+with a dash in it. The two middle dots that remain are the `<title>` and the
+live-state pill, where a dot separates two short names rather than two facts.
 
 ## Work in progress
 
@@ -214,55 +239,37 @@ a spinner. Starting a scan clears the previous result.
 Every signed-in page carries it in the topbar, with the same fields and the
 same engage/release actions.
 
-Idle it is a pill: card on a `--line-strong` hairline, muted `0.78rem` label
-behind a sage shield icon, a borderless reason field that grows to fill, and a
-`danger` button.
+Idle it is a chip: card on a `--line-strong` hairline, muted `0.78rem` label
+behind a sage shield icon. Engaged it is the loud chip: `--danger-fill` with
+`--on-danger` text, and its controls inverted to a `color-mix` ivory outline so
+they read on the red.
 
-Engaged it is the loud pill: `--danger-fill` with `--on-danger` text, and its
-controls inverted to a `color-mix` ivory outline so they read on the red.
-
-## Home
-
-`home.html` is the reference page. It opens with `.page-head` — "System
-overview", the lede "Your private model engineering workspace", and a
-`.head-chip` holding the gauge icon at the right edge — then two stats: active
-runs (queued and running jobs, zero-padded) and pending approvals for this
-person. Counts stay in the route; the template only formats them.
-
-Under the stats sits the evaluation card. It names its state in a
-`badge-unpromoted` pill (or `badge-approved` once promoted), says in one
-sentence what that state blocks — "Model promotion is blocked until evaluation
-criteria are met." — fills a `6px` `.meter` with the share of the report's
-checks that passed, prints "Evaluation pipeline · N% complete", and ends in a
-full-width forest button that opens that model. With no model registered the
-same card says so and the button offers training instead; the badge, the
-figure and the button all read from the latest registered model and its newest
-report.
-
-The step card carries the same `<ol>` and the same words. A `.meter` above it
-is a native `<progress>` at `6px` on `--line` filled with `--sage-fill`, which
-needs no inline width and therefore no inline style. CSS draws the path itself:
-a `counter` in a `1.7rem` circle with a hairline border and muted number, a
-`1px` connector from each circle to the next, no connector after the last, and
-a `.done` step that swaps the number for a check (`\2713`) on the sage fill
-while its link turns sage at weight 550.
-
-The budget card keeps the shared table with right-aligned tabular money; a
-"Needs attention" card pairs the inbox with unacknowledged alerts and their
-acknowledge forms; `.plain` carries recent jobs; and empty states are `.empty`
-blocks with a muted icon. Gate cards site-wide share one shape: a card with a
-1px `--sage-fill` stripe, title plus tone badge plus muted meta, and
-evidence in a `details` element.
+The reasons live in a panel that opens under the chip. A closed switch leaves
+no panel in the layout, so nothing sits off the screen. On a phone the chip
+stops being the anchor: the panel is pinned to the bar with `left` and `right`
+at `0.75rem` and `width: auto`, so it always fits the screen whatever the
+chip's own width is.
 
 ## Motion
 
-One transition, `160ms ease`, on colour, background and border for links,
-buttons and fields. Nothing animates on load, and
-`prefers-reduced-motion: reduce` turns the transition off.
+One transition, `--beat: 160ms ease`, on colour, background and border for
+links, buttons and fields. Nothing animates on load, the skip link moves by
+`transform` rather than by `top`, and `prefers-reduced-motion: reduce` turns
+every transition off.
+
+## Checks
+
+The design is a rule, so it is checked rather than trusted:
+`tests/test_console_palette.py` reads the token block and fails if a rule
+carries a colour of its own or a pair drops under 4.5:1,
+`tests/test_console_hallmark.py` holds the shell's shape (one sticky top, a
+clipped page, a field edge that can be seen, a phone panel that fits),
+`tests/test_console_markup.py` holds the page furniture, and
+`tests/test_console_mobile_nav.py` holds the phone band.
 
 ## Not reopened
 
-The marks in `Logo/` and the three served SVGs, sage as accent, the charcoal
-rail against an ivory workspace, Inter then the system face with no download,
-`prefers-color-scheme` with no toggle, `SameSite=Strict` cookies, a CSP with no
-inline script or style, and the governance in `AGENTS.md`.
+The marks in `Logo/` and the three served SVGs, sage as accent, the midnight
+rail against a pale workspace, Inter then the system face with no download,
+`prefers-color-scheme` with no toggle, `SameSite=Strict` cookies, a CSP with
+no inline script or style, and the governance in `AGENTS.md`.

@@ -28,7 +28,7 @@
   </div>
   <p class="eval-note">{% if not latest %}No model is registered, so there is no evaluation to promote.{% elif promoted %}This model passed its evaluation and its promotion gate, so it may serve.{% else %}Model promotion is blocked until evaluation criteria are met.{% endif %}</p>
   <progress class="meter" value="{{ eval_share }}" max="100" aria-label="Evaluation pipeline"></progress>
-  <p class="eval-caption">Evaluation pipeline · {% if latest %}{{ eval_share }}% complete{% else %}not started{% endif %}</p>
+  <p class="eval-caption">Evaluation pipeline: {% if latest %}{{ eval_share }}% complete{% else %}not started{% endif %}</p>
   <p class="card-action"><a class="button primary" href="{% if latest %}/console/models/{{ latest.id }}{% else %}/console/jobs{% endif %}">{{ "Review evaluation" if latest else "Start training" }}</a></p>
 </section>
 
@@ -44,13 +44,13 @@
   {% if brief.complete %}
   {% call m.data_table([("Target",), ("Success metric",), ("Timeline",), ("Deployment",)]) %}
     <tr>
-      <td class="row-title">{{ brief.target }}<br><span class="row-sub">{{ brief.languages }} · {{ brief.context_length }} tokens · quality bar {{ brief.quality_bar }}</span></td>
+      <td class="row-title">{{ brief.target }}<br><span class="row-sub">{{ brief.languages }}, {{ brief.context_length }} tokens, quality bar {{ brief.quality_bar }}</span></td>
       <td>{% for metric in brief.metrics %}{{ metric.name }} {{ "≥" if metric.direction == "at_least" else "≤" }} {{ metric.threshold }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
       <td>{{ brief.timeline }}</td>
-      <td>{{ brief.deployment }}<br><span class="row-sub">≤{{ brief.latency_ms }} ms latency · data {{ brief.data_restrictions }}</span></td>
+      <td>{{ brief.deployment }}<br><span class="row-sub">≤{{ brief.latency_ms }} ms latency, data {{ brief.data_restrictions }}</span></td>
     </tr>
   {% endcall %}
-  <p class="muted small">Owners: {% for role, person in brief.owners.items() %}{{ role }} {{ person }}{% if not loop.last %} · {% endif %}{% endfor %}{% if brief.updated_at %} · updated {{ brief.updated_at | when }}{% endif %}</p>
+  <p class="muted small">Owners: {% for role, person in brief.owners.items() %}{{ role }} {{ person }}{% if not loop.last %}, {% endif %}{% endfor %}{% if brief.updated_at %}, updated {{ brief.updated_at | when }}{% endif %}</p>
   {% else %}
   <p class="callout">Still to record: {{ brief.missing | join("; ") }}. Without it a run has no target to miss and no owner to ask.</p>
   {% endif %}

@@ -3,13 +3,13 @@
 {% block title %}Write a supervision example{% endblock %}
 {% block crumb %}Supervision example{% endblock %}
 {% block content %}
-{{ m.page_head("Correct a failed answer", "The question comes from a real request. The answer comes from a person, because the reply the model gave is the thing that was wrong.", "Supervision") }}
+{{ m.page_head("Correct a failed answer", "The question comes from a real request. The answer comes from a person, because the reply the model gave is the thing that was wrong.") }}
 
 <section class="card">
   <div class="card-head">
     <div>
       <h2>{{ trace.question }}</h2>
-      <p class="card-sub">{{ trace.endpoint }} · {{ trace.model_id or "unknown model" }} · kept with the asker's groups: {{ trace.acl | join(", ") or "none" }}</p>
+      <p class="card-sub">{{ trace.endpoint }}, {{ trace.model_id or "unknown model" }}, kept with the asker's groups: {{ trace.acl | join(", ") or "none" }}</p>
     </div>
     <span class="badge badge-failed">{{ trace.failure | replace("_", " ") }}</span>
   </div>

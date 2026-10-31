@@ -31,11 +31,10 @@
 
 {# One header shape for every page, so the eye finds the title in the same place
    whether the page is a list, a form or a detail. Actions are the caller. #}
-{% macro page_head(title, lede="", eyebrow="", status="") %}
+{% macro page_head(title, lede="", status="") %}
 {% set actions %}{% if caller is defined %}{{ caller() }}{% endif %}{% endset %}
 <div class="page-head">
   <div>
-    {% if eyebrow %}<p class="eyebrow">{{ eyebrow }}</p>{% endif %}
     <h1>{{ title }}{% if status %} {{ status_badge(status) }}{% endif %}</h1>
     {% if lede %}<p class="lede">{{ lede }}</p>{% endif %}
   </div>
@@ -71,7 +70,7 @@
 {% macro pager(table, noun="rows") %}
 {% if table %}
 <nav class="pager" aria-label="Pages">
-  {% if table.total == 0 %}<span class="muted small">Nothing to page</span>{% else %}<span class="muted small">{{ table.is_first() }}–{{ table.is_last() }} of {{ table.total }} {{ noun }}</span>{% endif %}
+  {% if table.total == 0 %}<span class="muted small">Nothing to page</span>{% else %}<span class="muted small">{{ table.is_first() }} to {{ table.is_last() }} of {{ table.total }} {{ noun }}</span>{% endif %}
   {% if table.pages > 1 %}
   <span class="pager-links">
     {% if table.page > 1 %}<a class="button btn-sm" href="{{ table.link(page=table.page - 1) }}" rel="prev">Previous</a>{% endif %}
@@ -121,10 +120,10 @@
 {% if targets and targets.targets %}
 <ul class="plain">
   {% for target in targets.targets %}
-  <li>{{ status_badge("passed" if target.met else ("unmeasured" if target.met is none else "failed")) }} {{ target.name }} {{ "at most" if target.direction == "at_most" else "at least" }} {{ target.threshold }}{% if target.measured is not none %}, measured {{ "%.3f" % target.measured }}{% endif %}{% if target.note %} — {{ target.note }}{% endif %}</li>
+  <li>{{ status_badge("passed" if target.met else ("unmeasured" if target.met is none else "failed")) }} {{ target.name }} {{ "at most" if target.direction == "at_most" else "at least" }} {{ target.threshold }}{% if target.measured is not none %}, measured {{ "%.3f" % target.measured }}{% endif %}{% if target.note %}: {{ target.note }}{% endif %}</li>
   {% endfor %}
 </ul>
-<p class="muted small">{{ targets.note }}{% if not targets.passed %} · <a href="/console/brief">Open the brief</a>{% endif %}</p>
+<p class="muted small">{{ targets.note }}{% if not targets.passed %}, <a href="/console/brief">Open the brief</a>{% endif %}</p>
 {% endif %}
 {% endmacro %}
 
@@ -134,7 +133,7 @@
   <div class="gate-body">
   <div class="gate-head">
     <strong class="gate-title">{{ gate.title }}</strong> {{ status_badge(gate.status) }}
-    <span class="gate-meta">{{ gate.gate_type }} · {{ gate.id }} · subject {{ gate.subject }}</span>
+    <span class="gate-meta">{{ gate.gate_type }}, {{ gate.id }}, subject {{ gate.subject }}</span>
   </div>
   <p class="card-sub">Requested by {{ gate.requested_by }} {{ gate.created_at | when }}. Needs {{ gate.required_approvers | join(" or ") }}.</p>
   {% if gate.decisions %}

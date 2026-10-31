@@ -67,8 +67,8 @@ def search(platform: Platform, jobs: JobRunner, term: str) -> list[Group]:
         Hit(
             title=f"{item.name} v{item.version}",
             meta=(
-                f"{item.record_count} records · "
-                f"{'released' if item.released else 'draft'} · {item.id}"
+                f"{item.record_count} records, "
+                f"{'released' if item.released else 'draft'}, {item.id}"
             ),
             status="released" if item.released else "draft",
             href=f"/console/datasets/{item.id}",
@@ -82,7 +82,7 @@ def search(platform: Platform, jobs: JobRunner, term: str) -> list[Group]:
     models = [
         Hit(
             title=f"{item.name} v{item.version}",
-            meta=f"trained on {', '.join(item.dataset_ids) or 'no dataset'} · {item.id}",
+            meta=f"trained on {', '.join(item.dataset_ids) or 'no dataset'}, {item.id}",
             status=str(item.status),
             href=f"/console/models?{urlencode({'q': item.name})}",
             created_at=item.created_at,
@@ -95,7 +95,7 @@ def search(platform: Platform, jobs: JobRunner, term: str) -> list[Group]:
     job_hits = [
         Hit(
             title=job["title"],
-            meta=f"{job['requested_by']} · {job['id']}",
+            meta=f"{job['requested_by']}, {job['id']}",
             status=str(job["state"]),
             href=f"/console/jobs/{job['id']}",
             created_at=job["created_at"],
@@ -108,7 +108,7 @@ def search(platform: Platform, jobs: JobRunner, term: str) -> list[Group]:
     evals = [
         Hit(
             title=f"{item.name} v{item.version}",
-            meta=f"{len(item.items)} questions · {item.id}",
+            meta=f"{len(item.items)} questions, {item.id}",
             status="frozen" if item.frozen else "open",
             href=f"/console/evals?{urlencode({'q': item.name})}",
             created_at=item.created_at,
@@ -121,7 +121,7 @@ def search(platform: Platform, jobs: JobRunner, term: str) -> list[Group]:
     sources = [
         Hit(
             title=item["name"],
-            meta=f"{item['path']} · {item['purpose']} · {item['id']}",
+            meta=f"{item['path']}, {item['purpose']}, {item['id']}",
             status="withdrawn" if item["withdrawn"] else item["gate_status"],
             href=f"/console/sources?{urlencode({'q': item['name']})}",
             created_at=item["created_at"],
@@ -134,7 +134,7 @@ def search(platform: Platform, jobs: JobRunner, term: str) -> list[Group]:
     gates = [
         Hit(
             title=item.title,
-            meta=f"{item.gate_type} · subject {item.subject} · {item.id}",
+            meta=f"{item.gate_type}, subject {item.subject}, {item.id}",
             status=str(item.status),
             href=f"/console/approvals?{urlencode({'q': item.id})}",
             created_at=item.created_at,
@@ -150,8 +150,8 @@ def search(platform: Platform, jobs: JobRunner, term: str) -> list[Group]:
         Hit(
             title=item["name"],
             meta=(
-                f"{item['title'] or 'no title'} · "
-                f"{', '.join(item['roles']) or 'no role'} · {item['id']}"
+                f"{item['title'] or 'no title'}, "
+                f"{', '.join(item['roles']) or 'no role'}, {item['id']}"
             ),
             status="placeholder" if item["placeholder"] else "person",
             href=f"/console/admin/people?{urlencode({'q': item['name']})}",

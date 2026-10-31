@@ -195,9 +195,9 @@ def describe_verdict(verdict: dict[str, Any]) -> str:
         return f"{asked}: {verdict['note']}"
     measured = float(verdict["measured"])
     if verdict["met"]:
-        return f"{asked} — measured {measured:.3f}"
+        return f"{asked}, measured {measured:.3f}"
     side = "above" if verdict["direction"] == "at_most" else "below"
-    return f"{asked} — measured {measured:.3f}, {side} the bar"
+    return f"{asked}, measured {measured:.3f}, {side} the bar"
 
 
 def recorded_verdicts(report: Any) -> list[dict[str, Any]] | None:
@@ -255,9 +255,9 @@ def progress_rows(brief: ProjectBrief, reports: list[Any], limit: int = 5) -> li
             head = f"{verdict['name']} {value:.3f} of {verdict['threshold']}"
             if gap < 0:
                 side = "over" if verdict["direction"] == "at_most" else "short"
-                parts.append(f"{head} — {abs(gap):.3f} {side}")
+                parts.append(f"{head}, {abs(gap):.3f} {side}")
             else:
-                parts.append(f"{head} — {gap:.3f} to spare")
+                parts.append(f"{head}, {gap:.3f} to spare")
         if recorded:
             parts.extend(_movement(brief, recorded, measured))
         rows.append(
@@ -265,7 +265,7 @@ def progress_rows(brief: ProjectBrief, reports: list[Any], limit: int = 5) -> li
                 "created_at": report.created_at,
                 "passed": bool(report.passed),
                 "met": all(bool(verdict.get("met")) for verdict in verdicts),
-                "text": " · ".join(parts),
+                "text": "; ".join(parts),
                 "basis": "recorded" if recorded else "current",
             }
         )

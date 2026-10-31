@@ -3,7 +3,7 @@
 {% block title %}{{ job.title }}{% endblock %}
 {% block crumb %}<a href="/console/jobs">Jobs</a> / {{ job.title }}{% endblock %}
 {% block content %}
-{{ m.page_head(job.title, job.id ~ " · started by " ~ job.requested_by ~ " · scheduler job " ~ job.scheduler_job_id, "Run", status=job.state) }}
+{{ m.page_head(job.title, job.id ~ ", started by " ~ job.requested_by ~ ", scheduler job " ~ job.scheduler_job_id, status=job.state) }}
 {% if job.result and job.result.estimate is defined %}
 <p>GPU hours used {{ job.result.used_gpu_hours or 0 }} against an estimate of {{ job.result.estimate.planning_gpu_hours }}.</p>
 {% endif %}

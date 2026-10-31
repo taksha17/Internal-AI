@@ -3,7 +3,7 @@
 {% block title %}Inbox{% endblock %}
 {% block crumb %}Inbox{% endblock %}
 {% block content %}
-{{ m.page_head("Inbox", "Work waiting on a person: gates you can decide, alerts nobody has read, and runs that failed this week. Nothing here decides itself.", "Work") }}
+{{ m.page_head("Inbox", "Work waiting on a person: gates you can decide, alerts nobody has read, and runs that failed this week. Nothing here decides itself.") }}
 
 {% if waiting.empty %}
 {{ m.empty("Nothing is waiting", "A gate, an alert or a failed run appears here the moment it needs someone.", "/console/home", "Back to the overview") }}
@@ -20,7 +20,7 @@
   {% call m.data_table([("Gate",), ("Type",), ("Asked by",), ("Waiting since",), ("Action",)]) %}
     {% for gate in waiting.yours %}
     <tr>
-      <td class="row-title"><a href="/console/approvals#gate-{{ gate.id }}">{{ gate.title }}</a><br><span class="row-sub">{{ gate.id }} · subject {{ gate.subject }}</span></td>
+      <td class="row-title"><a href="/console/approvals#gate-{{ gate.id }}">{{ gate.title }}</a><br><span class="row-sub">{{ gate.id }}, subject {{ gate.subject }}</span></td>
       <td>{{ gate.gate_type }}</td>
       <td>{{ gate.requested_by }}</td>
       <td>{{ gate.created_at | when }}</td>
@@ -43,7 +43,7 @@
   {% call m.data_table([("Gate",), ("Type",), ("Waiting on",), ("Asked by",), ("Waiting since",)]) %}
     {% for gate in waiting.blocked %}
     <tr>
-      <td class="row-title">{{ gate.title }}<br><span class="row-sub">subject {{ gate.subject }}{% if gate.requested_by == actor.id %} · you asked for this one{% endif %}</span></td>
+      <td class="row-title">{{ gate.title }}<br><span class="row-sub">subject {{ gate.subject }}{% if gate.requested_by == actor.id %}, you asked for this one{% endif %}</span></td>
       <td>{{ gate.gate_type }}</td>
       <td>{{ gate.required_approvers | join(" or ") }}</td>
       <td>{{ gate.requested_by }}</td>

@@ -5,9 +5,7 @@
 {% block content %}
 {{ m.page_head(
   "Search" if not term else "Search: " ~ term,
-  "Datasets, models, jobs, eval sets, sources, gates and people. Only what your own pages show: never a dataset record, an evidence body or an account." if term else "One box for the whole console. Names and ids, across every kind of artifact the console holds.",
-  "Find"
-) }}
+  "Datasets, models, jobs, eval sets, sources, gates and people. Only what your own pages show: never a dataset record, an evidence body or an account." if term else "One box for the whole console. Names and ids, across every kind of artifact the console holds.") }}
 <form class="toolbar" method="get" action="/console/search">
   <label class="grow">Search <input type="search" name="q" value="{{ q }}" placeholder="Dataset, model, job, gate, person or id" autofocus></label>
   <button type="submit">Search</button>
@@ -15,7 +13,7 @@
 </form>
 
 {% if not term %}
-{{ m.empty("Type a name or an id", "A dataset name, a job id, a person, a gate subject — the results are grouped by kind.", "/console/datasets", "Browse datasets") }}
+{{ m.empty("Type a name or an id", "A dataset name, a job id, a person, a gate subject. The results are grouped by kind.", "/console/datasets", "Browse datasets") }}
 {% elif not groups %}
 <div class="card">
   {{ m.empty("Nothing matches", "No artifact carries that name or id. Try fewer characters, or the id from the audit log.", "/console/audit", "Search the audit log") }}
