@@ -64,22 +64,27 @@ describe:
   with no telemetry is narrower than a SaaS contract's.
 
 Ask by opening an issue at <https://github.com/taksha17/Internal-AI>. There is no
-sales form and no tracking pixel; the repository is the front door.
+sales form and no tracking pixel; the repository is the front door. A full
+draft of the agreement itself is in
+[`COMMERCIAL-LICENCE-DRAFT.md`](COMMERCIAL-LICENCE-DRAFT.md).
 
 ## What is not written yet
 
-Two documents have to exist before the first customer signs anything, and
-neither is written:
+One of the two documents a customer will ask for exists as a draft:
 
-- the **commercial licence agreement** itself: the per-installation or per-node
-  terms, the support levels, the liability position, and a signature block. The
-  shape of it is described above; the words are not drafted.
-- the **contributor licence agreement** for outside code. Without it, an
-  outside contribution cannot be merged, because the chain of title to a
-  contribution in a product the company sells is not established.
+- the **commercial licence agreement**: a full draft is in
+  [`COMMERCIAL-LICENCE-DRAFT.md`](COMMERCIAL-LICENCE-DRAFT.md), written to be
+  marked up rather than signed. Every bracketed value is a decision that has
+  not been made, the notes at the top are the founder's reading of the deal,
+  and a lawyer has not reviewed any of it.
+- the **contributor licence agreement** for outside code, which does not exist
+  in any form. Without it, an outside contribution cannot be merged, because
+  the chain of title to a contribution in a product the company sells is not
+  established.
 
-Both need a lawyer rather than an engineer. Until they exist, the arrangement
-in this file is coherent and the gaps are named rather than papered over.
+The draft is published so that the terms the founder intends to sell under are
+visible, and so that nobody has to guess them. It is not a licence, and
+nothing in it is in force until the licensor signs it.
 
 ## Base models are licensed separately
 
