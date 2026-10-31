@@ -17,6 +17,7 @@ from internal_ai.services.permissions import PermissionDenied
 from internal_ai.training.alpha.pin import PRIMARY, BaseRefused
 from internal_ai.training.alpha.promote import register_alpha
 from internal_ai.training.provenance import OPEN_WEIGHT_ALLOWED
+from internal_ai.workflows import PROMOTABLE_ADAPTER_BACKENDS
 
 ADAPTER_BYTES = b"not a real adapter, but a real file"
 
@@ -57,7 +58,9 @@ def released_dataset(platform, *, released: bool = True) -> str:
     return dataset_id
 
 
-def stub_training(base, root, texts, out, layers=2, sequences=4, seed=0) -> dict[str, Any]:
+def stub_training(
+    base, root, texts, out, layers=2, sequences=4, seed=0, **kwargs
+) -> dict[str, Any]:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(ADAPTER_BYTES)
     return {
@@ -76,6 +79,7 @@ def governed(platform, enroll_person, monkeypatch):
     enable_open_weights(platform)
     monkeypatch.setattr(alpha_service, "available_base", lambda root: PRIMARY)
     monkeypatch.setattr(alpha_service, "train_prefix", stub_training)
+    monkeypatch.setattr(alpha_service, "adapt_full_depth", stub_training)
     return platform, actor
 
 
@@ -102,6 +106,31 @@ def test_an_adaptation_run_leaves_a_record(governed) -> None:
         "SELECT action, subject FROM audit_events WHERE action = 'alpha.train_finished'"
     ).fetchall()
     assert [row["subject"] for row in events] == [result["run_id"]]
+
+
+def test_the_default_backend_is_the_one_that_can_be_promoted(governed) -> None:
+    platform, actor = governed
+    dataset_id = released_dataset(platform)
+    job = train_alpha(platform, actor, JobRunner(platform, synchronous=True), dataset_id)
+    assert job["state"] == "succeeded", job.get("error")
+    record = json.loads(Path(job["result"]["reproducibility"]).read_text(encoding="utf-8"))
+    assert record["adapter_backend"] == "peft"
+    assert record["recipe"]["backend"] == "peft"
+    assert job["result"]["adapter_backend"] in PROMOTABLE_ADAPTER_BACKENDS
+
+
+def test_an_unknown_backend_is_refused(governed) -> None:
+    platform, actor = governed
+    dataset_id = released_dataset(platform)
+
+    with pytest.raises(ValueError, match="unknown adapter backend"):
+        train_alpha(
+            platform,
+            actor,
+            JobRunner(platform, synchronous=True),
+            dataset_id,
+            backend="magic",
+        )
 
 
 def test_an_unreleased_dataset_cannot_be_adapted(governed) -> None:

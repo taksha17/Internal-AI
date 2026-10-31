@@ -125,6 +125,17 @@ def test_an_adapter_with_no_layers_is_refused(tmp_path: Path) -> None:
         load_adapter(adapter)
 
 
+def test_a_full_depth_adapter_is_refused_by_the_reference_generator(tmp_path: Path) -> None:
+    """A PEFT directory is not a rank-8 pair file, and saying so beats a load error."""
+    base = tiny_base(tmp_path, with_tokenizer=True)
+    adapter = tmp_path / "adapter-dir"
+    adapter.mkdir()
+    (adapter / "adapter_config.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(LocalGenerationUnavailable, match="local runner"):
+        generate(base, tmp_path, "hello", adapter, max_tokens=1)
+
+
 def test_a_card_must_name_a_pinned_base() -> None:
     model = ModelVersion(
         id="mdl_x",
