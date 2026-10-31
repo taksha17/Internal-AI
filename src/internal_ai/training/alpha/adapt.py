@@ -39,10 +39,46 @@ def adaptation_available() -> bool:
     return True
 
 
+def _bf16_is_native(torch: Any) -> bool:
+    """Whether this card computes bf16 itself rather than through emulation.
+
+    The plain question answers yes on Turing, where the emulation is six times
+    slower than fp16 on a matmul, so it is the wrong question to load a model on.
+    """
+    try:
+        return bool(torch.cuda.is_bf16_supported(including_emulation=False))
+    except TypeError:
+        return False
+
+
 def _dtype(torch: Any, device: str) -> Any:
-    if device == "cuda" and torch.cuda.is_bf16_supported():
+    """Half precision on a card, fp32 on the CPU.
+
+    fp16 is the fallback rather than fp32 because the pinned base at 8.04 GB
+    needs 14.99 GiB in fp32, which overruns a T4's 14.56 GiB outright: a card
+    that cannot compute bf16 natively can still hold the model in fp16.
+    """
+    if device != "cuda":
+        return torch.float32
+    if _bf16_is_native(torch):
         return torch.bfloat16
-    return torch.float32
+    return torch.float16
+
+
+def _loss_scaling(torch: Any, dtype: Any) -> Any:
+    """Scale fp16 gradients so a step does not underflow into a refused run.
+
+    Half precision cannot hold the small gradients LoRA produces on a 4B model,
+    and the guard below reads the resulting non-finite loss as divergence, so
+    without this the first step of an fp16 run fails for a reason that has
+    nothing to do with the data.
+    """
+    if dtype is not torch.float16:
+        return None
+    try:
+        return torch.amp.GradScaler("cuda")
+    except (AttributeError, TypeError):
+        return torch.cuda.amp.GradScaler()
 
 
 def _load_model(directory: Path, dtype: Any, device: str) -> Any:
@@ -116,7 +152,8 @@ def adapt(
         raise ValueError("the training text did not produce a trainable sequence")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     torch.manual_seed(seed)
-    model = _load_model(directory, _dtype(torch, device), device)
+    dtype = _dtype(torch, device)
+    model = _load_model(directory, dtype, device)
     model = get_peft_model(
         model,
         LoraConfig(
@@ -142,6 +179,7 @@ def adapt(
     scheduler = get_cosine_schedule_with_warmup(
         optimizer, num_warmup_steps=max(1, steps // 10), num_training_steps=steps
     )
+    scaler = _loss_scaling(torch, dtype)
     losses: list[float] = []
     diverged_at: int | None = None
     model.train()
@@ -152,8 +190,13 @@ def adapt(
             if not bool(torch.isfinite(loss)):
                 diverged_at = len(losses)
                 break
-            loss.backward()
-            optimizer.step()
+            if scaler is None:
+                loss.backward()
+                optimizer.step()
+            else:
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
             scheduler.step()
             optimizer.zero_grad(set_to_none=True)
             losses.append(float(loss.detach()))
