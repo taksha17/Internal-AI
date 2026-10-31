@@ -133,9 +133,70 @@ def test_a_regressed_model_needs_the_word_accepted_from_someone_else(platform) -
 
     drop = recall_regression(platform, platform.store.get_model("mdl_new"))
     assert drop is not None and drop["drop"] > 0.05
-    with pytest.raises(PermissionError, match="accepted"):
+    with pytest.raises(PermissionError, match="accepted") as refused:
         promote_model(platform, "mdl_new", gate_approved=True, approver="ppl_datta", note="")
+    assert "recall_at_10" in str(refused.value)
+    assert "0.50 -> 0.20" in str(refused.value)
+    with pytest.raises(PermissionError, match="someone other than its builder"):
+        promote_model(platform, "mdl_new", gate_approved=True, approver="ppl_mo", note="accepted")
     promoted = promote_model(
         platform, "mdl_new", gate_approved=True, approver="ppl_datta", note="accepted the drop"
     )
     assert promoted.status == "promoted"
+
+
+def test_a_regression_names_the_question_the_candidate_lost(platform) -> None:
+    queries = [
+        "how do I reset my VPN",
+        "where is the expense policy",
+        "who approves a refund",
+    ]
+    platform.store.add_eval_set(
+        EvalSet(
+            id="evs_named",
+            name="named",
+            version=1,
+            frozen=True,
+            created_at="2026-01-01T00:00:00+00:00",
+            content_hash="c",
+            items=[
+                {"query": query, "relevant_ids": [f"r{index}"]}
+                for index, query in enumerate(queries)
+            ],
+        )
+    )
+    for model_id, found, created, version in (
+        ("mdl_prev", [1.0, 1.0, 1.0], "2026-01-01T00:00:00+00:00", 1),
+        ("mdl_lost", [1.0, 0.0, 1.0], "2026-01-02T00:00:00+00:00", 2),
+    ):
+        platform.store.add_model(
+            ModelVersion(
+                id=model_id,
+                name="tiny",
+                version=version,
+                content_hash=model_id,
+                created_at=created,
+                card={"registered_by": "ppl_mo"},
+            )
+        )
+        platform.store.add_eval_report(
+            EvalReport(
+                id=f"rep_{model_id}",
+                model_id=model_id,
+                eval_set_id="evs_named",
+                created_at=created,
+                metrics={"recall_at_10": sum(found) / len(found)},
+                baseline_metrics={"recall_at_10": 0.1},
+                per_case={"recall_at_10": {"candidate": found, "baseline": [0.0, 0.0, 0.0]}},
+                passed=True,
+                judged_by="ppl_mia",
+            )
+        )
+
+    with pytest.raises(PermissionError) as refused:
+        promote_model(platform, "mdl_lost", gate_approved=True, approver="ppl_datta", note="")
+
+    message = str(refused.value)
+    assert "recall_at_10" in message
+    assert "1.00 -> 0.67" in message
+    assert "where is the expense policy" in message

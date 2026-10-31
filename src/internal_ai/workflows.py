@@ -520,13 +520,40 @@ def register_model(
     return model
 
 
-def recall_regression(platform: Platform, model: ModelVersion) -> dict[str, float] | None:
+def regressed_questions(
+    previous: Any, current: Any, metric: str, queries: list[str], limit: int = 3
+) -> list[str]:
+    """The questions the candidate lost that the model it replaced had found.
+
+    A drop on a mean says something moved; this says which question moved, which
+    is what an ml_lead needs to decide whether accepting the drop is honest. The
+    pairs come from the per-question scores each report now carries, so a report
+    written before those existed names nothing rather than inventing an index.
+    """
+    before = previous.per_case.get(metric) if isinstance(previous.per_case, dict) else None
+    after = current.per_case.get(metric) if isinstance(current.per_case, dict) else None
+    was = before.get("candidate") if isinstance(before, dict) else None
+    now = after.get("candidate") if isinstance(after, dict) else None
+    if not isinstance(was, list) or not isinstance(now, list) or len(was) != len(now):
+        return []
+    lost: list[str] = []
+    for index, (old, new) in enumerate(zip(was, now, strict=True)):
+        if not old or new:
+            continue
+        query = str(queries[index]) if index < len(queries) else ""
+        lost.append(query or f"question {index + 1}")
+        if len(lost) >= limit:
+            break
+    return lost
+
+
+def recall_regression(platform: Platform, model: ModelVersion) -> dict[str, Any] | None:
     """How far this candidate fell behind an earlier one on the same frozen set."""
     reports = platform.store.list_eval_reports(model.id)
     if not reports or "recall_at_10" not in reports[-1].metrics:
         return None
     current = reports[-1]
-    best: float | None = None
+    previous: Any = None
     for other in platform.store.list_models():
         if other.id == model.id or other.created_at >= model.created_at:
             continue
@@ -539,15 +566,27 @@ def recall_regression(platform: Platform, model: ModelVersion) -> dict[str, floa
         ]
         if not earlier:
             continue
-        score = float(earlier[-1].metrics["recall_at_10"])
-        if best is None or score > best:
-            best = score
-    if best is None:
+        if previous is None or float(earlier[-1].metrics["recall_at_10"]) > float(
+            previous.metrics["recall_at_10"]
+        ):
+            previous = earlier[-1]
+    if previous is None:
         return None
+    best = float(previous.metrics["recall_at_10"])
     drop = best - float(current.metrics["recall_at_10"])
     if drop <= 0.05:
         return None
-    return {"previous": best, "current": float(current.metrics["recall_at_10"]), "drop": drop}
+    eval_set = platform.store.get_eval_set(current.eval_set_id)
+    queries = [str(item.get("query") or "") for item in (eval_set.items if eval_set else [])]
+    return {
+        "metric": "recall_at_10",
+        "eval_set_id": current.eval_set_id,
+        "previous": best,
+        "current": float(current.metrics["recall_at_10"]),
+        "drop": drop,
+        "model_id": previous.model_id,
+        "questions": regressed_questions(previous, current, "recall_at_10", queries),
+    }
 
 
 PROMOTABLE_ADAPTER_BACKENDS = frozenset({"peft"})
@@ -707,8 +746,12 @@ def promote_model(
     builder = str(model.card.get("registered_by") or "")
     regressed = recall_regression(platform, model)
     if regressed is not None and (approver == builder or "accepted" not in note.lower()):
+        lost = "; ".join(regressed["questions"])
+        named = f" (lost: {lost})" if lost else ""
         raise PermissionError(
-            "this model regressed against the previous candidate; promotion needs the word "
+            f"this model regressed on {regressed['metric']}: {regressed['previous']:.2f} -> "
+            f"{regressed['current']:.2f}, a drop of {regressed['drop']:.2f}, against "
+            f"{regressed['model_id']} on the same frozen set{named}; promotion needs the word "
             "accepted from someone other than its builder"
         )
     if report.judged_by and report.judged_by in {builder, approver}:
@@ -721,7 +764,8 @@ def promote_model(
     drop = report.checks.get("recall_drop")
     if isinstance(drop, int | float) and drop > 0.05:
         raise PermissionError(
-            "the supervised run dropped recall@10 by more than 0.05 against the previous candidate"
+            f"the supervised run dropped recall@10 by {float(drop):.2f} against the previous "
+            "candidate, above the 0.05 the brief allows"
         )
     refusal = margin_refusal(report) or confidence_refusal(report)
     if refusal is not None:
