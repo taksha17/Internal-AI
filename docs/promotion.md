@@ -49,7 +49,8 @@ even when it is the best number on the page.
 - a promotion without a passing report on a set that is still frozen;
 - a report judged by the person who built the model or the person approving it;
 - a failed safety probe, or a recall drop above 0.05;
-- a regression accepted by its own builder;
+- a regression accepted by its own builder — the refusal names the metric, both
+  figures, the model it fell behind and the questions that were lost;
 - a lead under 0.05 over the un-adapted base or the keyword baseline, or a
   report that carries no such comparison at all;
 - a lead that does not clear two standard errors of the paired difference, or a
