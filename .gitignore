@@ -34,3 +34,6 @@ Thumbs.db
 
 # Visual brainstorm mockups (local preview server state)
 .superpowers/
+
+# Agent scratch
+.cloud-attachments/
