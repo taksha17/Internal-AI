@@ -168,6 +168,10 @@ Logo/                the marks
 - [Design](DESIGN.md) and [product](PRODUCT.md) — the console as built, and the
   product the platform is meant to be.
 - [Agent conventions](AGENTS.md) and [contributors](CONTRIBUTORS.md).
+- [Licensing](LICENSING.md) — what needs a commercial licence — and
+  [third-party notices](THIRD_PARTY_NOTICES.md).
+- [Promotion margin](docs/promotion.md) — the bar a candidate must clear before
+  it may serve traffic.
 
 ## Not built yet
 
@@ -205,3 +209,8 @@ A company needs a separate licence from the copyright holder to use it in its
 business, or to sell something built on it. That is deliberate: the point of the
 project is a model a company owns outright, and the software that builds it is
 not given away for someone else to resell.
+
+[LICENSING.md](LICENSING.md) sets out what needs a commercial licence, why the
+models you build are yours, and which base models this install will load.
+Components and their licences are listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
