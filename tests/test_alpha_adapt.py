@@ -8,7 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from internal_ai.training.alpha.adapt import BACKEND, AdaptationUnavailable, _dtype, adapt
+from internal_ai.training.alpha.adapt import (
+    BACKEND,
+    AdaptationUnavailable,
+    _dtype,
+    _loss_scaling,
+    adapt,
+)
 from internal_ai.training.alpha.pin import PinnedBase, WeightShard
 from internal_ai.workflows import PROMOTABLE_ADAPTER_BACKENDS
 
@@ -152,10 +158,17 @@ class _Card:
         return self.native or including_emulation
 
 
+class _Amp:
+    @staticmethod
+    def GradScaler(*_args: object, **_kwargs: object) -> str:
+        return "scaler"
+
+
 class _Torch:
     bfloat16 = "bfloat16"
     float16 = "float16"
     float32 = "float32"
+    amp = _Amp()
 
     def __init__(self, card: object) -> None:
         self.cuda = card
@@ -185,3 +198,12 @@ def test_a_torch_that_cannot_exclude_emulation_is_not_trusted() -> None:
 
 def test_the_cpu_stays_in_fp32() -> None:
     assert _dtype(_Torch(_Card(native=True)), "cpu") == "float32"
+
+
+def test_half_precision_steps_are_scaled_and_fp32_ones_are_not() -> None:
+    """Unscaled fp16 gradients read as divergence, not as an underflow."""
+    stub = _Torch(_Card(native=False))
+
+    assert _loss_scaling(stub, _dtype(stub, "cuda")) == "scaler"
+    assert _loss_scaling(stub, _dtype(stub, "cpu")) is None
+    assert _loss_scaling(stub, stub.bfloat16) is None
