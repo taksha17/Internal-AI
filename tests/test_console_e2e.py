@@ -81,7 +81,7 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
 
         assert "Twelve stages" in mo.get("/console/home")
 
-        page = mo.inspected(mo.post("/console/sources/sample", records="80"))
+        page = mo.inspected(mo.post("/console/sources/sample", records="600"))
         assert "What the platform sees" in page
         sample = next(build.samples_dir(platform).glob("*.jsonl"))
         mo.post(
@@ -149,7 +149,7 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
         assert platform.store.get_eval_set(filed.id).frozen
         mo.post(f"/console/evals/{filed.id}/edit", ok=False)
 
-        dex.post(f"/console/datasets/{dataset_id}/eval-set", name="tickets-eval", count="16")
+        dex.post(f"/console/datasets/{dataset_id}/eval-set", name="tickets-eval", count="200")
         eval_set = platform.store.list_eval_sets()[-1]
         dex.post(f"/console/evals/{eval_set.id}/request-freeze")
         approve(platform, mo, GateType.EVAL_SET_FREEZE, eval_set.id)

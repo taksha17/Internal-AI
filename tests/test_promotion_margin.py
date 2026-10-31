@@ -1,8 +1,9 @@
 """A promotion has to show a lead the plan would believe.
 
-The gate holder approves a decision; they do not re-run the evaluation. So the
-report they sign has to carry the comparison, and the platform has to refuse
-the small lead itself rather than trusting whoever is holding the gate.
+Two numbers decide it and neither belongs to the person holding the gate: the
+candidate leads by +0.05, and that lead clears two standard errors of the paired
+difference. A report that carries no comparison, or only a mean, cannot promote
+anything — a claim nobody can re-check is not evidence.
 """
 
 from __future__ import annotations
@@ -10,9 +11,16 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from conftest import paired_scores
 
 from internal_ai.domain import EvalReport, EvalSet, ModelVersion
-from internal_ai.workflows import PROMOTION_MARGIN, margin_refusal, promote_model
+from internal_ai.workflows import (
+    PROMOTION_MARGIN,
+    PROMOTION_SIGMA,
+    confidence_refusal,
+    margin_refusal,
+    promote_model,
+)
 
 
 def candidate(platform, card: dict | None = None, model_id: str = "mdl_margin") -> ModelVersion:
@@ -42,30 +50,41 @@ def frozen(platform) -> EvalSet:
 
 
 def report_for(
-    platform, metrics: dict[str, float], baseline: dict[str, float], model_id: str = "mdl_margin"
-) -> None:
-    platform.store.add_eval_report(
-        EvalReport(
-            id="rep_margin",
-            model_id=model_id,
-            eval_set_id="evs_margin",
-            created_at="2026-01-02T00:00:00+00:00",
-            metrics=metrics,
-            baseline_metrics=baseline,
-            passed=True,
-            judged_by="ppl_judge",
-        )
+    platform,
+    metrics: dict[str, float],
+    baseline: dict[str, float],
+    per_case: dict | None = None,
+    model_id: str = "mdl_margin",
+) -> EvalReport:
+    report = EvalReport(
+        id="rep_margin",
+        model_id=model_id,
+        eval_set_id="evs_margin",
+        created_at="2026-01-02T00:00:00+00:00",
+        metrics=metrics,
+        baseline_metrics=baseline,
+        per_case=per_case or {},
+        passed=True,
+        judged_by="ppl_judge",
     )
+    platform.store.add_eval_report(report)
+    return report
 
 
-def test_the_margin_is_the_plans_five_points() -> None:
+def test_the_rules_are_the_plans_numbers() -> None:
     assert PROMOTION_MARGIN == 0.05
+    assert PROMOTION_SIGMA == 2.0
 
 
 def test_a_keyword_lead_under_the_margin_is_refused_with_both_figures(platform) -> None:
     candidate(platform)
     frozen(platform)
-    report_for(platform, {"recall_at_10": 0.41}, {"recall_at_10": 0.39})
+    report_for(
+        platform,
+        {"recall_at_10": 0.41},
+        {"recall_at_10": 0.39},
+        paired_scores("recall_at_10", 41, 39, 100),
+    )
 
     with pytest.raises(PermissionError) as refused:
         promote_model(platform, "mdl_margin", gate_approved=True, approver="ppl_lead")
@@ -94,7 +113,12 @@ def test_an_adapters_lead_over_its_base_is_held_to_the_margin(platform) -> None:
         },
     )
     frozen(platform)
-    report_for(platform, {"citation_pass_rate": 0.60}, {"citation_pass_rate": 0.58})
+    report_for(
+        platform,
+        {"citation_pass_rate": 0.60},
+        {"citation_pass_rate": 0.58},
+        paired_scores("citation_pass_rate", 60, 58, 100),
+    )
 
     with pytest.raises(PermissionError, match="un-adapted base"):
         promote_model(platform, "mdl_margin", gate_approved=True, approver="ppl_lead")
@@ -109,15 +133,64 @@ def test_a_report_that_compared_nothing_is_refused(platform) -> None:
         promote_model(platform, "mdl_margin", gate_approved=True, approver="ppl_lead")
 
 
-def test_a_lead_past_the_margin_promotes(platform) -> None:
+def test_a_lead_past_the_margin_and_the_noise_promotes(platform) -> None:
     candidate(platform)
     frozen(platform)
-    report_for(platform, {"recall_at_10": 0.72}, {"recall_at_10": 0.40})
+    report_for(
+        platform,
+        {"recall_at_10": 0.72},
+        {"recall_at_10": 0.40},
+        paired_scores("recall_at_10", 72, 40, 100),
+    )
 
     promoted = promote_model(platform, "mdl_margin", gate_approved=True, approver="ppl_lead")
 
     assert promoted.status == "promoted"
     assert promoted.card["baseline_metrics"] == {"recall_at_10": 0.40}
+
+
+def test_a_lead_past_the_margin_but_inside_the_noise_is_refused(platform) -> None:
+    candidate(platform)
+    frozen(platform)
+    report_for(
+        platform,
+        {"recall_at_10": 0.2},
+        {"recall_at_10": 0.125},
+        {
+            "recall_at_10": {
+                "candidate": [1.0] * 8 + [0.0] * 32,
+                "baseline": [0.0] * 8 + [1.0] * 5 + [0.0] * 27,
+            }
+        },
+    )
+
+    with pytest.raises(PermissionError) as refused:
+        promote_model(platform, "mdl_margin", gate_approved=True, approver="ppl_lead")
+
+    assert "+0.08" in str(refused.value)
+    assert "does not clear two standard errors" in str(refused.value)
+    assert platform.store.get_model("mdl_margin").status != "promoted"
+
+
+def test_a_mean_without_the_pairs_cannot_promote(platform) -> None:
+    candidate(platform)
+    frozen(platform)
+    report_for(platform, {"recall_at_10": 0.7}, {"recall_at_10": 0.4})
+
+    with pytest.raises(PermissionError, match="no per-question"):
+        promote_model(platform, "mdl_margin", gate_approved=True, approver="ppl_lead")
+
+
+def test_the_scores_survive_the_store(platform) -> None:
+    candidate(platform)
+    frozen(platform)
+    scores = paired_scores("recall_at_10", 30, 20, 40)
+    report_for(platform, {"recall_at_10": 0.75}, {"recall_at_10": 0.5}, scores)
+
+    stored = platform.store.get_eval_report("rep_margin")
+
+    assert stored is not None
+    assert stored.per_case == scores
 
 
 def test_a_tie_is_not_a_gain() -> None:
@@ -133,3 +206,13 @@ def test_a_tie_is_not_a_gain() -> None:
         baseline_metrics={"recall_at_10": 0.55, "citation_pass_rate": 0.60},
     )
     assert margin_refusal(clear) is None
+
+
+def test_confidence_says_nothing_when_the_pairs_are_clear() -> None:
+    clear = SimpleNamespace(
+        metrics={"recall_at_10": 0.6},
+        baseline_metrics={"recall_at_10": 0.4},
+        per_case=paired_scores("recall_at_10", 30, 20, 50),
+    )
+
+    assert confidence_refusal(clear) is None

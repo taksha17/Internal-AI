@@ -239,7 +239,8 @@ CREATE TABLE IF NOT EXISTS eval_reports (
     checks TEXT NOT NULL DEFAULT '{}',
     passed INTEGER NOT NULL DEFAULT 0,
     notes TEXT NOT NULL DEFAULT '',
-    judged_by TEXT NOT NULL DEFAULT ''
+    judged_by TEXT NOT NULL DEFAULT '',
+    per_case TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS policy_decisions (
@@ -447,6 +448,8 @@ def init_db(conn: sqlite3.Connection) -> None:
     }
     if "judged_by" not in report_columns:
         conn.execute("ALTER TABLE eval_reports ADD COLUMN judged_by TEXT NOT NULL DEFAULT ''")
+    if "per_case" not in report_columns:
+        conn.execute("ALTER TABLE eval_reports ADD COLUMN per_case TEXT NOT NULL DEFAULT '{}'")
     unique_decision = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'uq_gate_decisions_approver'"
     ).fetchone()

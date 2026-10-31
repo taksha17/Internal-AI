@@ -300,8 +300,14 @@ def test_serving_an_alpha_model_promotes_it_and_records_the_report(
     model = register_alpha(platform, PRIMARY, adapter, "ds_alpha", person)
     gate = request_alpha_promotion(platform, person, model.id, GOOD_ANSWER, HITS)
     approve_gate(platform, gate.id)
-    eval_set_id = alpha_eval_set(platform, [ALPHA_ITEM])
-    report = evaluate_alpha(platform, model.id, eval_set_id, [GOOD_ANSWER], [MOVED_ANSWER])
+    eval_set_id = alpha_eval_set(platform, [ALPHA_ITEM] * 40)
+    report = evaluate_alpha(
+        platform,
+        model.id,
+        eval_set_id,
+        [GOOD_ANSWER] * 40,
+        [GOOD_ANSWER] * 20 + [MOVED_ANSWER] * 20,
+    )
 
     manifest = serve_alpha(platform, model.id, tmp_path / "runner")
     body = manifest.read_text(encoding="utf-8")
@@ -313,7 +319,7 @@ def test_serving_an_alpha_model_promotes_it_and_records_the_report(
     assert promoted.card["eval_report_id"] == report.id
     assert promoted.card["promoted_by"]
     assert promoted.eval_report_id == report.id
-    assert promoted.card["baseline_metrics"]["citation_pass_rate"] == 0.0
+    assert promoted.card["baseline_metrics"]["citation_pass_rate"] == 0.5
 
 
 def test_registering_an_alpha_model_needs_the_register_model_capability(

@@ -51,15 +51,24 @@ even when it is the best number on the page.
 - a failed safety probe, or a recall drop above 0.05;
 - a regression accepted by its own builder;
 - a lead under 0.05 over the un-adapted base or the keyword baseline, or a
-  report that carries no such comparison at all.
+  report that carries no such comparison at all;
+- a lead that does not clear two standard errors of the paired difference, or a
+  report that carries only a mean and no per-question scores.
 
-`workflows.margin_refusal` holds point 3, because the gate approves a decision
-rather than re-running the evaluation: a report that never ran the comparison
-has not shown a lead, and an approving human reading a number is not the same
-as the platform having checked it. The confidence in point 4 stays the gate
-holder's arithmetic — the paired difference needs the per-question scores,
-which the report does not carry, and inventing a variance from a mean would be
-worse than saying who is accountable for it.
+`workflows.margin_refusal` holds point 3 and `workflows.confidence_refusal`
+holds point 4, because the gate approves a decision rather than re-running the
+evaluation: a report that never ran the comparison has not shown a lead, and an
+approving human reading a number is not the same as the platform having checked
+it. So a report now carries one score per question for the candidate and for
+whatever it was compared against (`per_case`), and the standard error is
+computed from those pairs rather than estimated from a mean.
+
+The consequence is deliberate. A two-question eval set cannot promote anything,
+because one flipped answer is half the score and the paired difference cannot
+clear its own noise; the same applies to a short set that happens to show a
+friendly number. The 200-case floor in point 2 is still the reviewer's question
+rather than a coded refusal — the confidence rule refuses a set too small to
+support its lead, which is the part the arithmetic can decide.
 
 ## What a refusal must say
 

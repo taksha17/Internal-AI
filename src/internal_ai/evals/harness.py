@@ -53,6 +53,22 @@ class EvalOutcome:
     baseline_metrics: dict[str, float]
     checks: dict[str, Any]
     notes: str
+    per_case: dict[str, Any] | None = None
+
+
+def per_question_recall(
+    relevance: dict[str, set[str]], rankings: dict[str, list[str]], k: int
+) -> list[float]:
+    """One score per question, so a lead can be told apart from noise."""
+    scores: list[float] = []
+    for query_id in sorted(relevance, key=int):
+        relevant = relevance[query_id]
+        if not relevant:
+            scores.append(0.0)
+            continue
+        retrieved = set(rankings.get(query_id, [])[:k])
+        scores.append(len(relevant & retrieved) / len(relevant))
+    return scores
 
 
 class EvalHarness:
@@ -226,6 +242,12 @@ class EvalHarness:
             baseline_metrics=baseline_metrics,
             checks=checks,
             notes=notes,
+            per_case={
+                "recall_at_10": {
+                    "candidate": per_question_recall(relevance, model_rankings, top_k),
+                    "baseline": per_question_recall(relevance, baseline_rankings, top_k),
+                }
+            },
         )
         self.audit.record(
             actor=actor,
@@ -345,6 +367,7 @@ class EvalHarness:
             created_at=now_iso(),
             metrics=outcome.metrics,
             baseline_metrics=outcome.baseline_metrics,
+            per_case=outcome.per_case or {},
             checks=outcome.checks,
             passed=outcome.passed,
             notes=outcome.notes,

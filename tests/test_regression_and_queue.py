@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
-from conftest import enroll
+from conftest import enroll, paired_scores
 
 from internal_ai.data.tokenizer import train_tokenizer
 from internal_ai.domain import EvalReport, EvalSet, ModelVersion
@@ -125,6 +125,7 @@ def test_a_regressed_model_needs_the_word_accepted_from_someone_else(platform) -
                 created_at=created,
                 metrics={"recall_at_10": recall},
                 baseline_metrics={"recall_at_10": 0.1},
+                per_case=paired_scores("recall_at_10", int(recall * 100), 10, 100),
                 passed=True,
                 judged_by="ppl_mia",
             )

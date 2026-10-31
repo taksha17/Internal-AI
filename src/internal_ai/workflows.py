@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -624,6 +625,58 @@ def margin_refusal(report: Any) -> str | None:
     return None
 
 
+PROMOTION_SIGMA = 2.0
+
+
+def paired_standard_error(candidate: list[float], baseline: list[float]) -> float | None:
+    """The standard error of the mean paired difference, or ``None`` without pairs."""
+    if len(candidate) != len(baseline) or len(candidate) < 2:
+        return None
+    differences = [
+        float(left) - float(right) for left, right in zip(candidate, baseline, strict=True)
+    ]
+    count = len(differences)
+    mean = sum(differences) / count
+    variance = sum((value - mean) ** 2 for value in differences) / (count - 1)
+    return math.sqrt(variance / count)
+
+
+def confidence_refusal(report: Any) -> str | None:
+    """A lead inside the noise is not a lead, whoever holds the gate.
+
+    Point 4 of docs/promotion.md asks the paired difference to clear two
+    standard errors. That arithmetic needs one score per question, so the
+    report carries them and the platform does the sum: the person approving a
+    promotion should not be the one who decided whether +0.06 on 200 correlated
+    questions was real.
+    """
+    metrics = report.metrics or {}
+    baseline = report.baseline_metrics or {}
+    judged = sorted(metric for metric in MARGIN_METRICS if metric in metrics)
+    if not judged:
+        return None
+    per_case = report.per_case or {}
+    for metric in judged:
+        pair = per_case.get(metric) or {}
+        candidate = [float(value) for value in pair.get("candidate") or []]
+        against = [float(value) for value in pair.get("baseline") or []]
+        error = paired_standard_error(candidate, against)
+        if error is None:
+            return (
+                f"the report carries no per-question {metric} scores for the candidate and "
+                f"the {MARGIN_METRICS[metric]} baseline, so its lead cannot be told from noise"
+            )
+        lead = float(metrics[metric]) - float(baseline.get(metric, 0.0))
+        needed = PROMOTION_SIGMA * error
+        if round(lead, 6) <= round(needed, 6):
+            return (
+                f"candidate {float(metrics[metric]):.2f} vs {MARGIN_METRICS[metric]} "
+                f"{float(baseline.get(metric, 0.0)):.2f} on {metric}: {lead:+.2f} does not "
+                f"clear two standard errors ({needed:.3f} over {len(candidate)} questions)"
+            )
+    return None
+
+
 def promote_model(
     platform: Platform,
     model_id: str,
@@ -670,7 +723,7 @@ def promote_model(
         raise PermissionError(
             "the supervised run dropped recall@10 by more than 0.05 against the previous candidate"
         )
-    refusal = margin_refusal(report)
+    refusal = margin_refusal(report) or confidence_refusal(report)
     if refusal is not None:
         raise PermissionError(refusal)
     from internal_ai.evidence import require_playbook

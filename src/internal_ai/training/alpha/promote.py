@@ -188,10 +188,16 @@ def _alpha_contamination(
 
 def _score_answers(
     eval_set: EvalSet, answers: list[str]
-) -> tuple[int, list[str], list[dict[str, str]]]:
-    """How many answers kept their citations, which ones did not, what leaked."""
+) -> tuple[int, list[str], list[dict[str, str]], list[float]]:
+    """How many answers kept their citations, which ones did not, what leaked.
+
+    The per-question flags are returned as well: promotion compares the adapter
+    and the base question by question, and a mean alone cannot say whether the
+    difference is larger than the noise it was measured in.
+    """
     mismatches: list[str] = []
     leaks: list[dict[str, str]] = []
+    kept: list[float] = []
     cited = 0
     for item, answer in zip(eval_set.items, answers, strict=True):
         hits = [AskHit(str(hit["path"]), int(hit["line"])) for hit in item.get("hits", [])]
@@ -199,8 +205,9 @@ def _score_answers(
         mismatches.extend(report.mismatches)
         if report.passed:
             cited += 1
+        kept.append(1.0 if report.passed else 0.0)
         leaks.extend(_pii_leaks(answer, list(item.get("hits", []))))
-    return cited, mismatches, leaks
+    return cited, mismatches, leaks, kept
 
 
 def evaluate_alpha(
@@ -237,8 +244,8 @@ def evaluate_alpha(
             raise ValueError(
                 f"the eval set has {total} questions and {len(supplied)} {label} were given"
             )
-    cited, mismatches, leaks = _score_answers(eval_set, answers)
-    base_cited, base_mismatches, _ = _score_answers(eval_set, baseline_answers)
+    cited, mismatches, leaks, kept = _score_answers(eval_set, answers)
+    base_cited, base_mismatches, _, base_kept = _score_answers(eval_set, baseline_answers)
     rate = round(cited / total, 6) if total else 0.0
     base_rate = round(base_cited / total, 6) if total else 0.0
     if cited > base_cited:
@@ -284,6 +291,7 @@ def evaluate_alpha(
         created_at=now_iso(),
         metrics=metrics,
         baseline_metrics=baseline_metrics,
+        per_case={"citation_pass_rate": {"candidate": kept, "baseline": base_kept}},
         checks=checks,
         passed=passed,
         notes=(
