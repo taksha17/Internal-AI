@@ -18,6 +18,8 @@ from internal_ai.training.alpha.qwen import (
     tensor_index,
 )
 
+BACKEND = "stream_from_disk"
+
 
 def _encode(directory: Path, text: str, seq_len: int) -> list[int]:
     from tokenizers import Tokenizer
@@ -116,6 +118,7 @@ def train_prefix(
             "seed": seed,
             "losses": losses,
             "trained_layers": depth,
+            "adapter_backend": BACKEND,
         },
         out,
     )

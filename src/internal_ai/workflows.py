@@ -549,6 +549,36 @@ def recall_regression(platform: Platform, model: ModelVersion) -> dict[str, floa
     return {"previous": best, "current": float(current.metrics["recall_at_10"]), "drop": drop}
 
 
+PROMOTABLE_ADAPTER_BACKENDS = frozenset({"peft"})
+
+
+def adapter_backend_named_by(card: dict[str, Any], path: str = "") -> str:
+    """Which trainer produced an adapter: the card first, else its own run record.
+
+    A card can be filled in by hand and a run record is written by the trainer,
+    so naming the backend in either place is enough to be refused on it. Naming
+    it nowhere is not enough to be promoted: an unnamed adapter was trained by
+    the streamed recipe, which is the only trainer this package has shipped.
+    """
+    named = str(card.get("adapter_backend") or "").strip()
+    if named:
+        return named
+    if not path:
+        return ""
+    import json
+    from pathlib import Path
+
+    record = Path(path).parent / "reproducibility.json"
+    try:
+        loaded = json.loads(record.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    if not isinstance(loaded, dict):
+        return ""
+    recipe = loaded.get("recipe") if isinstance(loaded.get("recipe"), dict) else {}
+    return str(loaded.get("adapter_backend") or recipe.get("backend") or "").strip()
+
+
 def promote_model(
     platform: Platform,
     model_id: str,
@@ -560,6 +590,15 @@ def promote_model(
     model = platform.store.get_model(model_id)
     if model is None:
         raise KeyError(f"unknown model: {model_id}")
+    if model.card.get("base_repo_id"):
+        backend = adapter_backend_named_by(model.card, model.path or "")
+        if backend not in PROMOTABLE_ADAPTER_BACKENDS:
+            raise PermissionError(
+                "this adapter was trained by "
+                f"{backend or 'a trainer it does not name'}, which optimises a truncated "
+                "model and is applied at full depth; only a full-depth backend "
+                f"({', '.join(sorted(PROMOTABLE_ADAPTER_BACKENDS))}) may be promoted"
+            )
     if not gate_approved:
         raise PermissionError("model promotion requires an approved model_promotion gate (FR-15)")
     report = latest_frozen_pass(platform, model_id)
