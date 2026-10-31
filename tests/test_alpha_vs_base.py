@@ -80,11 +80,23 @@ def dataset(platform, dataset_id: str) -> None:
     )
 
 
-def alpha_eval_set(platform) -> str:
+def many_items(count: int) -> list[dict[str, Any]]:
+    """Enough questions that a lead can clear two standard errors.
+
+    Two questions cannot: one flipped answer is half the score, and promotion
+    refuses a difference that one answer could have produced.
+    """
+    return [
+        {**ITEMS[index % len(ITEMS)], "query": f"{ITEMS[index % len(ITEMS)]['query']} #{index}"}
+        for index in range(count)
+    ]
+
+
+def alpha_eval_set(platform, items: list[dict[str, Any]] | None = None) -> str:
     from internal_ai.evals.harness import EvalHarness
 
     harness = EvalHarness(platform.store, platform.audit)
-    eval_set = harness.create_eval_set("alpha", ITEMS)
+    eval_set = harness.create_eval_set("alpha", ITEMS if items is None else items)
     harness.freeze_eval_set(eval_set.id, "ml_lead", gate_approved=True)
     return eval_set.id
 
@@ -189,17 +201,21 @@ def test_beating_the_base_promotes_and_keeps_both_numbers_on_the_card(
     person, model = alpha_model(platform, enroll_person, tmp_path)
     gate = request_alpha_promotion(platform, person, model.id, GOOD_HOST, HITS)
     approve_gate(platform, gate.id)
-    eval_set_id = alpha_eval_set(platform)
+    eval_set_id = alpha_eval_set(platform, many_items(40))
 
     report = evaluate_alpha(
-        platform, model.id, eval_set_id, [GOOD_HOST, GOOD_KEY], [MOVED, GOOD_KEY]
+        platform,
+        model.id,
+        eval_set_id,
+        [GOOD_HOST, GOOD_KEY] * 20,
+        [GOOD_HOST, GOOD_KEY] * 10 + [MOVED, GOOD_KEY] * 10,
     )
     assert report.passed is True, report.checks
     assert report.checks["beats_base"]["adapter_citation_pass_rate"] == 1.0
-    assert report.checks["beats_base"]["base_citation_pass_rate"] == 0.5
+    assert report.checks["beats_base"]["base_citation_pass_rate"] == 0.75
 
     serve_alpha(platform, model.id, tmp_path / "runner")
     promoted = platform.store.get_model(model.id)
     assert promoted.status == "promoted"
     assert promoted.card["eval_results"]["citation_pass_rate"] == 1.0
-    assert promoted.card["baseline_metrics"]["citation_pass_rate"] == 0.5
+    assert promoted.card["baseline_metrics"]["citation_pass_rate"] == 0.75

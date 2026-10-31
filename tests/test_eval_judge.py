@@ -7,7 +7,7 @@ refuses a self-run, and promotion refuses a self-judged report.
 
 from __future__ import annotations
 
-from conftest import enroll
+from conftest import enroll, paired_scores
 
 from internal_ai.domain import EvalReport, EvalSet, ModelVersion
 from internal_ai.evals.harness import EvalHarness, EvalOutcome
@@ -51,6 +51,7 @@ def add_report(platform, model_id: str, judged_by: str, passed: bool = True) -> 
             created_at="2026-01-02T00:00:00+00:00",
             metrics={"recall_at_10": 0.8},
             baseline_metrics={"recall_at_10": 0.5},
+            per_case=paired_scores("recall_at_10", 32, 20, 40),
             passed=passed,
             judged_by=judged_by,
         )

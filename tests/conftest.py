@@ -61,6 +61,20 @@ def enroll_person() -> Callable[..., Actor]:
     return enroll
 
 
+def paired_scores(
+    metric: str, candidate_correct: int, baseline_correct: int, total: int
+) -> dict[str, dict[str, list[float]]]:
+    """Per-question hits where the candidate keeps every hit its baseline kept.
+
+    Promotion reads these rather than a mean, so a test that wants a promotion
+    has to hand it the same per-question evidence a real evaluation would.
+    """
+    assert 0 <= baseline_correct <= candidate_correct <= total
+    candidate = [1.0] * candidate_correct + [0.0] * (total - candidate_correct)
+    baseline = [1.0] * baseline_correct + [0.0] * (total - baseline_correct)
+    return {metric: {"candidate": candidate, "baseline": baseline}}
+
+
 def token_for(platform: Platform, actor: Actor) -> str:
     return IdentityService(platform).create_token(actor, "tests")
 

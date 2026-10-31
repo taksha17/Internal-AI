@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from conftest import paired_scores
 
 from internal_ai.data.records import Record
 from internal_ai.evals.harness import EvalHarness
@@ -144,6 +145,7 @@ def test_a_passing_report_off_a_frozen_set_cannot_promote(platform) -> None:
                 created_at=created_at,
                 metrics={"recall_at_10": 1.0},
                 baseline_metrics={"recall_at_10": 0.4},
+                per_case=paired_scores("recall_at_10", 40, 16, 40),
                 passed=True,
                 notes="pass",
             )

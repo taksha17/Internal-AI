@@ -341,6 +341,7 @@ class EvalReport:
     passed: bool = False
     notes: str = ""
     judged_by: str = ""
+    per_case: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
