@@ -1,6 +1,6 @@
 """Adapting the pinned base is a governed run, not a bare function call.
 
-`train_prefix` does the arithmetic and knows nothing about who asked, what it
+The trainer does the arithmetic and knows nothing about who asked, what it
 cost or what it produced. This module is the path that does: the person's
 capability is checked, the dataset must be released, the base must be one this
 install is licensed to load, and the run happens as a job so a killed process
@@ -14,23 +14,27 @@ from __future__ import annotations
 import json
 import platform as host
 import subprocess
+from importlib import metadata
 from pathlib import Path
 from typing import Any
 
 from internal_ai.context import Platform
 from internal_ai.domain import AuditOutcome, GateStatus, GateType, RunSummary
-from internal_ai.ids import file_hash, new_id, now_iso
+from internal_ai.ids import file_hash, new_id, now_iso, tree_hash
 from internal_ai.services.actor import Actor
 from internal_ai.services.build import TRAINING_AGENT, TRAINING_COST_GATE_USD, gate_for
 from internal_ai.services.jobs import JobRunner
 from internal_ai.services.permissions import Action, deny, require
+from internal_ai.training.alpha.adapt import BACKEND as FULL_DEPTH_BACKEND
+from internal_ai.training.alpha.adapt import adapt as adapt_full_depth
 from internal_ai.training.alpha.pin import RECIPE, PinnedBase, available_base
-from internal_ai.training.alpha.train import BACKEND as TRAINER_BACKEND
+from internal_ai.training.alpha.train import BACKEND as STREAMED_BACKEND
 from internal_ai.training.alpha.train import train_prefix
 from internal_ai.training.ownership import require_released_dataset
 from internal_ai.training.provenance import require_open_weights
 
 REPRODUCIBILITY_FILE = "reproducibility.json"
+ADAPTER_BACKENDS = frozenset({FULL_DEPTH_BACKEND, STREAMED_BACKEND})
 
 
 def _commit(root: Path) -> str:
@@ -48,12 +52,11 @@ def _commit(root: Path) -> str:
     return proc.stdout.strip() if proc.returncode == 0 and proc.stdout.strip() else "unknown"
 
 
-def _torch_version() -> str:
+def _package_version(name: str) -> str:
     try:
-        import torch
-    except ImportError:  # pragma: no cover - the alpha extra is optional
+        return metadata.version(name)
+    except metadata.PackageNotFoundError:  # pragma: no cover - the extra is optional
         return "absent"
-    return str(torch.__version__)
 
 
 def reproducibility_beside(adapter_path: Path) -> dict[str, Any]:
@@ -107,14 +110,22 @@ def train_alpha(
     sequences: int = 4,
     seed: int = 0,
     cost_cap_usd: float = 2.0,
+    epochs: int = 1,
+    backend: str = FULL_DEPTH_BACKEND,
     base: PinnedBase | None = None,
 ) -> dict[str, Any]:
     """Adapt the pinned base on a released dataset, as a job with a record."""
     require(platform.audit, actor, Action.TRAIN_MODEL, dataset_id)
     mode = require_open_weights(platform, "adapting a base model")
     dataset = require_released_dataset(platform.store.get_dataset(dataset_id))
-    if not 1 <= layers <= 4:
+    if backend not in ADAPTER_BACKENDS:
+        raise ValueError(
+            f"unknown adapter backend {backend}; this package runs {sorted(ADAPTER_BACKENDS)}"
+        )
+    if backend == STREAMED_BACKEND and not 1 <= layers <= 4:
         raise ValueError("adapt between one and four layers; the recipe is streamed by layer")
+    if epochs < 1:
+        raise ValueError("an adaptation run needs at least one pass over the text")
     if sequences < 1:
         raise ValueError("a run needs at least one sequence")
     if cost_cap_usd <= 0:
@@ -126,25 +137,39 @@ def train_alpha(
     _require_cost_gate(platform, actor, subject, cost_cap_usd)
     texts = _training_text(platform, dataset_id)
     stem = chosen.repo_id.split("/")[-1].lower()
-    adapter = platform.settings.artifacts_dir / "alpha" / f"{stem}-{new_id('ad')}.pt"
+    suffix = ".pt" if backend == STREAMED_BACKEND else "-adapter"
+    adapter = platform.settings.artifacts_dir / "alpha" / f"{stem}-{new_id('ad')}{suffix}"
 
     def work() -> dict[str, Any]:
         run_id = new_id("run")
         started = now_iso()
-        result = train_prefix(
-            chosen,
-            platform.settings.root,
-            texts,
-            adapter,
-            layers=layers,
-            sequences=sequences,
-            seed=seed,
-        )
+        if backend == FULL_DEPTH_BACKEND:
+            result = adapt_full_depth(
+                chosen,
+                platform.settings.root,
+                texts,
+                adapter,
+                rank=RECIPE.rank,
+                alpha=RECIPE.alpha,
+                max_seq_len=RECIPE.max_seq_len,
+                epochs=epochs,
+                seed=seed,
+            )
+        else:
+            result = train_prefix(
+                chosen,
+                platform.settings.root,
+                texts,
+                adapter,
+                layers=layers,
+                sequences=sequences,
+                seed=seed,
+            )
         finished = now_iso()
         record = {
             "run_id": run_id,
             "track": "alpha",
-            "adapter_backend": TRAINER_BACKEND,
+            "adapter_backend": backend,
             "provenance_mode": mode,
             "commit": _commit(platform.settings.root),
             "base": {
@@ -155,6 +180,8 @@ def train_alpha(
             },
             "dataset": {"id": dataset.id, "content_hash": dataset.content_hash},
             "recipe": {
+                "backend": backend,
+                "epochs": epochs if backend == FULL_DEPTH_BACKEND else None,
                 "rank": RECIPE.rank,
                 "alpha": RECIPE.alpha,
                 "max_seq_len": RECIPE.max_seq_len,
@@ -163,8 +190,14 @@ def train_alpha(
                 "sequences": result.get("sequences", len(texts)),
             },
             "seed": seed,
-            "adapter_sha256": file_hash(adapter),
-            "environment": {"python": host.python_version(), "torch": _torch_version()},
+            "adapter_sha256": result.get("adapter_sha256")
+            or (tree_hash(adapter) if adapter.is_dir() else file_hash(adapter)),
+            "environment": {
+                "python": host.python_version(),
+                "torch": _package_version("torch"),
+                "transformers": _package_version("transformers"),
+                "peft": _package_version("peft"),
+            },
         }
         record_path = adapter.parent / REPRODUCIBILITY_FILE
         record_path.write_text(
@@ -188,6 +221,7 @@ def train_alpha(
                     "base_revision": chosen.revision,
                     "dataset_hash": dataset.content_hash,
                     "seed": seed,
+                    "adapter_backend": backend,
                 },
             )
         )
@@ -209,6 +243,7 @@ def train_alpha(
         return {
             **result,
             "run_id": run_id,
+            "adapter_backend": backend,
             "adapter": str(adapter),
             "reproducibility": str(record_path),
             "license_class": record["base"]["license_class"],
@@ -225,6 +260,8 @@ def train_alpha(
             "layers": layers,
             "sequences": sequences,
             "seed": seed,
+            "epochs": epochs,
+            "backend": backend,
         },
         work,
         agent=TRAINING_AGENT,

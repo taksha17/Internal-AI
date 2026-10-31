@@ -35,5 +35,23 @@ def file_hash(path: Path | str) -> str:
     return digest.hexdigest()
 
 
+def tree_hash(path: Path | str) -> str:
+    """One hash over a directory's files, so an adapter directory has an identity.
+
+    A saved PEFT adapter is a directory, not a file, and hashing only its name
+    would let a different adapter take the place of the one an eval report named.
+    """
+    root = Path(path)
+    digest = hashlib.sha256()
+    for entry in sorted(item for item in root.rglob("*") if item.is_file()):
+        digest.update(entry.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        with open(entry, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def text_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()

@@ -80,6 +80,12 @@ def generate(
     import torch
 
     directory = verify_snapshot(base, root)
+    if adapter_path is not None and adapter_path.is_dir():
+        raise LocalGenerationUnavailable(
+            "this adapter was saved by the full-depth backend as a directory, and the "
+            "reference generator here only replays the streamed rank-8 format; serve it "
+            "with the local runner (set INTERNAL_AI_LOCAL_RUNNER)"
+        )
     try:
         from tokenizers import Tokenizer
     except ImportError as exc:  # pragma: no cover - the alpha extra is optional
