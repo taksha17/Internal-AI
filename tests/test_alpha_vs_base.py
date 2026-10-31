@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -100,6 +101,8 @@ def alpha_model(platform, enroll_person, tmp_path: Path) -> tuple[Any, ModelVers
     dataset(platform, "ds_alpha")
     adapter = tmp_path / "adapter.pt"
     torch.save({"A": torch.zeros(1)}, adapter)
+    record = tmp_path / "reproducibility.json"
+    record.write_text(json.dumps({"adapter_backend": "peft"}), encoding="utf-8")
     return person, register_alpha(platform, PRIMARY, adapter, "ds_alpha", person)
 
 

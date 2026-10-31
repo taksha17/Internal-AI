@@ -25,6 +25,7 @@ from internal_ai.services.build import TRAINING_AGENT, TRAINING_COST_GATE_USD, g
 from internal_ai.services.jobs import JobRunner
 from internal_ai.services.permissions import Action, deny, require
 from internal_ai.training.alpha.pin import RECIPE, PinnedBase, available_base
+from internal_ai.training.alpha.train import BACKEND as TRAINER_BACKEND
 from internal_ai.training.alpha.train import train_prefix
 from internal_ai.training.ownership import require_released_dataset
 from internal_ai.training.provenance import require_open_weights
@@ -143,6 +144,7 @@ def train_alpha(
         record = {
             "run_id": run_id,
             "track": "alpha",
+            "adapter_backend": TRAINER_BACKEND,
             "provenance_mode": mode,
             "commit": _commit(platform.settings.root),
             "base": {

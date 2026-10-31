@@ -182,8 +182,13 @@ def test_alpha_promotion_is_requested_and_serving_waits(
 ) -> None:
     person = enroll_person(platform, "Elena Alpha", ["ml_lead"])
     dataset(platform, "ds_alpha", released=True)
+    import json
+
     adapter = tmp_path / "adapter.pt"
     torch.save({"A": torch.zeros(1)}, adapter)
+    (tmp_path / "reproducibility.json").write_text(
+        json.dumps({"adapter_backend": "peft"}), encoding="utf-8"
+    )
     model = register_alpha(platform, PRIMARY, adapter, "ds_alpha", person)
     assert model.card["pretrained_weights_used"] is True
     gate = request_alpha_promotion(
@@ -210,8 +215,13 @@ def test_the_alpha_evaluation_scores_the_answers_against_a_frozen_set(
 
     person = enroll_person(platform, "Elena Alpha", ["ml_lead"])
     dataset(platform, "ds_alpha", released=True)
+    import json
+
     adapter = tmp_path / "adapter.pt"
     torch.save({"A": torch.zeros(1)}, adapter)
+    (tmp_path / "reproducibility.json").write_text(
+        json.dumps({"adapter_backend": "peft"}), encoding="utf-8"
+    )
     model = register_alpha(platform, PRIMARY, adapter, "ds_alpha", person)
     eval_set_id = alpha_eval_set(platform, [ALPHA_ITEM])
 
@@ -233,8 +243,13 @@ def test_the_alpha_evaluation_refuses_an_unfrozen_eval_set(
 
     person = enroll_person(platform, "Elena Alpha", ["ml_lead"])
     dataset(platform, "ds_alpha", released=True)
+    import json
+
     adapter = tmp_path / "adapter.pt"
     torch.save({"A": torch.zeros(1)}, adapter)
+    (tmp_path / "reproducibility.json").write_text(
+        json.dumps({"adapter_backend": "peft"}), encoding="utf-8"
+    )
     model = register_alpha(platform, PRIMARY, adapter, "ds_alpha", person)
     harness = EvalHarness(platform.store, platform.audit)
     eval_set = harness.create_eval_set("alpha", [ALPHA_ITEM])
@@ -250,8 +265,13 @@ def test_an_alpha_model_is_not_served_without_a_passing_frozen_report(
 
     person = enroll_person(platform, "Elena Alpha", ["ml_lead"])
     dataset(platform, "ds_alpha", released=True)
+    import json
+
     adapter = tmp_path / "adapter.pt"
     torch.save({"A": torch.zeros(1)}, adapter)
+    (tmp_path / "reproducibility.json").write_text(
+        json.dumps({"adapter_backend": "peft"}), encoding="utf-8"
+    )
     model = register_alpha(platform, PRIMARY, adapter, "ds_alpha", person)
     gate = request_alpha_promotion(platform, person, model.id, GOOD_ANSWER, HITS)
     approve_gate(platform, gate.id)
@@ -270,8 +290,13 @@ def test_serving_an_alpha_model_promotes_it_and_records_the_report(
 
     person = enroll_person(platform, "Elena Alpha", ["ml_lead"])
     dataset(platform, "ds_alpha", released=True)
+    import json
+
     adapter = tmp_path / "adapter.pt"
     torch.save({"A": torch.zeros(1)}, adapter)
+    (tmp_path / "reproducibility.json").write_text(
+        json.dumps({"adapter_backend": "peft"}), encoding="utf-8"
+    )
     model = register_alpha(platform, PRIMARY, adapter, "ds_alpha", person)
     gate = request_alpha_promotion(platform, person, model.id, GOOD_ANSWER, HITS)
     approve_gate(platform, gate.id)
@@ -297,8 +322,13 @@ def test_registering_an_alpha_model_needs_the_register_model_capability(
     from internal_ai.services.permissions import PermissionDenied
 
     dataset(platform, "ds_alpha", released=True)
+    import json
+
     adapter = tmp_path / "adapter.pt"
     torch.save({"A": torch.zeros(1)}, adapter)
+    (tmp_path / "reproducibility.json").write_text(
+        json.dumps({"adapter_backend": "peft"}), encoding="utf-8"
+    )
     outsider = enroll_person(platform, "Rae Outsider", ["data_engineer"])
     with pytest.raises(PermissionDenied):
         register_alpha(platform, PRIMARY, adapter, "ds_alpha", outsider)
@@ -314,8 +344,13 @@ def test_an_alpha_model_may_name_only_the_pinned_base(
     from dataclasses import replace
 
     dataset(platform, "ds_alpha", released=True)
+    import json
+
     adapter = tmp_path / "adapter.pt"
     torch.save({"A": torch.zeros(1)}, adapter)
+    (tmp_path / "reproducibility.json").write_text(
+        json.dumps({"adapter_backend": "peft"}), encoding="utf-8"
+    )
     lead = enroll_person(platform, "Mo Lead", ["ml_lead"])
     forged = replace(PRIMARY, repo_id="Qwen/Qwen3-4B-finetuned", revision="0" * 40)
     with pytest.raises(PermissionError, match="pinned"):
@@ -324,8 +359,13 @@ def test_an_alpha_model_may_name_only_the_pinned_base(
 
 def test_an_alpha_model_needs_a_released_dataset(platform, enroll_person, tmp_path: Path) -> None:
     dataset(platform, "ds_draft", released=False)
+    import json
+
     adapter = tmp_path / "adapter.pt"
     torch.save({"A": torch.zeros(1)}, adapter)
+    (tmp_path / "reproducibility.json").write_text(
+        json.dumps({"adapter_backend": "peft"}), encoding="utf-8"
+    )
     lead = enroll_person(platform, "Mo Lead", ["ml_lead"])
     with pytest.raises(PermissionError, match="released"):
         register_alpha(platform, PRIMARY, adapter, "ds_draft", lead)

@@ -79,6 +79,7 @@ def generate(
     """Greedy tokens from the base, with the adapter on the layers it covers."""
     import torch
 
+    directory = verify_snapshot(base, root)
     try:
         from tokenizers import Tokenizer
     except ImportError as exc:  # pragma: no cover - the alpha extra is optional
@@ -87,7 +88,6 @@ def generate(
             "install the alpha extra (pip install 'internal-ai[alpha]')"
         ) from exc
 
-    directory = verify_snapshot(base, root)
     shape = load_shape(directory)
     index = tensor_index(base, root)
     tokenizer = Tokenizer.from_file(str(directory / "tokenizer.json"))

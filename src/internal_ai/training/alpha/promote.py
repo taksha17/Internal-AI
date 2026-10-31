@@ -62,6 +62,7 @@ def register_alpha(
         card["commit"] = record.get("commit")
         card["seed"] = record.get("seed")
         card["run_id"] = record.get("run_id")
+        card["adapter_backend"] = record.get("adapter_backend")
     existing = platform.store.list_models(name=base.repo_id.split("/")[-1].lower())
     version = max((item.version for item in existing), default=0) + 1
     model = ModelVersion(
