@@ -58,6 +58,11 @@ returns as a 503 rather than a stack trace.
 
 ## Tests
 
+CI installs `.[dev,train]`, so `torch`, `safetensors` and `tokenizers` are absent
+there. The module skips when the extra is missing instead of failing collection:
+the suite that guards the guardrails has to stay runnable without a two-gigabyte
+wheel, and the local path is exercised on the machines that install `alpha`.
+
 `tests/test_alpha_local.py` — a real one-layer snapshot on disk produces a
 token, twice identically; adapter pairs load per layer and an empty adapter is
 refused; a card that names no pinned base, or the right repo at the wrong

@@ -7,8 +7,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import torch
-from safetensors.torch import save_file
 
 from internal_ai.domain import ModelVersion
 from internal_ai.ids import now_iso
@@ -23,6 +21,11 @@ from internal_ai.training.alpha.local import (
 )
 from internal_ai.training.alpha.pin import PRIMARY, PinnedBase, WeightShard
 from internal_ai.training.provenance import ProvenanceRefused
+
+torch = pytest.importorskip("torch", reason="local generation needs the alpha extra")
+save_file = pytest.importorskip(
+    "safetensors.torch", reason="local generation needs the alpha extra"
+).save_file
 
 WORDS = ("hello", "world", "the", "ledger", "failed", "[UNK]")
 
