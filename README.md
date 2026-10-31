@@ -205,10 +205,10 @@ not in a public issue. Never commit keys, tokens or records. The suite runs
 
 [PolyForm Noncommercial 1.0.0](LICENSE). People, schools, nonprofits and
 governments may use, change and share the software for noncommercial purposes.
-A company needs a separate licence from the copyright holder to use it in its
-business, or to sell something built on it. That is deliberate: the point of the
-project is a model a company owns outright, and the software that builds it is
-not given away for someone else to resell.
+Anyone else who wants to run it in a business, or to sell something built on it,
+needs a separate licence from the copyright holder. That is deliberate: the
+point of the project is a model a company owns outright, and the software that
+builds it is not given away for someone else to resell.
 
 [LICENSING.md](LICENSING.md) sets out what needs a commercial licence, why the
 models you build are yours, and which base models this install will load.
