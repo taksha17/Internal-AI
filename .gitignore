@@ -40,6 +40,9 @@ Thumbs.db
 .freebuff/
 .worktrees/
 
+# Credentials handed to the agent: never committed, never printed
+.secrets/
+
 # Internal working notes: kept on disk, never published
 /PRD Agent-Driven In-House LLM Build Platform.md
 /STATUS.md

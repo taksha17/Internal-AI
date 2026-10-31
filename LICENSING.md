@@ -6,7 +6,8 @@ the models you build with it.
 **The software** is source-available under the
 [PolyForm Noncommercial License 1.0.0](LICENSE). It is not open source. Reading
 it, changing it, running it for research, teaching, study, charity or a
-noncommercial project is free. Using it in a business is not.
+noncommercial project is free. Using it in a business is not, except by the
+licensor's own company, which is licensed already.
 
 **The models** are yours. Weights you train, adapters you produce, datasets you
 assemble and evaluation reports you write belong to you and your organisation:
@@ -20,7 +21,8 @@ licence text or an agreement signed by both sides.
 ## When you need a commercial licence
 
 You need one if the software is used by or for a company, in the course of its
-business. That includes the cases that surprise people:
+business, and you are not the licensor's own company (see below). That includes
+the cases that surprise people:
 
 - running it internally to build or serve a model your organisation uses;
 - offering answers, search or evaluation as part of a product or service;
@@ -31,6 +33,21 @@ business. That includes the cases that surprise people:
 You do not need one to read the code, to evaluate it on your own machine as an
 individual, to teach with it, to study it, to reproduce its tests, or to
 contribute to it.
+
+## The licensor's own company
+
+The licensor, any company the licensor controls, and their employees and
+contractors acting for them do not need a separate agreement to use the
+software commercially. The licence in the `LICENSE` file grants it to them:
+perpetual, irrevocable and royalty-free, and it travels with the copyright, so
+when the copyright is assigned to the company, the company holds it.
+
+That exception is narrow on purpose. It covers the party that writes the
+software and the company that develops and delivers it — running it to train a
+model, deploying it for a customer, shipping it under a commercial agreement,
+and having an agency write code against it. It does not cover a customer, a
+partner, or anyone else: those still need a commercial licence before the
+software runs inside their business.
 
 ## What the commercial agreement will contain
 
@@ -47,7 +64,27 @@ describe:
   with no telemetry is narrower than a SaaS contract's.
 
 Ask by opening an issue at <https://github.com/taksha17/Internal-AI>. There is no
-sales form and no tracking pixel; the repository is the front door.
+sales form and no tracking pixel; the repository is the front door. A full
+draft of the agreement itself is in
+[`COMMERCIAL-LICENCE-DRAFT.md`](COMMERCIAL-LICENCE-DRAFT.md).
+
+## What is not written yet
+
+One of the two documents a customer will ask for exists as a draft:
+
+- the **commercial licence agreement**: a full draft is in
+  [`COMMERCIAL-LICENCE-DRAFT.md`](COMMERCIAL-LICENCE-DRAFT.md), written to be
+  marked up rather than signed. Every bracketed value is a decision that has
+  not been made, the notes at the top are the founder's reading of the deal,
+  and a lawyer has not reviewed any of it.
+- the **contributor licence agreement** for outside code, which does not exist
+  in any form. Without it, an outside contribution cannot be merged, because
+  the chain of title to a contribution in a product the company sells is not
+  established.
+
+The draft is published so that the terms the founder intends to sell under are
+visible, and so that nobody has to guess them. It is not a licence, and
+nothing in it is in force until the licensor signs it.
 
 ## Base models are licensed separately
 
@@ -87,7 +124,11 @@ say it is based on this project; it may not present itself as this project.
 Stated plainly so they do not quietly become engineering decisions:
 
 1. The legal entity that holds the copyright — a person or a company — and the
-   `Required Notice` line that names it.
+   `Required Notice` line that names it. It is a person today. When the company
+   exists, the copyright is assigned to it and the notice line changes to the
+   company name: one line, one file. Nothing else moves, because the commercial
+   licence granted to the licensor's company in `LICENSE` travels with the
+   copyright.
 2. The contributor licence agreement wording, and whether assignment or a broad
    licence grant is wanted.
 3. Whether the commercial offer is a licence, a subscription, or a licence plus
@@ -98,5 +139,6 @@ Stated plainly so they do not quietly become engineering decisions:
    adoption, and if so which part.
 
 Until items 1 and 2 are settled, the current arrangement is coherent: the code
-stays noncommercial, the models stay the customer's, and no outside
-contribution is merged without a written grant.
+stays noncommercial for everyone but the licensor's own company, the models
+stay the customer's, and no outside contribution is merged without a written
+grant.
