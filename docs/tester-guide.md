@@ -232,10 +232,9 @@ a set of groups, and those groups decide which records a search may return.
   registered model and `/v1/search` there would return 404. Use the serving
   instance above for the API path and the `ask` command for real retrieval.
 - Jobs run in-process. Sandbox container isolation and the compute backend
-  decision are open in `STATUS.md` section 10. Do not feed untrusted code to
-  the compute plane.
+  decision are still open. Do not feed untrusted code to the compute plane.
 - Retrieval is keyword level until the corpus grows and the compute decision
-  in `STATUS.md` section 10 is made.
+  is made.
 - The audit chain covers what ran. `audit verify` checks the hash chain, not
   the completeness of what should have run.
 - Company single sign-on is not wired up. Accounts are local, and a

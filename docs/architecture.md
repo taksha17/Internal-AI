@@ -139,8 +139,7 @@ randomly initialised. The from-scratch track has no path that accepts external
 weights, and its model card records `pretrained_weights_used: false`. The alpha
 track in `training/alpha/` is the only place a pinned open base may be loaded,
 and that card records the base name, revision and license. The company owns
-the adapter. The from-scratch language model is the later beta in
-`docs/beta-from-scratch.md`.
+the adapter. The from-scratch language model is the later beta track.
 
 ### Objectives
 
