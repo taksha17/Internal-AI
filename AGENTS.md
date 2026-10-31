@@ -107,7 +107,9 @@ machine refuses the illegal move.
 
 ## Git
 
-- One change is one branch with one record in `docs/changes/NN-<slug>.md`.
+- One change is one branch. The change record is a working note at
+  `docs/changes/NN-<slug>.md`, kept out of git like the plans and the PRD; the
+  pull request body carries what a reviewer needs.
 - Agents do not push to `main`. Only the owner (`taksha17`) merges there, so an
   agent commits on its branch, pushes that branch, and opens or updates one
   pull request.

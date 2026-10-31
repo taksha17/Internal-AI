@@ -1,340 +1,135 @@
-# Contributing to Internal-AI Platform
+# Contributing
 
-Thank you for your interest in contributing to the Internal-AI platform! This document outlines the guidelines and processes for contributing to this project.
+Internal-AI is the control plane a company runs on its own machines to build,
+evaluate and serve a model it owns. Contributions are welcome. This file is what
+a change has to satisfy before it can be merged.
 
-## Who can write to `main`
+## Who merges
 
-Anyone can contribute. A contribution is a pull request. Further work on that change is another push to the pull request's branch.
+Anyone may open a pull request. Only the owner, GitHub account `taksha17`, writes
+to `main` — merges, force-pushes and branch deletions are accepted from that
+account alone. You do not need write access to this repository to contribute.
 
-`main` on `taksha17/Internal-AI` is different. Commits and pushes to `main`, including the merge of a pull request, a force-push, and deleting the branch, are accepted only from the repository owner, GitHub account `taksha17`. Every other account is rejected. You do not need write access on this repository to contribute.
+## Setup
 
-## Table of Contents
-
-1. [Who can write to `main`](#who-can-write-to-main)
-2. [Getting Started](#getting-started)
-3. [Development Setup](#development-setup)
-4. [Code Style Guidelines](#code-style-guidelines)
-5. [Running Tests](#running-tests)
-6. [Contributing Process](#contributing-process)
-7. [Pull Request Guidelines](#pull-request-guidelines)
-8. [Documentation Guidelines](#documentation-guidelines)
-9. [Security Considerations](#security-considerations)
-10. [Community Guidelines](#community-guidelines)
-11. [License and Attribution](#license-and-attribution)
-
-## Getting Started
-
-### Prerequisites
-
-Before contributing, ensure you have the following installed:
-
-- Python 3.12+
-- `virtualenv` or `poetry` (recommended)
-- SQLite 3.35+ (for the internal database)
-
-### Fork and Clone
-
-1. Fork [taksha17/Internal-AI](https://github.com/taksha17/Internal-AI) on GitHub. Your fork is where your branches live.
-2. Clone your fork locally:
+Python 3.12 and SQLite 3.35 or newer.
 
 ```bash
-git clone https://github.com/[your-username]/Internal-AI.git
-cd Internal-AI
-```
-
-3. Add this repository as `upstream`. Push to `origin` (your fork), never to `upstream` `main`:
-
-```bash
-git remote add upstream https://github.com/taksha17/Internal-AI.git
-```
-
-## Development Setup
-
-### Environment Setup
-
-We recommend using a virtual environment for development:
-
-```bash
-# Using virtualenv
 python3 -m venv .venv
-.venv/bin/pip install -e .[dev]
-
-# Using poetry (optional)
-poetry install
+.venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
+.venv/bin/pip install -e ".[dev,train]"
 ```
 
-### Project Structure
+The `alpha` extra (`safetensors`, `tokenizers`) is only needed for the adapter
+track. Without it those tests skip, and CI runs without it on purpose: the suite
+that guards the guardrails must stay runnable without a two-gigabyte wheel.
 
-The main components are:
+Run the data plane from a git checkout, not an exported copy:
+`DataPipeline.release` stamps `git rev-parse HEAD` and refuses a tree whose
+commit is unknown.
 
-- `src/internal_ai/` - Core application code
-- `tests/` - Test suite
-- `docs/` - Documentation
-- `scripts/` - Development scripts
+## Checks
 
-### Development Workflow
-
-1. Start a branch from the owner's `main`. Push that branch to your fork:
-
-```bash
-git fetch upstream
-git checkout -b your-feature-branch upstream/main
-git push -u origin your-feature-branch
-```
-
-2. Keep your changes focused on a single issue or feature
-3. Follow the existing code style and patterns
-4. Write tests for new functionality
-5. Update documentation as needed
-
-## Code Style Guidelines
-
-### Python Code Style
-
-This project uses:
-
-- **Python 3.12** with type hints
-- **Black** for code formatting
-- **ruff** for linting and formatting
-- **mypy** for type checking
-
-#### Formatting
-
-```bash
-.venv/bin/ruff format src/
-.venv/bin/ruff format tests/
-```
-
-#### Linting
-
-```bash
-.venv/bin/ruff check src/
-.venv/bin/ruff check tests/
-```
-
-#### Type Checking
-
-```bash
-.venv/bin/mypy src/
-```
-
-### Commit Message Guidelines
-
-- Use clear, descriptive commit messages
-- Start with a concise summary (limit to 50 characters)
-- Explain the "why" behind the change in the body
-- Reference relevant issues or pull requests
-- Use the present tense
-- Avoid commit messages that only describe what the code does
-
-Example:
-
-```
-feat: add user authentication endpoint
-
-- Implement new POST /api/auth endpoint
-- Add validation for credentials
-- Return JWT token on successful authentication
-
-Closes #123
-```
-
-## Running Tests
-
-### Test Suite
-
-Run the full test suite:
+All three must be green before a pull request is ready. CI runs the same three.
 
 ```bash
 .venv/bin/python -m pytest
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
 ```
 
-### Test Categories
+If a check fails, fix the cause. Do not skip the test, weaken the assertion,
+swallow the error, or add a suppression to make it pass.
 
-- **Unit tests**: Test individual components and functions
-- **Integration tests**: Test interactions between components
-- **Acceptance tests**: Test end-to-end functionality
+## Branches and pull requests
 
-### Running Specific Tests
-
-Run tests for a specific module:
+1. Branch from the owner's `main`: `change/<slug>` or `fix/<slug>`.
+2. One change per branch and one pull request per change. Further work on that
+   change is another commit on the same branch, not a second pull request.
+3. Open the pull request against `main` and keep pushing to the branch until it
+   is merged. Describe why the change exists; the diff says what it does.
 
 ```bash
-.venv/bin/python -m pytest tests/test_file.py
+git fetch upstream
+git checkout -b change/your-slug upstream/main
+git push -u origin change/your-slug
 ```
 
-Run tests with specific markers:
+### What a change must carry
 
-```bash
-.venv/bin/python -m pytest -m "integration"
-```
+- **Tests for new behaviour.** A new capability, gate type, task state or
+  restricted transition needs two tests, not one: that the roles meant to hold
+  it can, and that the roles meant to be denied are **denied**. A restricted
+  state also needs a test that the state machine refuses the illegal move.
+- **A guardrail change stays in its guardrail file.** `gates.py`, `budget.py`,
+  `audit.py`, `policy.py` and `roles.py` define the rules themselves. A change to
+  any of them needs a second reviewer.
+- **Determinism where it is visible.** Seeded randomness, sorted iteration, and
+  content hashes over the fields that define an artifact.
+- **No new dependency without a reason.** The platform is installed inside a
+  company's boundary; every dependency is something they have to vet.
 
-### Test Output
+### Style
 
-Tests should pass without errors or warnings. If there are linting issues, run the formatting and linting commands before committing.
+Python 3.12. Dataclasses for domain objects, `StrEnum` for closed sets, type
+hints on public functions. Docstrings explain why, not what. No comment unless
+the reasoning is not obvious from the code.
 
-## Contributing Process
-
-### 1. Identify an Issue
-
-- Review existing issues and feature requests
-- If no issue exists, create a new issue describing your proposed changes
-- Clearly describe the problem and proposed solution
-
-### 2. Fork and Branch
-
-- Fork the repository
-- Create a feature branch from `main`
-- Give your branch a descriptive name (e.g., `feature/add-user-auth`, `bugfix/fix-login-issue`)
-
-### 3. Implement Changes
-
-- Implement your changes following the code style guidelines
-- Write tests for your changes
-- Update documentation as needed
-
-### 4. Review Your Changes
-
-- Ensure all tests pass
-- Run linting and formatting tools
-- Perform a final review of your changes
-
-### 5. Open a pull request, then keep pushing to it
-
-- Push the branch to your fork: `git push -u origin your-feature-branch`
-- Open a pull request from that branch into `taksha17/Internal-AI` `main`
-- Fill out the pull request template and describe why the change is needed
-- To update the pull request, commit on the same branch and push to your fork again. The open pull request picks up those commits. Do not open a second pull request for the same change, and do not push the branch to `upstream` `main`
-
-## Pull Request Guidelines
-
-### Pull Request Template
-
-Please use the following template for your pull requests:
-
-```markdown
-## Summary
-[Provide a concise summary of the changes]
-
-## Description
-[Detailed description of the changes and why they are needed]
-
-## Testing
-[Describe how to test the changes and any new tests added]
+The console has its own rules, because it is a safety surface: no CDN, no inline
+script, no inline style, colours only in the token block at the top of
+`console.css`, body text at or above 4.5:1 in both colour schemes. Tests hold
+those rules; a reviewer should not have to.
 
 ## Documentation
-[Describe any documentation changes]
 
-## Checklist
-- [ ] Code follows project coding standards
-- [ ] All tests pass
-- [ ] Documentation updated
-- [ ] No linting issues
-- [ ] Changes are focused and minimal
+Documentation that ships lives in `docs/`. It describes the platform as built:
+architecture, the runbook, the tester guide, the console and its design.
+
+Working notes stay out of git: product requirements, phase plans, design
+proposals, status hand-offs, acceptance transcripts and per-change records are
+kept on the author's disk and referenced from the pull request. A reviewer reads
+the pull request, not a journal. If a change makes a shipped document wrong,
+update that document in the same pull request.
+
+## Commits
+
+- Present tense, and say why the change exists. The diff already says what it
+  contains.
+- Keep the human and machine histories separable. The repository's default git
+  identity stays the owner's; agent commits override it explicitly:
+
+```bash
+git -c user.name='Cline Agent' -c user.email='cline.agent@internal-ai.local' commit -m '...'
 ```
 
-### Review Process
+## Security
 
-- **Review**: The owner reads the pull request. Automated checks run the tests and the linter.
-- **Updates**: Push more commits to the same branch on your fork. That updates the open pull request.
-- **Merge**: Only `taksha17` merges into `main`. A merge is a commit on `main`, so it uses the owner's credentials. You will not be able to merge your own pull request or push to `main`.
+- Never commit a key, a token, a password or a record. Configuration comes from
+  the environment.
+- `scripts/secret_scan.py` runs on every pull request. A hit fails the build.
+- Report a vulnerability privately through the repository's security advisories,
+  not in a public issue, and do not open a pull request that demonstrates it
+  against real data.
+- Hooks on `audit_events` reject `UPDATE` and `DELETE`. Do not add a write path
+  that bypasses `AuditLog.record`, and do not add a spend path that bypasses
+  `BudgetManager`.
 
-## Documentation Guidelines
+## Licence
 
-### Documentation Structure
+The project is source-available under the
+[PolyForm Noncommercial License 1.0.0](LICENSE), not an open source licence. By
+contributing you agree that your contribution is licensed under the same terms,
+and that the copyright holder may license the project, including your
+contribution, commercially. A company that wants to use the platform in its
+business needs a separate licence; open an issue to start that conversation.
 
-Documentation is stored in the `docs/` directory:
+## Contributors
 
-- `docs/` - Main documentation
-- `docs/acceptance/` - Acceptance test documentation
-- `docs/changes/` - Change logs and release notes
+Human and agent work is attributed separately in git, and
+[CONTRIBUTORS.md](CONTRIBUTORS.md) says which identity is which. Agents never
+review their own work and never decide a gate.
 
-### Writing Documentation
+## Getting help
 
-- Use Markdown format
-- Follow the existing documentation style
-- Include examples and code snippets where appropriate
-- Keep documentation clear and concise
-
-### Updating Documentation
-
-- Update relevant documentation when making changes
-- Document new APIs and interfaces
-- Update examples and code snippets
-
-## Security Considerations
-
-### Safe Practices
-
-- Never commit sensitive information (API keys, passwords, etc.)
-- Use environment variables for configuration
-- Regularly review and update dependencies
-- Run security scans periodically
-
-### Vulnerability Reporting
-
-If you discover a security vulnerability, please report it responsibly:
-
-1. Email the security team at security@internal-ai.com
-2. Provide detailed information about the vulnerability
-3
-. Describe potential impact and remediation steps
-
-## Community Guidelines
-
-### Code of Conduct
-
-We follow a code of conduct that promotes:
-
-- Respectful communication
-- Constructive feedback
-- Collaboration and teamwork
-- Diversity and inclusion
-
-### Communication
-
-- Be patient and respectful with others
-- Provide constructive feedback
-- Ask for clarification when needed
-
-## License and Attribution
-
-### License
-
-This project is licensed under the **PolyForm Noncommercial License 1.0.0**. For more details, see the `LICENSE` file.
-
-### Attribution
-
-- Project logo and brand elements are owned by the Internal-AI team
-- Third-party libraries and tools should be attributed according to their own licenses
-- All contributors are acknowledged in the repository's commit history
-
-## Getting Help
-
-If you have questions about contributing to this project:
-
-1. **GitHub Issues**: Post questions in the repository's issue tracker
-2. **Discussions**: Participate in repository discussions
-3. **Contact**: Reach out to the project maintainers directly
-
-## Contributing Checklist
-
-Before submitting your changes, ensure you have:
-
-- [ ] Updated the `CHANGELOG.md` file (if applicable)
-- [ ] Updated the `README.md` if your changes affect usage
-- [ ] Added tests for new functionality
-- [ ] Followed code style guidelines
-- [ ] Updated documentation
-- [ ] No linting or formatting issues
-- [ ] Changes are focused and minimal
-
-## Thank You
-
-We appreciate your contributions to the Internal-AI platform! Your help makes this project better for everyone.
-
----
-
-*This Contributing Guide was last updated on 29 October 2026.*
-
-For more information, please visit the repository on [GitHub](https://github.com/taksha17/Internal-AI).
+Open an issue for a question, a bug or a proposal. Describe the behaviour you
+expected, what happened, and the smallest command that shows it.

@@ -1,7 +1,8 @@
 # Architecture
 
-Design notes for the platform in the PRD. Where the PRD states a principle,
-this document names the code that enforces it.
+Design notes for the platform. Where a product requirement states a principle,
+this document names the code that enforces it. The requirements themselves are
+internal and are not distributed with this repository.
 
 ## Principles and enforcement
 
