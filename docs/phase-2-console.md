@@ -213,8 +213,8 @@ Web security:
 3. Console shell: sign-in, home, approvals, kill switch, audit.
 4. Build path pages and background jobs.
 5. Ask page and administration pages.
-6. Security pass and the denial-test suite, then the tester guide, `STATUS.md`
-   and `README.md`.
+6. Security pass and the denial-test suite, then the tester guide and
+   `README.md`.
 
 ## Dependencies added
 

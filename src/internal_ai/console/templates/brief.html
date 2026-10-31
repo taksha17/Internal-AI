@@ -3,7 +3,7 @@
 {% block title %}Project brief{% endblock %}
 {% block crumb %}Brief{% endblock %}
 {% block content %}
-{{ m.page_head("Project brief", "What the model is for, how success is measured, what limits it, and who owns each part. The plan and every run are read against this.", "Project", status=("complete" if form.complete else "draft")) }}
+{{ m.page_head("Project brief", "What the model is for, how success is measured, what limits it, and who owns each part. The plan and every run are read against this.", status=("complete" if form.complete else "draft")) }}
 
 {% if not form.complete %}
 <div class="callout"><strong>Still to write:</strong> {{ form.missing | join("; ") }}.</div>
@@ -13,7 +13,7 @@
 <section class="card">
   <p class="muted">Writing the brief needs program_lead or ml_lead. You can read what is recorded here.</p>
   {% if form.target %}<p>{{ form.target }}</p>{% else %}{{ m.empty("No brief yet", "A lead writes the target, metrics, constraints and owners before the plan means anything.", "/console/home", "Back to the overview") }}{% endif %}
-  {% if form.metrics %}<p class="muted small">{% for metric in form.metrics %}{{ metric.name }} {{ "≥" if metric.direction == "at_least" else "≤" }} {{ metric.threshold }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+  {% if form.metrics %}<p class="muted small">{% for metric in form.metrics %}{{ metric.name }} {{ "≥" if metric.direction == "at_least" else "≤" }} {{ metric.threshold }}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
 </section>
 {% else %}
 <form method="post" action="/console/brief">

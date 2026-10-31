@@ -373,6 +373,28 @@ CREATE TABLE IF NOT EXISTS console_jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_console_jobs_state ON console_jobs(state);
 
+CREATE TABLE IF NOT EXISTS traces (
+    id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    groups TEXT NOT NULL DEFAULT '[]',
+    endpoint TEXT NOT NULL,
+    model_id TEXT NOT NULL DEFAULT '',
+    question TEXT NOT NULL DEFAULT '',
+    answer TEXT NOT NULL DEFAULT '',
+    citations TEXT NOT NULL DEFAULT '[]',
+    retrieved TEXT NOT NULL DEFAULT '[]',
+    acl TEXT NOT NULL DEFAULT '[]',
+    sensitivity TEXT NOT NULL DEFAULT 'internal',
+    latency_ms REAL NOT NULL DEFAULT 0,
+    status_code INTEGER NOT NULL DEFAULT 0,
+    failure TEXT NOT NULL DEFAULT '',
+    redactions TEXT NOT NULL DEFAULT '{}',
+    expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_traces_created ON traces(created_at);
+CREATE INDEX IF NOT EXISTS idx_traces_failure ON traces(failure);
+
 CREATE TABLE IF NOT EXISTS data_sources (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,

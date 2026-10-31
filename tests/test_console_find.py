@@ -160,16 +160,16 @@ def test_paging_splits_a_list_and_clamps_the_last_page(tmp_path: Path) -> None:
             dataset(app.state.platform, f"batch-{index:02d}")
 
         first = client.get("/console/datasets")
-        assert "1\u201325 of 30 datasets" in first.text
+        assert "1 to 25 of 30 datasets" in first.text
         assert "Page 1 of 2" in first.text
 
         second = client.get("/console/datasets", params={"page": 2})
-        assert "26\u201330 of 30 datasets" in second.text
+        assert "26 to 30 of 30 datasets" in second.text
         assert "batch-26" in second.text
         assert 'rel="next"' not in second.text
 
         beyond = client.get("/console/datasets", params={"page": 9})
-        assert "26\u201330 of 30 datasets" in beyond.text
+        assert "26 to 30 of 30 datasets" in beyond.text
 
 
 def test_jobs_filter_by_state_and_title(tmp_path: Path) -> None:
@@ -186,7 +186,7 @@ def test_jobs_filter_by_state_and_title(tmp_path: Path) -> None:
         page = client.get("/console/jobs", params={"q": "alpha"})
         assert "build alpha dataset" in page.text
         assert "build beta dataset" not in page.text
-        assert "1\u20131 of 1 jobs" in page.text
+        assert "1 to 1 of 1 jobs" in page.text
 
         failed = client.get("/console/jobs", params={"state": "failed"})
         assert "No jobs match" in failed.text
@@ -199,11 +199,11 @@ def test_audit_pages_through_the_whole_chain(tmp_path: Path) -> None:
                 actor=actor.id, action="test.event", subject=f"subject-{index}"
             )
         first = client.get("/console/audit")
-        assert "1\u201350 of" in first.text
+        assert "1 to 50 of" in first.text
         assert "Page 1 of 2" in first.text
         second = client.get("/console/audit", params={"page": 2})
         assert "Page 2 of 2" in second.text
-        assert "51\u2013" in second.text
+        assert "51 to " in second.text
 
         oldest = client.get("/console/audit", params={"dir": "asc"})
         assert 'aria-sort="ascending"' in oldest.text

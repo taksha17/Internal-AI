@@ -3,7 +3,7 @@
 {% block title %}Jobs{% endblock %}
 {% block crumb %}Jobs{% endblock %}
 {% block content %}
-{{ m.page_head("Jobs", "Long steps run as jobs. Each one passed the kill switch and budget checks before it started.", "Runs") }}
+{{ m.page_head("Jobs", "Long steps run as jobs. Each one passed the kill switch and budget checks before it started.") }}
 {% if gpu_busy is not none %}<p>GPU busy {{ gpu_busy }}.</p>{% endif %}
 {% if programme_gaps %}
 <p class="callout">Still to record: {{ programme_gaps | join("; ") }}. <a href="/console/brief">Write the brief</a> before a dataset is released or a model is trained.</p>

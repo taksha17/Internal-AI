@@ -49,7 +49,14 @@ from internal_ai.services.identity import (
     Session,
 )
 from internal_ai.services.jobs import JobRunner
-from internal_ai.services.permissions import Action, allowed, deny, reason
+from internal_ai.services.permissions import Action, PermissionDenied, allowed, deny, reason
+from internal_ai.services.triage import (
+    eval_case_from_trace,
+    preference_from_trace,
+    sft_draft,
+    sft_example_from_trace,
+    triage_view,
+)
 from internal_ai.serving.guardrails import INSTALL_POLICY_KEY, configured_install_policy
 from internal_ai.serving.service import out_of_service
 from internal_ai.store import ALLOWED_TRANSITIONS, TransitionError
@@ -79,6 +86,7 @@ NAV = [
     ("Approvals", "/console/approvals"),
     ("Audit log", "/console/audit"),
     ("Inbox", "/console/inbox"),
+    ("Failed answers", "/console/traces"),
     ("Data", "/console/sources"),
     ("Models", "/console/models"),
     ("Brief", "/console/brief"),
@@ -662,6 +670,75 @@ def mount_console(
     def inbox_page(request: Request) -> Response:
         ctx = context(request)
         return render(ctx, "inbox.html")
+
+    @app.get("/console/traces", include_in_schema=False)
+    def traces_page(request: Request) -> Response:
+        ctx = context(request)
+        try:
+            buckets = triage_view(ctx.platform, ctx.actor)
+        except PermissionDenied as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        return render(ctx, "traces.html", buckets=buckets)
+
+    @app.post("/console/traces/{trace_id}/eval-case", include_in_schema=False)
+    async def trace_eval_case(request: Request, trace_id: str) -> Response:
+        ctx = context(request)
+        await posted(ctx)
+        return await act(
+            ctx,
+            "/console/traces",
+            lambda: eval_case_from_trace(ctx.platform, ctx.actor, trace_id),
+            lambda eval_set: (
+                f"{trace_id} is now a case in {eval_set.name} v{eval_set.version}; "
+                "freeze it before a model is measured against it"
+            ),
+            to="/console/evals",
+        )
+
+    @app.get("/console/traces/{trace_id}/sft", include_in_schema=False)
+    def trace_sft_page(request: Request, trace_id: str) -> Response:
+        ctx = context(request)
+        try:
+            trace = sft_draft(ctx.platform, ctx.actor, trace_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except PermissionDenied as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        return render(ctx, "trace_sft.html", trace=trace)
+
+    @app.post("/console/traces/{trace_id}/sft", include_in_schema=False)
+    async def trace_sft_save(request: Request, trace_id: str) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        return await act(
+            ctx,
+            f"/console/traces/{trace_id}/sft",
+            lambda: sft_example_from_trace(
+                ctx.platform, ctx.actor, trace_id, form.get("answer", "")
+            ),
+            lambda dataset: (
+                f"{trace_id} is now an example in {dataset.name} v{dataset.version}; "
+                "it stays unreleased until a release gate approves it"
+            ),
+            to="/console/datasets",
+        )
+
+    @app.post("/console/traces/{trace_id}/preference", include_in_schema=False)
+    async def trace_preference_save(request: Request, trace_id: str) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        return await act(
+            ctx,
+            f"/console/traces/{trace_id}/sft",
+            lambda: preference_from_trace(
+                ctx.platform, ctx.actor, trace_id, form.get("answer", "")
+            ),
+            lambda row: (
+                f"{row['id']} files your answer ahead of the model's; it joins a "
+                "preference set at export, and stays marked as not training data"
+            ),
+            to="/console/traces",
+        )
 
     @app.get("/console/search", include_in_schema=False)
     def search_page(request: Request, q: str = "") -> Response:

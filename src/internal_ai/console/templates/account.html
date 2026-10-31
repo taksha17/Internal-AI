@@ -3,7 +3,7 @@
 {% block title %}Your account{% endblock %}
 {% block crumb %}Account{% endblock %}
 {% block content %}
-{% call m.page_head(actor.name, "Roles: " ~ (actor.roles | sort | join(", ") or "none") ~ ". Groups: " ~ (actor.groups | sort | join(", ") or "none") ~ ".", "Account") %}
+{% call m.page_head(actor.name, "Roles: " ~ (actor.roles | sort | join(", ") or "none") ~ ". Groups: " ~ (actor.groups | sort | join(", ") or "none") ~ ".") %}
   <a href="/console/password" class="button">Change password</a>
 {% endcall %}
 <section class="card">

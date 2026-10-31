@@ -3,7 +3,7 @@
 {% block title %}Eval sets{% endblock %}
 {% block crumb %}Evaluations{% endblock %}
 {% block content %}
-{{ m.page_head("Eval sets", "An eval set is the exam a model sits. Its answers must come only from the held-out test split, and once frozen nobody, human or agent, can change it. A change means a new version and a new approval.", "Workspace") }}
+{{ m.page_head("Eval sets", "An eval set is the exam a model sits. Its answers must come only from the held-out test split, and once frozen nobody, human or agent, can change it. A change means a new version and a new approval.") }}
 <form class="toolbar" method="get" action="/console/evals">
   <label class="grow">Search <input type="search" name="q" value="{{ q }}" placeholder="Name or id"></label>
   <label>State
@@ -19,7 +19,7 @@
 {% for row in rows %}
 <section class="card">
   <h2>{{ row.set.name }} v{{ row.set.version }} {{ m.status_badge("frozen" if row.set.frozen else "open") }}</h2>
-  <p class="muted small">{{ row.set.id }} · {{ row.leakage['items'] }} questions over {{ row.leakage.relevant_documents }} documents{% if row.set.frozen %} · frozen, approved by {{ row.set.approved_by }}{% endif %}</p>
+  <p class="muted small">{{ row.set.id }}, {{ row.leakage['items'] }} questions over {{ row.leakage.relevant_documents }} documents{% if row.set.frozen %}, frozen, approved by {{ row.set.approved_by }}{% endif %}</p>
   {% if row.leakage.passed %}
   <p>Leakage check passed: every answer is in the held-out test split.</p>
   {% else %}

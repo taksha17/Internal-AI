@@ -1,3 +1,14 @@
+/* Hallmark · checked: 2026-10-30 · genre: modern-minimal (inferred) · shape: app screen · theme: the project's own system (DESIGN.md: Aqua Jade, Midnight Abyss) · posture: restrained
+ * floor: 0 FAIL · fixed: 11 (3, 19, 20, 26a, 26b, 34, 40, 50, 54, 56, 63) · structural: 0 printed · reflex: 2 noted (38iii, the state badge names the state of the thing in the head)
+ * answered: 5 (F1, F3, F7, F23, F25) · dismissed: 1 (41, a dark surface inherits --ink and the palette test measures the pair) · built: the project · redesign: polish
+ * nav: a pinned rail on a desk, one scrolling band on a phone · signature: the rail that never leaves, and figures that speak plainly · states: signed out, signed in, refused, kill engaged, work in progress · contrast: pass · v2.0.0 */
+/* Hallmark · answered F3 · F3 forbids text-wrap: balance on a display head, so the heads keep their own rag */
+/* Hallmark · answered F7 · the pill radius is on tags, chips and controls; the rest are dots, counters and progress bars */
+/* Hallmark · answered F1 · the console writes plain ASCII, the way the rest of the project does */
+/* Hallmark · answered F23 · every page here is behind a sign in, so there is no preview to describe */
+/* Hallmark · answered F25 · on a phone the lockup and the audit line carry the promise, and a wide table scrolls inside its own region */
+/* Hallmark · dismissed 41 · a dark surface inherits --ink, and tests/test_console_palette.py measures every pair it uses */
+
 /* Tokens first. Rules below read names, never hex, so a theme is this block. */
 :root {
   --ink: #0F1A1E;
@@ -59,6 +70,7 @@
   --control-radius: 8px;
   --control: 2.25rem;
   --beat: 160ms;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
   color-scheme: light;
   font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color: var(--ink);
@@ -113,6 +125,7 @@
 
 /* A workspace, not a landing page: flat paper, dense rows, no decoration
    competing with the figures an operator came to read. */
+html, body { overflow-x: clip; }
 body {
   margin: 0;
   font-size: 0.9375rem;
@@ -120,27 +133,27 @@ body {
   background: var(--paper);
 }
 
-.skip { position: absolute; left: 0.75rem; top: -3rem; z-index: 20; padding: 0.5rem 0.9rem; border-radius: var(--control-radius); background: var(--forest); color: var(--on-forest); font-size: 0.85rem; font-weight: 600; text-decoration: none; transition: top var(--beat) ease; }
-.skip:focus, .skip:focus-visible { top: 0.75rem; }
+.skip { position: absolute; left: 0.75rem; top: 0.75rem; z-index: 20; padding: 0.5rem 0.9rem; border-radius: var(--control-radius); background: var(--forest); color: var(--on-forest); font-size: 0.85rem; font-weight: 600; text-decoration: none; transform: translateY(-200%); transition: transform var(--beat) ease; }
+.skip:focus, .skip:focus-visible { transform: translateY(0); }
 main:focus { outline: none; }
-body.signed-in { display: grid; grid-template-columns: 18rem minmax(0, 1fr); min-height: 100vh; }
-.column { display: flex; min-width: 0; flex-direction: column; min-height: 100vh; }
+body.signed-in { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 100vh; }
+.column { display: flex; min-width: 0; flex-direction: column; min-height: 100vh; margin-left: 18rem; }
 
 /* Type: one tight scale, more air above a heading than below it. */
-h1, h2, h3 { color: var(--ink); letter-spacing: -0.028em; }
-h1 { font-size: 1.5rem; line-height: 1.2; font-weight: 680; margin: 0 0 0.5rem; }
-h2 { font-size: 1.05rem; line-height: 1.3; font-weight: 620; margin: 2.1rem 0 0.6rem; }
-h3 { font-size: 0.94rem; font-weight: 620; margin: 1.5rem 0 0.4rem; }
+h1, h2, h3 { color: var(--ink); letter-spacing: -0.028em; overflow-wrap: break-word; min-width: 0; }
+h1 { font-size: 1.5rem; line-height: 1.2; font-weight: 700; margin: 0 0 0.5rem; }
+h2 { font-size: 1.05rem; line-height: 1.3; font-weight: 600; margin: 2.1rem 0 0.6rem; }
+h3 { font-size: 0.94rem; font-weight: 600; margin: 1.5rem 0 0.4rem; }
 main > :first-child, .card > :first-child, .callout > :first-child { margin-top: 0; }
 .card > :last-child, .callout > :last-child { margin-bottom: 0; }
 
 p { max-width: 72ch; margin: 0 0 0.85rem; }
 ul, ol { max-width: 72ch; margin: 0 0 0.9rem; padding-left: 1.25rem; }
 li { margin: 0.2rem 0; }
-strong { font-weight: 620; }
+strong { font-weight: 600; }
 a { color: var(--sage); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.18em; }
 a:hover { text-decoration-thickness: 2px; }
-code, pre { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 0.86em; }
+code, pre { font-family: var(--font-mono); font-size: 0.86em; }
 pre { max-width: none; margin: 0 0 1rem; padding: 0.9rem 1rem; overflow-x: auto; white-space: pre-wrap; word-break: break-word; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
 ::selection { background: var(--blush-wash); color: var(--ink); }
 ::placeholder { color: var(--muted); opacity: 1; }
@@ -152,12 +165,17 @@ input, textarea { caret-color: var(--sage); }
 .icon { width: 1.1rem; height: 1.1rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; vertical-align: -0.15em; }
 
 /* ---------- rail: identity, destinations, the person signed in ---------- */
+/* Pinned, not sticky: the rail is a column beside the work, and a second
+   sticky top would only fight the topbar for the same edge of the screen. */
 .rail {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  z-index: 4;
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
+  width: 18rem;
   height: 100vh;
   padding: 1.35rem 1rem 1.2rem;
   overflow-y: auto;
@@ -173,23 +191,23 @@ input, textarea { caret-color: var(--sage); }
 .brand > span { display: flex; flex-direction: column; }
 .brand-mark { display: block; width: 1.9rem; height: 1.9rem; flex: none; padding: 0.22rem; border-radius: 0.65rem; background: var(--rail-chip); }
 .brand-ai { color: var(--rail-sage); }
-.brand-sub { margin-top: 0.28rem; color: var(--rail-muted); font-size: 0.68rem; font-weight: 650; letter-spacing: 0.18em; }
+.brand-sub { margin-top: 0.28rem; color: var(--rail-muted); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.14em; }
 
 .rail-nav { display: flex; flex-direction: column; gap: 0.15rem; }
 .nav-rule { display: block; height: 1px; margin: 0.55rem 0.55rem; background: var(--rail-line); }
-.rail-nav a { display: flex; align-items: center; gap: 0.6rem; min-height: 2.45rem; padding: 0 0.6rem; border-radius: var(--control-radius); color: var(--rail-item); font-size: 0.89rem; font-weight: 550; text-decoration: none; transition: background var(--beat), color var(--beat); }
+.rail-nav a { display: flex; align-items: center; gap: 0.6rem; min-height: 2.45rem; padding: 0 0.6rem; border-radius: var(--control-radius); color: var(--rail-item); font-size: 0.89rem; font-weight: 500; text-decoration: none; transition: background var(--beat), color var(--beat); }
 .rail-nav a .icon { width: 1.05rem; height: 1.05rem; opacity: 0.82; }
 .rail-nav a .nav-label { flex: 1 1 auto; }
 .rail-nav a:hover { background: var(--rail-hover); color: var(--rail-ink); }
 .rail-nav a:hover .icon { opacity: 1; }
-.rail-nav a.active { background: var(--rail-active); color: var(--rail-ink); font-weight: 620; }
+.rail-nav a.active { background: var(--rail-active); color: var(--rail-ink); font-weight: 600; }
 .rail-nav a.active .icon { color: var(--rail-sage); opacity: 1; }
 .rail-nav a.active:hover { background: var(--rail-active); }
-.count { padding: 0 0.42rem; border-radius: 999px; background: var(--sage-fill); color: var(--on-sage); font-size: 0.72rem; font-weight: 750; font-variant-numeric: tabular-nums; }
+.count { padding: 0 0.42rem; border-radius: 999px; background: var(--sage-fill); color: var(--on-sage); font-size: 0.72rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 .side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 0.75rem; }
 .who { display: grid; grid-template-columns: 2.2rem minmax(0, 1fr); align-items: center; gap: 0.15rem 0.65rem; padding-top: 0.9rem; border-top: 1px solid var(--rail-line); font-size: 0.84rem; }
-.who .avatar { display: grid; place-items: center; width: 2.2rem; height: 2.2rem; border-radius: 50%; background: var(--sage-fill); color: var(--on-sage); font-size: 0.72rem; font-weight: 750; letter-spacing: 0.03em; }
+.who .avatar { display: grid; place-items: center; width: 2.2rem; height: 2.2rem; border-radius: 50%; background: var(--sage-fill); color: var(--on-sage); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; }
 .who-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
 .who a { overflow: hidden; color: var(--rail-ink); font-weight: 600; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
 .who a:hover { color: var(--rail-sage); }
@@ -214,22 +232,24 @@ input, textarea { caret-color: var(--sage); }
   backdrop-filter: blur(14px);
 }
 .crumbs { display: flex; align-items: center; gap: 0.5rem; margin: 0; color: var(--muted); font-size: 0.84rem; max-width: none; }
-.crumbs strong { color: var(--ink); font-weight: 650; }
+.crumbs strong { color: var(--ink); font-weight: 600; }
 .top-actions { margin-left: auto; display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap; }
 .env-pill { display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.32rem 0.7rem; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--muted); font-size: 0.76rem; font-weight: 600; white-space: nowrap; }
 .env-dot { width: 0.5rem; height: 0.5rem; flex: none; border-radius: 999px; background: var(--tone-ok-ink); }
 /* The switch stays on every page, but as a chip that opens its reasons, so the
    bar belongs to the page rather than to the emergency. */
 .kill { position: relative; }
-.kill > summary { display: inline-flex; align-items: center; gap: 0.42rem; padding: 0.32rem 0.7rem; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--card); color: var(--muted); font-size: 0.78rem; font-weight: 650; white-space: nowrap; cursor: pointer; list-style: none; }
+.kill > summary { display: inline-flex; align-items: center; gap: 0.42rem; padding: 0.32rem 0.7rem; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--card); color: var(--muted); font-size: 0.78rem; font-weight: 600; white-space: nowrap; cursor: pointer; list-style: none; }
 .kill > summary::-webkit-details-marker { display: none; }
 .kill > summary:hover { border-color: var(--danger-fill); color: var(--ink); }
 .kill[open] > summary { border-color: var(--danger-fill); color: var(--ink); }
 .kill.is-engaged > summary { background: var(--danger-fill); border-color: var(--danger-fill); color: var(--on-danger); }
 .kill.is-engaged > summary:hover { color: var(--on-danger); }
+/* A closed switch has no panel in the layout, so nothing sits off the screen. */
+.kill:not([open]) .kill-panel { display: none; }
 .kill-chip-note { font-weight: 500; opacity: 0.85; }
 .kill-panel { position: absolute; right: 0; top: calc(100% + 0.45rem); z-index: 8; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; width: min(32rem, 92vw); padding: 0.6rem; border: 1px solid var(--line-strong); border-radius: var(--control-radius); background: var(--card); box-shadow: var(--lift); }
-.kill-label { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--muted); font-size: 0.78rem; font-weight: 650; white-space: nowrap; }
+.kill-label { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--muted); font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
 .kill-panel input[type="text"] { flex: 1 1 13rem; min-width: 9rem; width: auto; }
 .kill-panel button { min-height: 2rem; padding: 0 0.75rem; font-size: 0.8rem; }
 
@@ -241,7 +261,6 @@ body.signed-out main { max-width: none; padding: 0; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.2rem; flex-wrap: wrap; margin: 0 0 1.15rem; }
 .page-head h1 { margin: 0.3rem 0 0; font-size: 1.5rem; }
 .lede { margin: 0.4rem 0 0; max-width: 70ch; color: var(--muted); font-size: 0.92rem; }
-.eyebrow { margin: 0 0 0.15rem; color: var(--blush-text); font-size: 0.78rem; font-weight: 600; letter-spacing: 0; text-transform: none; }
 .head-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
 .head-chip { display: grid; place-items: center; width: 2.15rem; height: 2.15rem; border: 1px solid var(--line); border-radius: 0.62rem; background: var(--sage-wash); color: var(--sage); }
 .head-chip .icon { width: 1.1rem; height: 1.1rem; }
@@ -276,7 +295,7 @@ main > h1:first-child + p.muted { margin: -0.1rem 0 1.7rem; max-width: 66ch; fon
 /* ---------- surfaces ---------- */
 .card, .callout { padding: 1.05rem 1.1rem; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--lift); }
 .card { margin: 0 0 0.9rem; }
-.callout { max-width: none; margin: 0 0 1.1rem; padding: 0.1rem 0 0.1rem 0.9rem; background: none; border: 0; border-left: 2px solid var(--sage-fill); border-radius: 0; box-shadow: none; }
+.callout { max-width: 70ch; margin: 0 0 1.1rem; padding: 0.1rem 0 0.1rem 0.9rem; background: none; border: 0; border-left: 2px solid var(--sage-fill); border-radius: 0; box-shadow: none; }
 .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin: 0 0 0.95rem; }
 .card-head h2, .card-head h3, .card-head p { margin: 0; }
 .card-head .card-sub, .card-sub { margin-top: 0.35rem; color: var(--muted); font-size: 0.88rem; max-width: 66ch; }
@@ -312,7 +331,7 @@ main > h1:first-child + p.muted { margin: -0.1rem 0 1.7rem; max-width: 66ch; fon
 .quiet-link .icon { width: 0.95rem; height: 0.95rem; }
 
 /* ---------- controls ---------- */
-label, .field { display: flex; flex-direction: column; gap: 0.35rem; color: var(--ink); font-size: 0.86rem; font-weight: 550; }
+label, .field { display: flex; flex-direction: column; gap: 0.35rem; color: var(--ink); font-size: 0.86rem; font-weight: 500; }
 .inline-form label { flex-direction: row; align-items: center; gap: 0.4rem; font-weight: 400; }
 input, select, textarea {
   font: inherit;
@@ -322,7 +341,9 @@ input, select, textarea {
   padding: 0.45rem 0.7rem;
   color: var(--ink);
   background: var(--field);
-  border: 1px solid var(--line);
+  /* A field's edge has to be seen, not inferred: the border takes the muted
+     tone so it clears 3:1 on paper, on a card and on the panel. */
+  border: 1px solid var(--muted);
   border-radius: var(--control-radius);
 }
 textarea { min-height: 5.5rem; resize: vertical; }
@@ -331,7 +352,7 @@ textarea { min-height: 5.5rem; resize: vertical; }
 input[type="checkbox"], input[type="radio"] { min-height: auto; width: auto; accent-color: var(--sage); }
 /* A radio group is one control, so it reads as a list of choices, not fields. */
 .intent-pick { margin: 0; padding: 0; border: 0; }
-.intent-pick legend { margin: 0 0 0.35rem; padding: 0; color: var(--ink); font-size: 0.86rem; font-weight: 550; }
+.intent-pick legend { margin: 0 0 0.35rem; padding: 0; color: var(--ink); font-size: 0.86rem; font-weight: 500; }
 .intent-pick label { flex-direction: row; align-items: center; gap: 0.45rem; font-weight: 400; }
 .intent-pick label + label { margin-top: 0.3rem; }
 
@@ -345,7 +366,7 @@ button, .button, .btn {
   font: inherit;
   font-size: 0.92rem;
   line-height: 1.4;
-  font-weight: 560;
+  font-weight: 600;
   color: var(--ink);
   background: var(--card);
   border: 1px solid var(--line-strong);
@@ -355,13 +376,17 @@ button, .button, .btn {
   white-space: nowrap;
 }
 button:hover, .button:hover, .btn:hover { border-color: var(--sage); }
+/* Pressing says so once, and says it in place: a control moves a pixel, it
+   does not light up a second colour. */
+button:active, .button:active, .btn:active { transform: translateY(1px); }
+.rail-nav a:active { background: var(--rail-active); }
 button.primary, .button.primary, .btn-primary { color: var(--on-forest); background: var(--forest); border-color: var(--forest); box-shadow: 0 1px 2px color-mix(in srgb, var(--shade) 16%, transparent); }
 button.primary:hover, .button.primary:hover, .btn-primary:hover { color: var(--on-forest); background: var(--forest-hover); border-color: var(--forest-hover); }
 button.ok, .btn-ok { color: var(--on-ok); background: var(--ok); border-color: var(--ok); }
 button.ok:hover, .btn-ok:hover { background: var(--ok-hover); border-color: var(--ok-hover); }
 button.danger, .btn-danger { color: var(--on-danger); background: var(--danger-fill); border-color: var(--danger-fill); }
 button.danger:hover, .btn-danger:hover { background: var(--danger-hover); border-color: var(--danger-hover); }
-button.link { min-height: auto; padding: 0; color: var(--sage); background: none; border: 0; font-weight: 500; text-decoration: underline; text-underline-offset: 0.18em; }
+button.link { min-height: 2rem; padding: 0; color: var(--sage); background: none; border: 0; font-weight: 500; text-decoration: underline; text-underline-offset: 0.18em; }
 button.link:hover { color: var(--sage); text-decoration-thickness: 2px; }
 .btn-ghost { background: transparent; }
 .btn-sm, .kill button { min-height: 2rem; padding: 0 0.75rem; font-size: 0.8rem; }
@@ -386,7 +411,7 @@ tbody tr:last-child td:last-child { border-bottom-right-radius: var(--radius); }
 tbody tr:hover td { background: var(--sage-wash); }
 tr.warn td, tr.warn:hover td { background: var(--tone-warn-bg); color: var(--tone-warn-ink); }
 td.num, th.num { text-align: right; white-space: nowrap; }
-.row-title { font-weight: 650; }
+.row-title { font-weight: 600; }
 .row-sub { color: var(--muted); font-size: 0.78rem; }
 /* A table inside a card is a pane, not a box inside a box. */
 .card table { border: 0; }
@@ -415,12 +440,12 @@ th a.sort.on { color: var(--ink); }
 .plain { max-width: none; margin: 0; padding: 0; list-style: none; }
 .plain li { display: flex; align-items: baseline; gap: 0.55rem; flex-wrap: wrap; margin: 0; padding: 0.7rem 0; border-bottom: 1px solid var(--line); }
 .plain li:last-child { padding-bottom: 0; border-bottom: 0; }
-.plain li > a { font-weight: 550; }
+.plain li > a { font-weight: 500; }
 .plain .spacer { flex: 1 1 auto; }
 .tabs { display: flex; align-items: center; gap: 1.35rem; flex-wrap: wrap; max-width: none; margin: 0 0 1.35rem; border-bottom: 1px solid var(--line); }
 .tabs a { margin-bottom: -1px; padding: 0.35rem 0 0.55rem; border-bottom: 2px solid transparent; color: var(--muted); font-size: 0.9rem; font-weight: 500; text-decoration: none; }
 .tabs a:hover { color: var(--ink); }
-.tabs a.active { color: var(--sage); border-bottom-color: var(--sage); font-weight: 620; }
+.tabs a.active { color: var(--sage); border-bottom-color: var(--sage); font-weight: 600; }
 .tabs .button { margin: 0 0 0.4rem auto; }
 
 /* ---------- home's ordered list is a path ---------- */
@@ -432,7 +457,7 @@ th a.sort.on { color: var(--ink); }
 .steps li:last-child::after { content: none; }
 .steps li > a { font-size: 0.93rem; font-weight: 500; text-decoration: none; }
 .steps li > a:hover { text-decoration: underline; }
-.steps li.done > a { color: var(--sage); font-weight: 550; }
+.steps li.done > a { color: var(--sage); font-weight: 500; }
 .steps li.done::before { content: "\2713"; border-color: var(--sage-fill); background: var(--sage-fill); color: var(--on-sage); font-size: 0.8rem; }
 /* A step this person cannot take stays visible and names the role it needs. */
 .steps li.locked::before { border-style: dashed; }
@@ -442,8 +467,8 @@ th a.sort.on { color: var(--ink); }
 .suggest { max-width: none; margin: 1.15rem 0 0; }
 .suggest h3 { margin: 0; }
 .suggest-list { max-width: none; margin: 0.6rem 0 0; padding: 0; list-style: none; display: grid; gap: 0.5rem; }
-.suggest-item { display: grid; gap: 0.15rem; padding: 0.6rem 0.85rem; border: 1px solid var(--line); border-left: 3px solid var(--line-strong); border-radius: var(--control-radius); background: color-mix(in srgb, var(--panel) 45%, transparent); }
-.suggest-item-ready { border-left-color: var(--sage-fill); background: var(--card); }
+.suggest-item { display: grid; gap: 0.15rem; padding: 0.6rem 0.85rem; border: 1px solid var(--line); border-radius: var(--control-radius); background: color-mix(in srgb, var(--panel) 45%, transparent); }
+.suggest-item-ready { border-color: color-mix(in srgb, var(--sage-fill) 45%, var(--line)); background: var(--card); }
 .suggest-kind { display: flex; align-items: center; gap: 0.45rem; font-weight: 600; text-transform: capitalize; }
 .suggest-why { color: var(--muted); font-size: 0.88rem; max-width: 78ch; }
 .suggest-pick { display: flex; margin: 0.5rem 0 0; }
@@ -477,10 +502,10 @@ th a.sort.on { color: var(--ink); }
 .inspect-live progress::-webkit-progress-bar { border-radius: 999px; background: var(--line); }
 .inspect-live progress::-webkit-progress-value { border-radius: 999px; background: var(--sage-fill); }
 .inspect-live progress::-moz-progress-bar { border-radius: 999px; background: var(--sage-fill); }
-.inspect-live strong { font-weight: 650; font-variant-numeric: tabular-nums; }
+.inspect-live strong { font-weight: 600; font-variant-numeric: tabular-nums; }
 .inspect-live .small { overflow-wrap: anywhere; }
 .live-row { display: flex; align-items: baseline; justify-content: space-between; gap: 0.8rem; }
-.live-pct { font-size: 1.7rem; font-weight: 750; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.live-pct { font-size: 1.7rem; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
 .live-meta { display: flex; justify-content: space-between; gap: 0.7rem; flex-wrap: wrap; color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
 
 /* ---------- gates, evidence, answers ---------- */
@@ -496,7 +521,7 @@ th a.sort.on { color: var(--ink); }
 .evidence dt { margin-top: 0.5rem; font-weight: 600; }
 .evidence dd { margin: 0; }
 details.evidence { border-top: 1px dashed var(--line-strong); padding-top: 0.7rem; }
-details.evidence summary { cursor: pointer; color: var(--sage); font-weight: 650; }
+details.evidence summary { cursor: pointer; color: var(--sage); font-weight: 600; }
 .snippet { padding-left: 0.75rem; border-left: 1px solid var(--line); }
 .answer { max-width: 68ch; font-size: 1.05rem; }
 .secret { padding: 0.2rem 0.45rem; border-radius: 6px; background: var(--panel); font-size: 1rem; user-select: all; }
@@ -517,6 +542,9 @@ details.evidence summary { cursor: pointer; color: var(--sage); font-weight: 650
 .auth-points .icon { width: 1rem; height: 1rem; margin-top: 0.1rem; color: var(--rail-sage); }
 .auth-copy h2 { margin: 1rem 0 0.6rem; color: var(--rail-ink); font-size: 1.9rem; }
 .auth-copy p { color: var(--rail-item); }
+/* The brand panel is midnight, so its focus ring is the rail's jade: the
+   workspace's sage would sit under 3:1 on that ground. */
+.signin-aside :where(a, button, input, select, textarea, summary):focus-visible { outline-color: var(--rail-sage); }
 .signin-panel { display: flex; align-items: center; justify-content: center; padding: 3rem 1.5rem; }
 .auth-form { width: 100%; max-width: 22.5rem; display: flex; flex-direction: column; gap: 0.9rem; }
 .lockup { display: block; width: min(22rem, 100%); height: auto; }
@@ -529,7 +557,7 @@ details.evidence summary { cursor: pointer; color: var(--sage); font-weight: 650
 .footer { color: var(--muted); font-size: 0.78rem; padding-bottom: 0.5rem; }
 
 @media (prefers-reduced-motion: reduce) {
-  a, button, .button, .btn, input, select, textarea { transition: none; }
+  a, button, .button, .btn, input, select, textarea, .skip { transition: none; }
 }
 
 @media (max-width: 68rem) {
@@ -539,14 +567,18 @@ details.evidence summary { cursor: pointer; color: var(--sage); font-weight: 650
 
 @media (max-width: 900px) {
   body.signed-in { grid-template-columns: minmax(0, 1fr); }
-  .rail { position: static; height: auto; gap: 0.55rem; padding: 0.75rem 1rem 0; overflow: visible; border-right: 0; border-bottom: 1px solid var(--rail-line); }
+  .rail { position: relative; width: auto; height: auto; gap: 0.55rem; padding: 0.75rem 1rem 0; overflow: visible; border-right: 0; border-bottom: 1px solid var(--rail-line); }
+  .column { margin-left: 0; }
   .brand { margin: 0; padding: 0 0 0.65rem; border-bottom: 0; }
-  .rail-nav { order: 3; flex-direction: row; gap: 1rem; margin: 0 -1rem; padding: 0 0.85rem 0.15rem; overflow-x: auto; scrollbar-width: none; }
-  .rail-nav::-webkit-scrollbar { display: none; }
+  .rail-nav { order: 3; flex-direction: row; gap: 1rem; margin: 0 -1rem; padding: 0 0.85rem 0.15rem; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--rail-sage) var(--rail-active); }
+  .rail-nav::-webkit-scrollbar { height: 4px; }
+  .rail-nav::-webkit-scrollbar-thumb { background: var(--rail-sage); border-radius: 2px; }
+  .rail-nav::-webkit-scrollbar-track { background: var(--rail-active); }
+  .rail::after { content: ""; position: absolute; right: 0; bottom: 0.15rem; width: 1.75rem; height: 2.1rem; background: linear-gradient(to right, transparent, var(--rail)); pointer-events: none; }
   .nav-rule { display: none; }
   .rail-nav a { flex: none; gap: 0.4rem; min-height: 2.15rem; padding: 0 0.6rem; border-radius: 8px 8px 0 0; border-bottom: 2px solid transparent; box-shadow: none; white-space: nowrap; }
   .rail-nav a:hover { background: none; color: var(--rail-ink); }
-  .rail-nav a.active { background: none; border-bottom-color: var(--rail-sage); box-shadow: none; }
+  .rail-nav a.active { order: -1; background: none; border-bottom-color: var(--rail-sage); box-shadow: none; }
   .rail-nav a.active .icon { color: var(--rail-sage); }
   .side-foot { flex-direction: row; align-items: center; gap: 0.9rem; margin: 0; }
   .who { display: flex; align-items: center; gap: 0.65rem; margin: 0; padding: 0; border-top: 0; }
@@ -557,8 +589,11 @@ details.evidence summary { cursor: pointer; color: var(--sage); font-weight: 650
   .topbar { padding: 0.7rem 1rem; }
   main { padding: 1.4rem 1rem 3rem; }
   .page-head h1 { font-size: 1.35rem; }
-  .kill-panel { width: min(26rem, 94vw); }
-  .stat-grid { grid-template-columns: minmax(0, 1fr); }
+  .kill-panel { left: 0.75rem; right: 0.75rem; width: auto; }
+  /* On a phone the chip sits at the left of a wrapped bar, so the panel is
+     anchored to the bar instead of to the chip, and it always fits the screen. */
+  .kill { position: static; }
+  .stat-grid, .stat-grid.two { grid-template-columns: minmax(0, 1fr); }
   h1 { font-size: 1.4rem; }
   h2 { font-size: 1rem; }
   .card, .callout { padding: 1.1rem; }

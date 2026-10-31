@@ -66,6 +66,16 @@ POLICY_ITEMS: tuple[PolicyItem, ...] = (
         default_value="exclude_pii_customer_confidential_regulated",
         rationale="Defines the scrubbing and exclusion scope.",
     ),
+    PolicyItem(
+        id="P6",
+        question="May this install load a pretrained open base to adapt?",
+        default_value="scratch_only",
+        rationale=(
+            "The default keeps the no-pretrained-weights promise. open_weight_allowed "
+            "lets the adapter track load a hash-pinned, licence-allowlisted base whose "
+            "name, revision and licence appear on every model card."
+        ),
+    ),
 )
 
 POLICY_BY_ID = {item.id: item for item in POLICY_ITEMS}
@@ -114,7 +124,16 @@ class PolicyRegistry:
         requested_by: str,
         rationale: str = "",
     ) -> tuple[PolicyDecision, str]:
-        """Record a proposed change and open a policy_decision gate for it."""
+        """Open a gate for a new value. The value applies when the gate is decided.
+
+        Recording a proposal must not change the thing it proposes. A pending
+        proposal that already applies is not a gate at all: for a policy that
+        governs whether an install may load pretrained weights it would let one
+        person change behaviour while the approvers still had it open. The
+        proposed value and the gate id are kept beside the decision, so a
+        decision confirmed later cannot be confirmed against the wrong gate or
+        invented from nothing.
+        """
         decision = self.get(policy_id)
         gate = self.gates.request(
             GateType.POLICY_DECISION,
@@ -128,8 +147,8 @@ class PolicyRegistry:
                 "proposed_value": value,
             },
         )
-        decision.current_value = value
-        decision.rationale = rationale or decision.rationale
+        self.store.kv_set(f"policy_proposed:{policy_id}", value)
+        self.store.kv_set(f"policy_gate:{policy_id}", gate.id)
         decision.status = "pending_approval"
         self.store.upsert_policy(decision)
         return decision, gate.id
@@ -144,11 +163,17 @@ class PolicyRegistry:
             raise ValueError(f"no gate recorded for policy decision {policy_id}")
         if not self.gates.is_approved(gate_id):
             raise ValueError(f"gate {gate_id} for {policy_id} is not approved")
+        proposed = self.store.kv_get(f"policy_proposed:{policy_id}") or ""
+        if not proposed:
+            raise ValueError(
+                f"policy decision {policy_id} has no pending proposal; propose a value first"
+            )
+        decision.current_value = proposed
         decision.status = "decided"
         decision.decided_by = decided_by
         decision.decided_at = now_iso()
         self.store.upsert_policy(decision)
-        self.store.kv_set(f"policy_gate:{policy_id}", gate_id)
+        self.store.kv_set(f"policy_proposed:{policy_id}", "")
         return decision
 
     def status_summary(self) -> dict[str, Any]:

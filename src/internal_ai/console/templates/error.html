@@ -5,9 +5,7 @@
 {% block content %}
 {{ m.page_head(
   "That page does not exist" if code == 404 else "That action was refused",
-  ("Nothing lives at this address. It may have been renamed, or the id belongs to a record this console does not hold." if code == 404 else detail),
-  "Error " ~ code
-) }}
+  ("Error " ~ code ~ ". Nothing lives at this address. It may have been renamed, or the id belongs to a record this console does not hold." if code == 404 else detail)) }}
 <div class="card">
   <p class="muted small">{{ detail }}</p>
   <div class="inline-form">

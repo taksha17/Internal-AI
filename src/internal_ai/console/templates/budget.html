@@ -3,7 +3,7 @@
 {% block title %}Budget{% endblock %}
 {% block crumb %}Budget{% endblock %}
 {% block content %}
-{{ m.page_head("Budget limits", "Lowering or adding a limit takes effect at once. Raising one needs an approved budget_increase gate whose subject is the limit's scope:key.", "Admin") }}
+{{ m.page_head("Budget limits", "Lowering or adding a limit takes effect at once. Raising one needs an approved budget_increase gate whose subject is the limit's scope:key.") }}
 <p class="tabs"><a href="/console/admin/people">People</a><a href="/console/admin/policy">Policy</a><a href="/console/admin/budget" class="active">Budget</a></p>
 {% call m.data_table([("Scope",), ("Spent", true), ("Limit", true), ("Left", true), ("Used", true)]) %}
   {% for item in budget %}

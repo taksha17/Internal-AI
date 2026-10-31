@@ -21,12 +21,17 @@ for ordinary application code.
 
 ## Non-negotiables
 
-1. **Never load pretrained weights on the from-scratch track.** That track has
-   no code path that reads pretrained parameters, and none may be added. The
-   alpha track is the only exception: only `internal_ai/training/alpha/` may
-   load the pinned base named in that package. Every alpha model card names the
-   base, its revision and its licence. Alpha output is never training data for
-   the from-scratch track. Weight files found in a data source are refused.
+1. **A base model is loaded only in provenance mode, and the default mode
+   loads none.** `scratch_only` is the default and keeps the old guarantee
+   exactly: the from-scratch track has no code path that reads pretrained
+   parameters, and none may be added. `open_weight_allowed` is a per-install
+   setting decided through a `policy_decision` gate on `P6` and recorded in the
+   audit log; in that mode the adapter track may load a base that is on the
+   allowlist, hash-pinned, and recorded on every model card by repo id,
+   revision and licence. Only `internal_ai/training/alpha/` may load those
+   weights. A base whose licence class is not `permissive` needs its own
+   `base_model_exception` gate. Alpha output is never training data for the
+   from-scratch track. Weight files found in a data source are refused.
 2. **Never train on third-party model output.** Distillation is a non-goal.
    Task data comes from internal documents, tickets and resolved questions.
 3. **Never send raw records to an external API.** Schemas, aggregate
@@ -54,6 +59,7 @@ Change the rule in its own file, never around it:
 | Promotion | `internal_ai/workflows.py:promote_model` | a passing eval report against a frozen set and an approved `model_promotion` gate |
 | Gates | `internal_ai/gates.py`, `GateType` in `domain.py` | a new type plus the roles that may decide it |
 | Base models | `internal_ai/training/alpha/pin.py` | a licence class and an allowlist entry, never an unchecked pin |
+| Provenance mode | `internal_ai/training/provenance.py`, policy item `P6` | the mode reads only a decided policy; `scratch_only` refuses every load |
 
 ## Console
 
@@ -101,7 +107,9 @@ machine refuses the illegal move.
 
 ## Git
 
-- One change is one branch with one record in `docs/changes/NN-<slug>.md`.
+- One change is one branch. The change record is a working note at
+  `docs/changes/NN-<slug>.md`, kept out of git like the plans and the PRD; the
+  pull request body carries what a reviewer needs.
 - Agents do not push to `main`. Only the owner (`taksha17`) merges there, so an
   agent commits on its branch, pushes that branch, and opens or updates one
   pull request.

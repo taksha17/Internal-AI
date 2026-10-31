@@ -30,9 +30,12 @@ and by the content security policy.
 
 `AGENTS.md` holds the full set. These stay true through every redesign:
 
-- The default install trains from random initialisation on approved internal
-  data only, and no path reads pretrained parameters outside
-  `internal_ai/training/alpha/`.
+- **Provenance mode is explicit.** The default install trains from random
+  initialisation on approved internal data only and has no path that reads
+  pretrained parameters. An install that switches to `open_weight_allowed`
+  through its gate may adapt a hash-pinned base whose licence class is
+  allowlisted, and every model card then names the base, the revision and the
+  licence. Nothing outside the adapter package may load those weights.
 - No training on third-party model output.
 - No raw records leave for an external API.
 - Frozen eval sets are write-protected; a change is a new version.

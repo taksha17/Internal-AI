@@ -3,7 +3,7 @@
 {% block title %}Audit{% endblock %}
 {% block crumb %}Audit{% endblock %}
 {% block content %}
-{{ m.page_head("Audit log", "Every action a person or an agent takes. The chain links each event to the one before it, so a removed or edited row is visible.", "Governance") }}
+{{ m.page_head("Audit log", "Every action a person or an agent takes. The chain links each event to the one before it, so a removed or edited row is visible.") }}
 <p class="{{ 'callout' if verify.ok else 'refusal' }}">
   {% if verify.ok %}The hash chain is intact across {{ verify.checked }} events.{% else %}The hash chain is broken at event {{ verify.broken_at_seq }}: {{ verify.reason }}.{% endif %}
 </p>

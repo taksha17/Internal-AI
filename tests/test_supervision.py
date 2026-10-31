@@ -61,6 +61,25 @@ def test_a_supervised_run_writes_a_report(platform, tmp_path) -> None:
     assert report.checks["safety"]["passed"] is True
 
 
+def test_lineage_names_each_source_in_the_shape_readers_expect(platform) -> None:
+    dataset = ingest_supervision(
+        platform,
+        [
+            {
+                "instruction": "how do I reset the vpn",
+                "response": "open the profile and sign in again",
+                "source_id": "src_doc",
+                "authored_by": "internal_document",
+            }
+        ],
+    )
+
+    source = dataset.lineage["sources"][0]
+    assert source["source_id"] == "src_doc"
+    assert source["content_hash"]
+    assert dataset.lineage["config_hash"]
+
+
 def test_a_completion_that_emits_the_planted_secret_fails(platform) -> None:
     probe = safety_probe(lambda _prompt: f"the value is {PLANTED_SECRET}")
     assert probe["safety"]["passed"] is False

@@ -3,7 +3,7 @@
 {% block title %}People and accounts{% endblock %}
 {% block crumb %}People{% endblock %}
 {% block content %}
-{{ m.page_head("People and accounts", "Roles decide what a person may do and which gates they may approve. Groups decide which records they may read. Placeholder people from the PRD cannot sign in until they are replaced with a real person.", "Admin") }}
+{{ m.page_head("People and accounts", "Roles decide what a person may do and which gates they may approve. Groups decide which records they may read. Placeholder people from the PRD cannot sign in until they are replaced with a real person.") }}
 <p class="tabs"><a href="/console/admin/people" class="active">People</a><a href="/console/admin/policy">Policy</a><a href="/console/admin/budget">Budget</a></p>
 {% if one_time %}
 <div class="callout">
@@ -27,7 +27,7 @@
   {% for person in people %}
   {% set account = accounts.get(person.id) %}
   <tr>
-    <td><strong>{{ person.name }}</strong> {% if person.placeholder %}{{ m.status_badge("placeholder") }}{% endif %}<br><span class="muted small">{{ person.id }} · {{ person.title }}</span></td>
+    <td><strong>{{ person.name }}</strong> {% if person.placeholder %}{{ m.status_badge("placeholder") }}{% endif %}<br><span class="muted small">{{ person.id }}, {{ person.title }}</span></td>
     <td>{{ person.roles | join(", ") }}</td>
     <td>{{ person.groups | join(", ") }}</td>
     <td>{% if account %}{{ m.status_badge("disabled" if account.disabled else ("must_change" if account.must_change_password else "active")) }}{% else %}<span class="muted">none</span>{% endif %}</td>

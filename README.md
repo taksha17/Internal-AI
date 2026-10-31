@@ -5,37 +5,101 @@
   </picture>
 </p>
 
-A company trains its own model from random weights, on its own documents. People approve every gate. The corpus stays inside the boundary: no pretrained weights, no third-party model output, no raw records sent to an external API.
+<p align="center"><strong>The control plane a company runs on its own machines to build, evaluate and serve a model it owns.</strong></p>
+
+Most companies rent their intelligence: the data leaves, the weights stay on
+someone else's hardware, and the model card does not belong to them. This is the
+other arrangement. A company installs this platform on machines it controls,
+points it at documents it already has, and ends up with a model whose training
+data, evaluation and serving all stayed inside the boundary.
+
+Agents do the engineering work. People take every irreversible decision.
 
 ## What it does
 
-The platform is a small engineering organisation of role agents, supervised by people.
+- **Control plane.** A dependency-ordered task graph, ten role agents with
+  declared capabilities, gates that need a named second person, budgets at five
+  scopes, a kill switch, an append-only hash-chained audit log, and lineage from
+  every artifact back to the commit and dataset that produced it.
+- **Data plane.** Ingestion, exact and near-duplicate removal, PII and secret
+  scrubbing, quality and language filters, immutable dataset versions, a
+  tokenizer trained from scratch, and leakage-safe splits.
+- **Training.** A from-scratch transformer that records its commit, config,
+  dataset hash and seed; checkpoints and resumes; caps cost; streams metrics;
+  and stops itself on divergence or a loss spike.
+- **Evaluation.** Frozen eval sets that only a person can approve, an
+  independent evaluation agent, promotion gates, and model cards.
+- **Serving.** Authenticated inference and permission-aware retrieval, per-user
+  rate limits, and rollback.
+- **Adaptation.** For companies that decide an existing open base is acceptable,
+  a rank-8 adapter over one pinned base, streamed from disk, recorded on every
+  model card by repo, revision and licence.
 
-- **Control.** An orchestrator walks a dependency-ordered task graph. Gates need a second person. Budgets cap spend per agent, job, and week. A kill switch stops new jobs. The audit log is append-only and hash-chained. Lineage records where every artifact came from.
-- **Data.** Ingestion, exact and near-duplicate removal, PII and secret scrubbing, quality and language filters, immutable dataset versions, a tokenizer trained from scratch, and leakage-safe train and eval splits.
-- **Training.** A from-scratch transformer. Each run records its commit, config, dataset hash, and seed. It checkpoints, resumes, caps cost, streams metrics, and stops on divergence or a loss spike.
-- **Evaluation.** Frozen eval sets that only a person can approve, an independent evaluation agent, promotion gates, and model cards.
-- **Serving.** Authenticated inference and permission-aware retrieval, with per-user rate limits and rollback.
+It is not a chat product competing with frontier models, and it is not a
+distillation pipeline.
 
-It is not a general chat product competing with frontier models, and it is not a distillation pipeline. Agents prepare the work. People own the decisions.
+## Two tracks
+
+| Track | Default | Starts from | Gate before any weight loads |
+| --- | --- | --- | --- |
+| From scratch | on | random initialisation on approved internal data | none: there is no code path that reads pretrained parameters |
+| Alpha (adapter) | off | one pinned open base already on disk | `policy_decision` on `P6`; plus `base_model_exception` when the base licence is not permissive |
+
+Provenance mode is a per-install setting, not a flag on a run. The default
+`scratch_only` refuses every load. `open_weight_allowed` is decided through a
+gate, recorded in the audit chain, and only then does the adapter track load a
+base that is allowlisted and hash-pinned. Alpha output is never training data
+for the from-scratch track.
+
+## What stays inside
+
+- No training on third-party model output. Distillation is a non-goal.
+- Raw records never leave the boundary. Schemas, aggregate statistics, redacted
+  samples, code and logs may.
+- Frozen eval sets are write-protected; a change is a new version behind a new
+  gate.
+- Gates are human-only, and the requester cannot decide their own.
+- `audit_events` is append-only and hash-chained, enforced by triggers.
+- Every spend path goes through `BudgetManager` at every scope.
+- Engaging the kill switch is immediate; releasing it needs a different person.
+
+## Where those rules live
+
+Change the rule in its own file, never around it.
+
+| Rule | Home |
+| --- | --- |
+| Who may do what | [`roles.py`](src/internal_ai/roles.py), [`services/permissions.py`](src/internal_ai/services/permissions.py) |
+| Every agent action | [`agent.py`](src/internal_ai/agent.py), [`tools.py`](src/internal_ai/tools.py) |
+| Task states | [`store.py`](src/internal_ai/store.py) (`ALLOWED_TRANSITIONS`) |
+| Spend | [`budget.py`](src/internal_ai/budget.py) |
+| Datasets | [`data/`](src/internal_ai/data/) |
+| Promotion | [`workflows.py`](src/internal_ai/workflows.py) |
+| Gates | [`gates.py`](src/internal_ai/gates.py), `GateType` in [`domain.py`](src/internal_ai/domain.py) |
+| Base models | [`training/alpha/pin.py`](src/internal_ai/training/alpha/pin.py) |
+| Provenance mode | [`training/provenance.py`](src/internal_ai/training/provenance.py), policy `P6` |
 
 ## Run it
 
-Create a virtualenv, install the CPU build of PyTorch, then the package:
+Python 3.12. CPU is enough for the demo path.
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
-.venv/bin/pip install -e ".[dev]"
+.venv/bin/pip install -e ".[dev,train]"
 ```
 
-The Phase 0 loop, end to end, on a demo root:
+The whole loop — sample corpus, dataset, split, tokenizer, training from random
+weights, a frozen eval set, evaluation, registration, promotion, serving — on a
+throwaway root:
 
 ```bash
 .venv/bin/python -m internal_ai.cli --root var_demo demo
 ```
 
-The same path — sample corpus, dataset, split, tokenizer, training from scratch, a frozen eval set, evaluation, registration, promotion, serving — is what the test suite runs. To click through it, create the first account and open the console:
+The same path is what the test suite runs.
+
+To click through it, create the first account and start the console:
 
 ```bash
 .venv/bin/python -m internal_ai.cli --root var_console people replace \
@@ -46,91 +110,98 @@ The same path — sample corpus, dataset, split, tokenizer, training from scratc
 .venv/bin/python -m internal_ai.cli --root var_console serve --host 127.0.0.1 --port 8080
 ```
 
-Open [http://127.0.0.1:8080/console](http://127.0.0.1:8080/console), sign in with the one-time password the command printed, and change it.
+Open [http://127.0.0.1:8080/console](http://127.0.0.1:8080/console), sign in with
+the one-time password the command printed, and change it.
+
+## The console
+
+One FastAPI process serves Jinja pages and the JSON API. htmx is vendored under
+`src/internal_ai/console/static/`: no CDN, no Node build, no frontend framework,
+no inline script and no inline style, enforced by the content security policy
+and by tests. The console is a third client of the same services as the CLI and
+the API, with the same governance — it is not a separate back office.
 
 ## Verified at scale
 
-The demo exercises orchestration only. To see the platform under load,
-`scripts/stress.py` builds a corpus, releases it through the real gates, trains
-a model, evaluates it and races the guardrails:
-
-```bash
-.venv/bin/python scripts/stress.py --records 45000 --steps 80
-```
-
-One run, 2026-10-30, on a 16 GB Windows PC (AMD Ryzen 5 5600H, CPU-only
-`torch` 2.14.1), took 36.4 minutes end to end and exited 0. Change 0.1 resized
-the demo to a slim encoder on a ~45k-row synthetic corpus so it clears the
-tokens-per-parameter floor the trainer enforces (`d_model` 64, `d_ff` 128, a
-1500-vocab tokenizer); the run records the lineage commit that built it.
+`scripts/stress.py` builds a corpus, releases it through the real gates, trains a
+model, evaluates it and races the guardrails. One run on a 16 GB CPU-only
+workstation (AMD Ryzen 5 5600H) took 36.4 minutes end to end and exited 0:
 
 | Stage | Measured |
-|---|---|
-| Ingest, dedup, PII scrub | 41,294 records from 51,750 rows in 4m50s; 5,165,062 measured tokens; 6,201 exact + 141 near duplicates removed, 20,455 redactions, 4,102 excluded by sensitivity, 12 language-filtered |
+| --- | --- |
+| Ingest, dedup, PII scrub | 41,294 records from 51,750 rows in 4m50s; 6,201 exact and 141 near duplicates removed; 20,455 redactions |
 | Leakage-safe split | 33,058 / 4,130 / 4,095 in 20m09s |
 | Tokenizer from scratch | 1,500 of vocabulary over 33,058 documents in 33s |
-| Language review, then release | a domain expert marked the 30-record sample; the `dataset_release` gate approved in 4m50s |
-| Training, from random weights | stopped at step 70 of 80 by the divergence guard; 140,176 tokens, 1,653 tokens/s, loss 2.27, under $0.002, in 1m25s |
-| Evaluation | 60 held-out queries, recall@10 0.000 against a 0.000 keyword baseline (MRR 0.0006 vs 0.0001); every safety check passed; promotion refused, in 4m30s |
+| Release | a domain expert reviewed the sample, then the `dataset_release` gate approved |
+| Training | stopped at step 70 of 80 by the divergence guard; 140,176 tokens at 1,653 tokens/s |
+| Evaluation | recall@10 0.000 against a 0.000 keyword baseline; every safety check passed; promotion refused |
 | Audit | chain verified, 17 events |
 
-What held:
+Two things that run is quoted for. The audit chain verified after two deliberate
+races, and the harness refused to promote. A slim model on a synthetic corpus
+does not beat keyword search, and the right behaviour is to say so: that is the
+data-volume problem, not a bug in the pipeline. The serving, budget and gate
+races it exposed are closed, with tests:
+[`test_budget_reservations.py`](tests/test_budget_reservations.py),
+[`test_gate_decision_uniqueness.py`](tests/test_gate_decision_uniqueness.py),
+[`test_retrieval_cache.py`](tests/test_retrieval_cache.py).
 
-- The script now runs green under every release gate at HEAD: the language
-  review a domain expert files before release (change 14) and the code-commit
-  lineage check a run needs a checkout to satisfy.
-- The audit chain verified after the run, including both races below.
-- The evaluation's safety checks all passed: train/eval contamination, PII
-  regurgitation, document permission leak, instruction payloads, and both
-  memorisation probes.
-- The divergence guard stopped the run when validation loss rose for three
-  logs, rather than shipping a model that looked fine and was not.
+## Repository layout
 
-### What the run found
+```
+src/internal_ai/     control plane, data, training, evals, serving, console
+tests/               the suite, including the refusal tests
+scripts/             stress, probe and secret-scan tools
+docs/                architecture, runbook, tester guide, console build notes
+Logo/                the marks
+```
 
-Three gaps this run left open, all closed since (changes 0.2 to 0.4):
+## Documentation
 
-1. **Budgets hold under concurrency.** This run's probe read 16 grants and
-   $1.60 recorded against a $0.60 agent cap, because `check` and `record_spend`
-   were separate steps. `BudgetManager.reserve` now takes the hold inside one
-   `BEGIN IMMEDIATE` transaction and `settle` turns it into spend, so the same
-   probe grants 12 and records $0.60. `tests/test_budget_reservations.py`.
-2. **One signoff row per person per gate.** This run read up to seven decision
-   rows for one approver on a single gate. `gate_decisions` now carries a unique
-   index on (gate_id, approver), and `GateService.decide` reports the second
-   write as a refusal, so eight simultaneous decisions leave one row. Distinct
-   approvers still count, so no gate is decided by one person wearing two roles.
-   `tests/test_gate_decision_uniqueness.py`.
-3. **Serving embeds a dataset once per version.** `/v1/search` re-embedded every
-   visible document per query, which is why this run did not measure serving at
-   scale. `RetrievalService` now caches the document matrix against the released
-   content hash and the model's identity, and applies the caller's ACLs to the
-   ranking, so a warm dataset answers without re-embedding and a caller still
-   never sees a document their group cannot read.
-   `tests/test_retrieval_cache.py`.
-
-This run's model was refused promotion, so none of it serves from that run; the
-serving change is proven by the tests and becomes visible on the next passing
-promotion.
-
-Quality is equally blunt. The slim demo model diverged and reached a recall@10 of
-0.000 on 60 held-out queries: it edges the keyword baseline on MRR and is far
-short of the 0.02 bar the harness recorded, so promotion was refused and the
-refusal was printed. That is the data-volume problem in section 10 of the PRD, not
-a bug in the pipeline; the point of this run is that the harness runs green end to
-end under the current gates, not that this synthetic corpus trains a good model.
-
-## Read next
-
-The implementation is the Python package `internal_ai` in [`src/internal_ai/`](src/internal_ai/). Conventions for people and agents are in [`AGENTS.md`](AGENTS.md). The product requirements are in [PRD Agent-Driven In-House LLM Build Platform.md](<PRD%20Agent-Driven%20In-House%20LLM%20Build%20Platform.md>).
-
-- [Tester guide](docs/tester-guide.md) — the control plane, the serving API, the console, search, and the refusals.
-- [Console](docs/phase-2-console.md) — how the browser client is built, and the safety rules it keeps.
+- [Architecture](docs/architecture.md) — the planes, the task lifecycle, the
+  enforcement behind each principle.
 - [Runbook](docs/runbook.md) — day-to-day commands, including the budget model.
-- [Architecture](docs/architecture.md) — how the planes fit together.
-- [Traceability](docs/prd-traceability.md) — requirement to code and test.
-- [Status](STATUS.md) — what is done, what is open, what is blocked.
+- [Tester guide](docs/tester-guide.md) — the control plane, the serving API, the
+  console, search, and the refusals.
+- [Console](docs/phase-2-console.md) — how the browser client is built and the
+  safety rules it keeps.
+- [Design](DESIGN.md) and [product](PRODUCT.md) — the console as built, and the
+  product the platform is meant to be.
+- [Agent conventions](AGENTS.md) and [contributors](CONTRIBUTORS.md).
+
+## Not built yet
+
+Stated plainly, because a platform that claims more than it does is worse than
+one that claims less:
+
+- The local answer path is a reference generator. It recomputes the prefix for
+  every token and streams each layer from disk, so it is not a serving engine for
+  a real 4B base on CPU.
+- There is no rebase runner; comparing candidates across bases needs a second
+  pinned base.
+- Supervision sets cannot be released yet: their token counts are estimated.
+- The sandbox is subprocess-level. Container isolation with a network policy is
+  still open.
+- The scheduler runs jobs locally. Slurm and Kubernetes are integration points,
+  not finished backends.
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md). One change is one branch and one pull
+request; the owner merges to `main`. Every change leaves `pytest`,
+`ruff check .` and `ruff format --check .` green.
+
+## Security
+
+Report a vulnerability privately through the repository's security advisories,
+not in a public issue. Never commit keys, tokens or records. The suite runs
+`scripts/secret_scan.py` on every pull request.
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](LICENSE). People, schools, nonprofits, and governments may use, change, and share the software for noncommercial purposes. A company needs a separate license from the owners to use it in its business or to sell something built on it.
+[PolyForm Noncommercial 1.0.0](LICENSE). People, schools, nonprofits and
+governments may use, change and share the software for noncommercial purposes.
+A company needs a separate licence from the copyright holder to use it in its
+business, or to sell something built on it. That is deliberate: the point of the
+project is a model a company owns outright, and the software that builds it is
+not given away for someone else to resell.

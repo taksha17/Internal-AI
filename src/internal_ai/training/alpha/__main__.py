@@ -16,9 +16,19 @@ def main() -> None:
         action="store_true",
         help="fall back to the research-licensed 3B pin when the 4B download fails",
     )
+    fetch.add_argument(
+        "--open-weights",
+        action="store_true",
+        help="confirm this experiment may load pretrained weights",
+    )
     smoke = commands.add_parser("smoke")
     smoke.add_argument("root", type=Path)
     smoke.add_argument("out", type=Path)
+    smoke.add_argument(
+        "--open-weights",
+        action="store_true",
+        help="confirm this experiment may load pretrained weights",
+    )
     train = commands.add_parser("train")
     train.add_argument("root", type=Path)
     train.add_argument("texts", type=Path)
@@ -26,7 +36,18 @@ def main() -> None:
     train.add_argument("--layers", type=int, default=2)
     train.add_argument("--sequences", type=int, default=4)
     train.add_argument("--seed", type=int, default=0)
+    train.add_argument(
+        "--open-weights",
+        action="store_true",
+        help="confirm this experiment may load pretrained weights",
+    )
     args = parser.parse_args()
+    if not args.open_weights:
+        raise SystemExit(
+            "scratch_only: this command would load pretrained weights. A governed install "
+            "decides that with policy P6; for a local experiment pass --open-weights, which "
+            "records no run, no audit event and no licence decision."
+        )
     if args.command == "fetch":
         from internal_ai.training.alpha.fetch import fetch_primary_or_fallback
 

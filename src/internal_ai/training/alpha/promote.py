@@ -20,6 +20,7 @@ from internal_ai.training.alpha.card import alpha_card
 from internal_ai.training.alpha.citations import AskHit, CitationReport, score_answer
 from internal_ai.training.alpha.pin import FALLBACK, PRIMARY, RECIPE, LicenseClass, PinnedBase
 from internal_ai.training.ownership import require_released_dataset
+from internal_ai.training.provenance import provenance_mode
 from internal_ai.workflows import latest_frozen_pass, model_card_markdown, promote_model
 
 
@@ -54,6 +55,7 @@ def register_alpha(
         dataset.content_hash,
         digest,
     )
+    card["provenance_mode"] = provenance_mode(platform)
     record = reproducibility_beside(adapter_path)
     if record:
         card["reproducibility"] = record
@@ -183,33 +185,10 @@ def _alpha_contamination(
     return contamination_report(eval_records, training)
 
 
-def evaluate_alpha(
-    platform: Platform,
-    model_id: str,
-    eval_set_id: str,
-    answers: list[str],
-    actor: str = "evaluation",
-) -> EvalReport:
-    """Score the alpha model against a frozen eval set and record the report.
-
-    The platform holds no generator: the on-prem runner produces the answers
-    and hands them back here to be scored. The set is frozen before the model
-    is run against it, because a report on questions that can still be changed
-    after the model has seen them is worth nothing.
-    """
-    model = platform.store.get_model(model_id)
-    if model is None:
-        raise KeyError(f"unknown model: {model_id}")
-    eval_set = platform.store.get_eval_set(eval_set_id)
-    if eval_set is None:
-        raise KeyError(f"unknown eval set: {eval_set_id}")
-    if not eval_set.frozen:
-        raise PermissionError("alpha evaluation runs against a frozen eval set (FR-14)")
-    if len(answers) != len(eval_set.items):
-        raise ValueError(
-            f"the eval set has {len(eval_set.items)} questions "
-            f"and {len(answers)} answers were given"
-        )
+def _score_answers(
+    eval_set: EvalSet, answers: list[str]
+) -> tuple[int, list[str], list[dict[str, str]]]:
+    """How many answers kept their citations, which ones did not, what leaked."""
     mismatches: list[str] = []
     leaks: list[dict[str, str]] = []
     cited = 0
@@ -220,13 +199,82 @@ def evaluate_alpha(
         if report.passed:
             cited += 1
         leaks.extend(_pii_leaks(answer, list(item.get("hits", []))))
+    return cited, mismatches, leaks
+
+
+def evaluate_alpha(
+    platform: Platform,
+    model_id: str,
+    eval_set_id: str,
+    answers: list[str],
+    baseline_answers: list[str],
+    actor: str = "evaluation",
+) -> EvalReport:
+    """Score the alpha model against a frozen eval set and record the report.
+
+    The platform holds no generator: the on-prem runner produces the answers
+    and hands them back here to be scored. The set is frozen before the model
+    is run against it, because a report on questions that can still be changed
+    after the model has seen them is worth nothing.
+
+    The same runner must also produce the un-adapted base's answers, and they
+    are required rather than optional. An adapter that cannot beat the model it
+    was layered onto is not an improvement, and a report that never asked the
+    question would let one through by having nothing to compare against.
+    """
+    model = platform.store.get_model(model_id)
+    if model is None:
+        raise KeyError(f"unknown model: {model_id}")
+    eval_set = platform.store.get_eval_set(eval_set_id)
+    if eval_set is None:
+        raise KeyError(f"unknown eval set: {eval_set_id}")
+    if not eval_set.frozen:
+        raise PermissionError("alpha evaluation runs against a frozen eval set (FR-14)")
+    total = len(eval_set.items)
+    for label, supplied in (("answers", answers), ("baseline answers", baseline_answers)):
+        if len(supplied) != total:
+            raise ValueError(
+                f"the eval set has {total} questions and {len(supplied)} {label} were given"
+            )
+    cited, mismatches, leaks = _score_answers(eval_set, answers)
+    base_cited, base_mismatches, _ = _score_answers(eval_set, baseline_answers)
+    rate = round(cited / total, 6) if total else 0.0
+    base_rate = round(base_cited / total, 6) if total else 0.0
+    if cited > base_cited:
+        verdict = (
+            f"the adapter kept {cited} of {total} citations and its un-adapted base kept "
+            f"{base_cited}"
+        )
+    elif answers == baseline_answers:
+        verdict = (
+            "the adapter and its base returned the same answers, which usually means the "
+            "adapter was not loaded; nothing here can promote it"
+        )
+    elif cited == base_cited:
+        verdict = (
+            f"the adapter kept {cited} of {total} citations and its base kept the same "
+            f"{base_cited}; a set that cannot tell the two apart cannot promote the adapter"
+        )
+    else:
+        verdict = (
+            f"the adapter kept {cited} of {total} citations and its un-adapted base kept "
+            f"{base_cited}; an adapter that loses to its base is not an improvement"
+        )
     checks = {
         "citations": {"passed": not mismatches, "mismatches": mismatches[:10]},
         "pii_regurgitation": {"passed": not leaks, "leaks": leaks[:10]},
         "contamination": _alpha_contamination(platform, model, eval_set),
+        "beats_base": {
+            "passed": cited > base_cited,
+            "baseline": "base_model",
+            "adapter_citation_pass_rate": rate,
+            "base_citation_pass_rate": base_rate,
+            "mismatches_on_base": base_mismatches[:10],
+            "note": verdict,
+        },
     }
-    total = len(eval_set.items)
-    metrics = {"citation_pass_rate": round(cited / total, 6) if total else 0.0}
+    metrics = {"citation_pass_rate": rate}
+    baseline_metrics = {"citation_pass_rate": base_rate}
     passed = all(bool(check.get("passed")) for check in checks.values())
     eval_report = EvalReport(
         id=new_id("rep"),
@@ -234,13 +282,15 @@ def evaluate_alpha(
         eval_set_id=eval_set_id,
         created_at=now_iso(),
         metrics=metrics,
-        baseline_metrics={},
+        baseline_metrics=baseline_metrics,
         checks=checks,
         passed=passed,
         notes=(
-            "every answer kept its line numbers on the files the eval set named"
+            "every answer kept its line numbers on the files the eval set named, and the "
+            f"adapter kept more of them than its base ({cited} of {total} against {base_cited})"
             if passed
-            else "an answer moved a citation, leaked personal data, or overlapped the training text"
+            else "an answer moved a citation, leaked personal data, overlapped the training "
+            f"text, or did not beat the un-adapted base ({cited} of {total} against {base_cited})"
         ),
     )
     platform.store.add_eval_report(eval_report)
@@ -252,6 +302,7 @@ def evaluate_alpha(
         details={
             "model_id": model_id,
             "metrics": metrics,
+            "baseline_metrics": baseline_metrics,
             "passed": passed,
             "checks": {name: bool(check.get("passed")) for name, check in checks.items()},
         },
@@ -283,9 +334,15 @@ def serve_alpha(platform: Platform, model_id: str, runner_dir: Path) -> Path:
     )
     if gate is None:
         raise PermissionError("alpha serving requires an approved model_promotion gate")
-    if latest_frozen_pass(platform, model_id) is None:
+    report = latest_frozen_pass(platform, model_id)
+    if report is None:
         raise PermissionError(
             "alpha serving requires a passing eval report on a frozen eval set (FR-15)"
+        )
+    if report.checks.get("beats_base", {}).get("passed") is not True:
+        raise PermissionError(
+            "alpha serving requires an eval report that beat the un-adapted base on the same "
+            "frozen set"
         )
     approver = next(
         (

@@ -34,3 +34,19 @@ Thumbs.db
 
 # Visual brainstorm mockups (local preview server state)
 .superpowers/
+
+# Agent scratch
+.cloud-attachments/
+.freebuff/
+.worktrees/
+
+# Internal working notes: kept on disk, never published
+/PRD Agent-Driven In-House LLM Build Platform.md
+/STATUS.md
+/design/
+/docs/acceptance/
+/docs/beta-from-scratch.md
+/docs/changes/
+/docs/prd-traceability.md
+/docs/superpowers/
+/docs/yc-plan/
