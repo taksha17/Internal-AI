@@ -579,6 +579,51 @@ def adapter_backend_named_by(card: dict[str, Any], path: str = "") -> str:
     return str(loaded.get("adapter_backend") or recipe.get("backend") or "").strip()
 
 
+PROMOTION_MARGIN = 0.05
+
+MARGIN_METRICS = {
+    "recall_at_10": "keyword",
+    "citation_pass_rate": "un-adapted base",
+    "accuracy": "rules",
+}
+
+
+def margin_refusal(report: Any) -> str | None:
+    """The lead the report claims, said out loud when it is too small to believe.
+
+    A promotion argues that a model beat something. The plan fixes that
+    something as the un-adapted base and the baseline the company already had,
+    by +0.05 on the metric being promoted on, and the gate holder reads a report
+    rather than re-running an evaluation. So the report has to carry the
+    comparison, and a report that never ran one has not shown a lead at all —
+    which is a refusal, not a caveat.
+    """
+    metrics = report.metrics or {}
+    baseline = report.baseline_metrics or {}
+    judged = sorted(metric for metric in MARGIN_METRICS if metric in metrics)
+    if not judged:
+        return (
+            "the report carries no recall@10, citation_pass_rate or accuracy, so nothing "
+            "was compared and nothing can be promoted on it"
+        )
+    for metric in judged:
+        against = MARGIN_METRICS[metric]
+        score = float(metrics[metric])
+        if metric not in baseline:
+            return (
+                f"candidate {score:.2f} on {metric} has no {against} figure in the report "
+                "to beat; a comparison that was never run cannot promote"
+            )
+        base = float(baseline[metric])
+        lead = score - base
+        if round(lead, 6) < PROMOTION_MARGIN:
+            return (
+                f"candidate {score:.2f} vs {against} {base:.2f} on {metric}: "
+                f"{lead:+.2f} is below the +{PROMOTION_MARGIN:.2f} margin"
+            )
+    return None
+
+
 def promote_model(
     platform: Platform,
     model_id: str,
@@ -625,6 +670,9 @@ def promote_model(
         raise PermissionError(
             "the supervised run dropped recall@10 by more than 0.05 against the previous candidate"
         )
+    refusal = margin_refusal(report)
+    if refusal is not None:
+        raise PermissionError(refusal)
     from internal_ai.evidence import require_playbook
 
     require_playbook(platform, float(model.card.get("planning_gpu_hours") or 0))

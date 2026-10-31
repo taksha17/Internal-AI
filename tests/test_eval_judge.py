@@ -50,6 +50,7 @@ def add_report(platform, model_id: str, judged_by: str, passed: bool = True) -> 
             eval_set_id="evs_judge",
             created_at="2026-01-02T00:00:00+00:00",
             metrics={"recall_at_10": 0.8},
+            baseline_metrics={"recall_at_10": 0.5},
             passed=passed,
             judged_by=judged_by,
         )
