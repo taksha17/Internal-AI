@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from internal_ai.training.alpha.adapt import BACKEND, AdaptationUnavailable, adapt
+from internal_ai.training.alpha.adapt import BACKEND, AdaptationUnavailable, _dtype, adapt
 from internal_ai.training.alpha.pin import PinnedBase, WeightShard
 from internal_ai.workflows import PROMOTABLE_ADAPTER_BACKENDS
 
@@ -140,3 +140,48 @@ def test_adaptation_says_which_install_it_needs(monkeypatch) -> None:
             TEXTS,
             Path("/nonexistent-out"),
         )
+
+
+class _Card:
+    """A card that answers the plain bf16 question yes and the honest one no."""
+
+    def __init__(self, *, native: bool) -> None:
+        self.native = native
+
+    def is_bf16_supported(self, including_emulation: bool = True) -> bool:
+        return self.native or including_emulation
+
+
+class _Torch:
+    bfloat16 = "bfloat16"
+    float16 = "float16"
+    float32 = "float32"
+
+    def __init__(self, card: object) -> None:
+        self.cuda = card
+
+
+def test_emulated_bf16_is_refused_in_favour_of_fp16() -> None:
+    """The measured T4 case: emulated bf16 ran six times slower than fp16."""
+    assert _dtype(_Torch(_Card(native=False)), "cuda") == "float16"
+
+
+def test_a_card_without_native_bf16_is_never_given_fp32() -> None:
+    """fp32 needs 14.99 GiB of a 14.56 GiB card, so the old fallback could not run."""
+    assert _dtype(_Torch(_Card(native=False)), "cuda") != "float32"
+
+
+def test_a_native_bf16_card_keeps_bf16() -> None:
+    assert _dtype(_Torch(_Card(native=True)), "cuda") == "bfloat16"
+
+
+def test_a_torch_that_cannot_exclude_emulation_is_not_trusted() -> None:
+    class _Unguarded:
+        def is_bf16_supported(self) -> bool:
+            return True
+
+    assert _dtype(_Torch(_Unguarded()), "cuda") == "float16"
+
+
+def test_the_cpu_stays_in_fp32() -> None:
+    assert _dtype(_Torch(_Card(native=True)), "cpu") == "float32"
