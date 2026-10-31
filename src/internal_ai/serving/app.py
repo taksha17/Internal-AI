@@ -2,20 +2,24 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import threading
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from internal_ai.context import Platform
 from internal_ai.data.tokenizer import Tokenizer
 from internal_ai.domain import ModelVersion
+from internal_ai.ids import new_id
 from internal_ai.serving.guardrails import (
     GUARDRAIL_REFUSE,
     configured_install_policy,
@@ -57,6 +61,18 @@ class CitationHit(BaseModel):
 class AnswerRequest(BaseModel):
     question: str
     hits: list[CitationHit]
+
+
+class ChatMessage(BaseModel):
+    role: str = "user"
+    content: str
+
+
+class ChatRequest(BaseModel):
+    model: str = ""
+    messages: list[ChatMessage] = Field(default_factory=list)
+    stream: bool = False
+    top_k: int = 5
 
 
 def create_serving_app(
@@ -125,6 +141,33 @@ def create_serving_app(
                 detail={"error": "no model has a passing frozen report", "reasons": reasons},
             )
         raise HTTPException(status_code=404, detail="no embedding model is registered")
+
+    def served_by(name: str) -> ModelVersion:
+        """The model this request is answered by. A named one is never swapped.
+
+        A client that names a model meant that model. Falling back to whichever
+        model happens to be in service would answer a question about the wrong
+        artifact and look successful doing it.
+        """
+        platform = get_platform()
+        if not name:
+            return in_service_model()
+        resolved: ModelVersion | None = app.state.router.resolve(name)
+        if resolved is not None:
+            return resolved
+        known = platform.store.list_models(name=name)
+        if not known:
+            raise HTTPException(status_code=404, detail=f"unknown model: {name}")
+        reasons = [
+            reason for item in known if (reason := out_of_service(platform.store, item)) is not None
+        ]
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": f"no promoted model named {name} is in service",
+                "reasons": reasons or [f"{item.id} is {item.status}" for item in known],
+            },
+        )
 
     def memorisation_sources(platform: Platform) -> list[str]:
         """Text an answer must not recite: the served model's corpus, sampled evenly."""
@@ -388,5 +431,261 @@ def create_serving_app(
                 "latency_ms": round(latency, 3),
                 "guardrail_violations": guardrail_violations,
             }
+
+    @app.post("/v1/chat/completions")
+    def chat_completions(request: ChatRequest, principal: Principal = Depends(authenticate)) -> Any:
+        """An OpenAI-shaped answer from the same guarded path as `/v1/answer`.
+
+        Retrieval runs under the caller's own ACLs, and the finished answer goes
+        through the same citation and guardrail checks. A retrieved record has no
+        line of its own, so it is cited as `<record key>:0` — the whole document —
+        and an answer that puts any other line number on it is a mismatch, as it
+        is everywhere else.
+
+        A guardrail refusal is decided before the first token. A citation failure
+        cannot be known until the answer exists, so a streamed reply carries the
+        text and then closes with an error frame instead of `[DONE]`, and the
+        audit event records the refusal. A client that walks away mid-stream still
+        leaves one, logged as 499.
+        """
+        from internal_ai.serving.trace import FAILURE_CITATION, FAILURE_GUARDRAIL, record_trace
+        from internal_ai.training.alpha.answer import cited_answer
+        from internal_ai.training.alpha.citations import AskHit
+        from internal_ai.training.alpha.local import LocalGenerationUnavailable, answer_adapter
+
+        question = next(
+            (
+                message.content.strip()
+                for message in reversed(request.messages)
+                if message.role == "user" and message.content.strip()
+            ),
+            "",
+        )
+        if not question:
+            raise HTTPException(status_code=400, detail="the last user message is empty")
+        if not 1 <= request.top_k <= 20:
+            raise HTTPException(status_code=400, detail="top_k must be between 1 and 20")
+
+        platform = get_platform()
+        model = served_by(request.model)
+        dataset_id = model.dataset_ids[0] if model.dataset_ids else ""
+        if not dataset_id:
+            raise HTTPException(status_code=400, detail="no dataset bound to the model")
+        retrieval: RetrievalService = app.state.retrieval
+        rows = retrieval.corpus(dataset_id)
+        started = time.monotonic()
+        with app.state.concurrency_semaphore:
+            hits = retrieval.search(
+                embedder_for(model.path), dataset_id, question, principal, top_k=request.top_k
+            )
+            if not hits:
+                readable = any(principal.can_read(row["acl"], row["sensitivity"]) for row in rows)
+                status = 403 if rows and not readable else 400
+                reason = (
+                    "no document in this dataset may be read with this key"
+                    if status == 403
+                    else "nothing in this dataset matched the question"
+                )
+                log_request(
+                    platform.audit,
+                    principal,
+                    "/v1/chat/completions",
+                    status,
+                    (time.monotonic() - started) * 1000,
+                    {"hits": 0, "model_id": model.id},
+                    question=question,
+                )
+                raise HTTPException(status_code=status, detail=reason)
+            citations = [AskHit(hit.document_id, 0) for hit in hits]
+            excerpts = [hit.snippet for hit in hits]
+            try:
+                generator = answer_adapter(platform, model)
+            except (PermissionError, ValueError) as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            try:
+                result = cited_answer(
+                    generator,
+                    question,
+                    citations,
+                    excerpts,
+                    training_texts=memorisation_sources(platform),
+                )
+            except FileNotFoundError as exc:
+                raise HTTPException(
+                    status_code=503, detail=f"the local model is not on disk: {exc}"
+                ) from exc
+            except LocalGenerationUnavailable as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+        violations = validate_output_guardrails(result.text)
+        try:
+            policy = guardrail_policy(
+                model.config, default=configured_install_policy(platform.store)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        cited = [{"path": hit.document_id, "line": 0} for hit in hits]
+        latency = (time.monotonic() - started) * 1000
+
+        def event_details(outcome: str) -> dict[str, Any]:
+            return {
+                "hits": len(hits),
+                "citation_passed": result.passed,
+                "model": result.model,
+                "guardrail_policy": policy,
+                "guardrail_violations": violations,
+                "stream": request.stream,
+                "model_id": model.id,
+                "stream_outcome": outcome,
+                "completed": outcome == "completed",
+            }
+
+        if policy == GUARDRAIL_REFUSE and violations:
+            log_request(
+                platform.audit,
+                principal,
+                "/v1/chat/completions",
+                422,
+                latency,
+                event_details("refused"),
+                question=question,
+            )
+            record_trace(
+                platform.store,
+                platform.audit,
+                principal,
+                endpoint="/v1/chat/completions",
+                model_id=model.id,
+                question=question,
+                answer=result.text,
+                citations=cited,
+                latency_ms=latency,
+                status_code=422,
+                failure=FAILURE_GUARDRAIL,
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "answer withheld by guardrail policy", "violations": violations},
+            )
+
+        completion_id = f"chatcmpl-{new_id('chat')}"
+        created = int(time.time())
+        completion: dict[str, Any] = {
+            "id": completion_id,
+            "object": "chat.completion",
+            "created": created,
+            "model": request.model or model.name or model.id,
+        }
+
+        if not request.stream:
+            log_request(
+                platform.audit,
+                principal,
+                "/v1/chat/completions",
+                200,
+                latency,
+                event_details("completed"),
+                question=question,
+            )
+            record_trace(
+                platform.store,
+                platform.audit,
+                principal,
+                endpoint="/v1/chat/completions",
+                model_id=model.id,
+                question=question,
+                answer=result.text,
+                citations=cited,
+                latency_ms=latency,
+                failure="" if result.passed else FAILURE_CITATION,
+            )
+            prompt_words = len(question.split()) + sum(len(hit.snippet.split()) for hit in hits)
+            answer_words = len(result.text.split())
+            return {
+                **completion,
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": result.text},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": prompt_words,
+                    "completion_tokens": answer_words,
+                    "total_tokens": prompt_words + answer_words,
+                },
+                "usage_note": "whitespace counts; this install reports no billing tokens",
+                "citation_passed": result.passed,
+                "mismatches": list(result.mismatches),
+                "guardrail_violations": violations,
+            }
+
+        def frame(payload: dict[str, Any]) -> str:
+            return f"data: {json.dumps(payload, sort_keys=True)}\n\n"
+
+        def chunk(delta: dict[str, Any], finish: str | None = None) -> str:
+            return frame(
+                {
+                    **completion,
+                    "object": "chat.completion.chunk",
+                    "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+                }
+            )
+
+        def stream() -> Iterator[str]:
+            outcome = "abandoned"
+            try:
+                yield chunk({"role": "assistant"})
+                for match in re.finditer(r"\S+\s*", result.text):
+                    yield chunk({"content": match.group(0)})
+                if not result.passed:
+                    yield frame(
+                        {
+                            "error": {
+                                "message": "answer withheld: its citations do not hold",
+                                "type": "citation_failed",
+                                "mismatches": list(result.mismatches),
+                            }
+                        }
+                    )
+                    outcome = "refused"
+                    return
+                yield chunk({}, "stop")
+                yield "data: [DONE]\n\n"
+                outcome = "completed"
+            finally:
+                # A refusal is this server's decision, not the client's exit, so
+                # the two must not share a status: 499 means the reader left.
+                elapsed = (time.monotonic() - started) * 1000
+                status = 499 if outcome == "abandoned" else 200
+                log_request(
+                    platform.audit,
+                    principal,
+                    "/v1/chat/completions",
+                    status,
+                    elapsed,
+                    event_details(outcome),
+                    question=question,
+                )
+                record_trace(
+                    platform.store,
+                    platform.audit,
+                    principal,
+                    endpoint="/v1/chat/completions",
+                    model_id=model.id,
+                    question=question,
+                    answer=result.text,
+                    citations=cited,
+                    latency_ms=elapsed,
+                    status_code=status,
+                    failure="" if outcome == "completed" else FAILURE_CITATION,
+                )
+
+        return StreamingResponse(
+            stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
 
     return app
