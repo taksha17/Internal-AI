@@ -143,6 +143,7 @@ def test_a_passing_report_off_a_frozen_set_cannot_promote(platform) -> None:
                 eval_set_id=eval_set_id,
                 created_at=created_at,
                 metrics={"recall_at_10": 1.0},
+                baseline_metrics={"recall_at_10": 0.4},
                 passed=True,
                 notes="pass",
             )

@@ -49,12 +49,17 @@ even when it is the best number on the page.
 - a promotion without a passing report on a set that is still frozen;
 - a report judged by the person who built the model or the person approving it;
 - a failed safety probe, or a recall drop above 0.05;
-- a regression accepted by its own builder.
+- a regression accepted by its own builder;
+- a lead under 0.05 over the un-adapted base or the keyword baseline, or a
+  report that carries no such comparison at all.
 
-The margin in point 3 and the confidence in point 4 are the gate holder's
-arithmetic on the eval report: the gate approves a decision, it does not re-run
-the evaluation. That is deliberate — the person approving is accountable for the
-numbers they read, and the numbers are in the report they signed.
+`workflows.margin_refusal` holds point 3, because the gate approves a decision
+rather than re-running the evaluation: a report that never ran the comparison
+has not shown a lead, and an approving human reading a number is not the same
+as the platform having checked it. The confidence in point 4 stays the gate
+holder's arithmetic — the paired difference needs the per-question scores,
+which the report does not carry, and inventing a variance from a mean would be
+worse than saying who is accountable for it.
 
 ## What a refusal must say
 
