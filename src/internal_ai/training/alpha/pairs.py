@@ -5,10 +5,15 @@ Causal loss over a document never shows a model that the thing being asked for i
 a sentence plus the line it came from, so one epoch of it taught the register and
 not the job. A pair shows both.
 
-The question is built from the line's own content words rather than a fabricated
-sentence, because inventing questions offline would need a model, and a model that
-writes the questions would be third-party output in the training set. Keywords are
-mechanical, checkable, and cannot introduce text from anywhere but the corpus.
+A record is one wrapped line, not a paragraph: a line can end mid-clause and the
+next one is its continuation. Training on lines alone therefore taught the model
+to answer "Network Working Group", which is a header. A passage is the line plus
+the consecutive lines needed to finish its sentence, and the citation stays the
+line the passage starts on, because that is what a reader jumps to.
+
+The question is built from the passage's own content words rather than a
+fabricated sentence, because inventing questions offline would need a model, and a
+model that wrote the questions would be third-party output in the training set.
 """
 
 from __future__ import annotations
@@ -22,9 +27,24 @@ INSTRUCTION = (
 )
 
 MAX_KEYWORDS = 10
-MAX_ANSWER_WORDS = 40
+MAX_ANSWER_WORDS = 60
+MIN_ANSWER_WORDS = 8
+MAX_PASSAGE_WORDS = 80
 
 LINE_KEY = re.compile(r"^(?P<path>[^:\s]+):(?P<line>\d+)$")
+
+# A sentence ends on these; a line ending in a colon or a bare word continues.
+SENTENCE_END = re.compile(r"[.!?][\"')\]]?$")
+
+# Page furniture, not prose. These carry a line number like anything else.
+HEADER_LINE = re.compile(
+    r"^(?:"
+    r"RFC \d+|Internet Engineering Task Force|Internet Engineering Steering Group|"
+    r"Network Working Group|Request for Comments|Category:|ISSN:|Obsoletes:|Updates:|"
+    r"BCP:|STD:|DOI:|\[?Page \d+\]?$"
+    r")",
+    re.IGNORECASE,
+)
 
 STOPWORDS = frozenset(
     (
@@ -159,7 +179,7 @@ def prompt_for(question: str) -> str:
 
 
 def keywords_for(text: str, limit: int = MAX_KEYWORDS) -> str:
-    """The line's content words, in the order they appear, without repetition."""
+    """The text's content words, in the order they appear, without repetition."""
     picked: list[str] = []
     for word in re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]*", text):
         if word.lower() in STOPWORDS or word in picked:
@@ -170,30 +190,62 @@ def keywords_for(text: str, limit: int = MAX_KEYWORDS) -> str:
     return ", ".join(picked)
 
 
-def sentence_for(text: str, limit: int = MAX_ANSWER_WORDS) -> str:
-    """The first sentence, capped, because the answer budget is 64 tokens."""
-    first = re.split(r"(?<=\.)\s+", text.strip())[0]
-    return " ".join(first.split()[:limit])
+def _lines(rows: list[dict[str, Any]]) -> list[tuple[str, int, str]]:
+    """Readable corpus lines in file order, with page furniture dropped."""
+    parsed: list[tuple[str, int, str]] = []
+    for row in rows:
+        match = LINE_KEY.match(str(row.get("record_key") or ""))
+        text = str(row.get("payload") or "").strip()
+        if match is None or not text or HEADER_LINE.match(text):
+            continue
+        parsed.append((match.group("path"), int(match.group("line")), text))
+    parsed.sort(key=lambda item: (item[0], item[1]))
+    return parsed
+
+
+def _passage(lines: list[tuple[str, int, str]], start: int) -> tuple[str, int]:
+    """The line and its continuations, up to the end of its first sentence."""
+    path = lines[start][0]
+    parts = [lines[start][2]]
+    index = start + 1
+    while (
+        not SENTENCE_END.search(parts[-1])
+        and index < len(lines)
+        and lines[index][0] == path
+        and lines[index][1] == lines[index - 1][1] + 1
+        and len(" ".join(parts).split()) < MAX_PASSAGE_WORDS
+    ):
+        parts.append(lines[index][2])
+        index += 1
+    joined = " ".join(parts)
+    sentence = re.split(r"(?<=\.)\s+", joined)[0]
+    return " ".join(sentence.split()[:MAX_ANSWER_WORDS]), index
 
 
 def citation_pairs(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
-    """One training text per corpus line: keywords in, cited sentence out.
+    """One training text per answerable passage: keywords in, cited sentence out.
 
-    A row whose key is not ``path:line`` is skipped rather than guessed at: a pair
-    whose citation is not a citation teaches the model to write the wrong thing
+    Rows that are not ``path:line``, and passages too short to be a sentence, are
+    skipped rather than guessed at: a pair whose citation is not a citation, or
+    whose answer is half a clause, teaches the model to write the wrong thing
     confidently, which is worse than training on less text.
     """
+    lines = _lines(rows)
     pairs: list[dict[str, str]] = []
-    for row in rows:
-        key = str(row.get("record_key") or "")
-        text = str(row.get("payload") or "").strip()
-        match = LINE_KEY.match(key)
-        if match is None or not text:
+    index = 0
+    while index < len(lines):
+        path, line, _text = lines[index]
+        sentence, next_index = _passage(lines, index)
+        index = max(next_index, index + 1)
+        if len(sentence.split()) < MIN_ANSWER_WORDS:
             continue
-        keywords = keywords_for(text)
-        sentence = sentence_for(text)
-        if not keywords or not sentence:
+        keywords = keywords_for(sentence)
+        if not keywords:
             continue
-        answer = f"{sentence} ({match.group('path')}:{match.group('line')})"
-        pairs.append({"record_key": key, "text": f"{prompt_for(keywords)}\n{answer}"})
+        pairs.append(
+            {
+                "record_key": f"{path}:{line}",
+                "text": f"{prompt_for(keywords)}\n{sentence} ({path}:{line})",
+            }
+        )
     return pairs
