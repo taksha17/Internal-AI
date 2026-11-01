@@ -27,7 +27,7 @@ INSTRUCTION = (
 )
 
 MAX_KEYWORDS = 10
-MAX_ANSWER_WORDS = 60
+MAX_ANSWER_WORDS = 80
 MIN_ANSWER_WORDS = 8
 MAX_PASSAGE_WORDS = 80
 
@@ -43,6 +43,13 @@ HEADER_LINE = re.compile(
     r"Network Working Group|Request for Comments|Category:|ISSN:|Obsoletes:|Updates:|"
     r"BCP:|STD:|DOI:|\[?Page \d+\]?$"
     r")",
+    re.IGNORECASE,
+)
+
+# A footer wraps across the page edge and lands in the middle of a sentence, so
+# it is dropped wherever it appears rather than only at the start of a line.
+FOOTER_LINE = re.compile(
+    r"\[Page \d+\]|\bRFC \d+\s+[A-Za-z].*\b(?:19|20)\d{2}\b|Standards Track",
     re.IGNORECASE,
 )
 
@@ -196,7 +203,7 @@ def _lines(rows: list[dict[str, Any]]) -> list[tuple[str, int, str]]:
     for row in rows:
         match = LINE_KEY.match(str(row.get("record_key") or ""))
         text = str(row.get("payload") or "").strip()
-        if match is None or not text or HEADER_LINE.match(text):
+        if match is None or not text or HEADER_LINE.match(text) or FOOTER_LINE.search(text):
             continue
         parsed.append((match.group("path"), int(match.group("line")), text))
     parsed.sort(key=lambda item: (item[0], item[1]))
@@ -237,7 +244,7 @@ def citation_pairs(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
         path, line, _text = lines[index]
         sentence, next_index = _passage(lines, index)
         index = max(next_index, index + 1)
-        if len(sentence.split()) < MIN_ANSWER_WORDS:
+        if len(sentence.split()) < MIN_ANSWER_WORDS or not SENTENCE_END.search(sentence):
             continue
         keywords = keywords_for(sentence)
         if not keywords:
