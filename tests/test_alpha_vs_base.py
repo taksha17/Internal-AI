@@ -75,6 +75,7 @@ def dataset(platform, dataset_id: str) -> None:
                 "payload": TRAINING_TEXT,
                 "source_id": "s",
                 "acl": [],
+                "split": "train",
             }
         ],
     )
@@ -160,6 +161,28 @@ def test_identical_answers_from_both_runs_name_the_likely_cause(
 
     assert report.checks["beats_base"]["passed"] is False
     assert "adapter was not loaded" in report.checks["beats_base"]["note"]
+
+
+def test_contamination_is_measured_against_the_training_split(
+    platform, enroll_person, tmp_path: Path, monkeypatch
+) -> None:
+    """Reading every record made the check impossible to pass for a held-out split."""
+    from internal_ai.training.alpha.promote import _alpha_contamination
+
+    _, model = alpha_model(platform, enroll_person, tmp_path)
+    eval_set = platform.store.get_eval_set(alpha_eval_set(platform))
+    asked: dict[str, str] = {}
+
+    def fake(dataset_id: str, split: str) -> list[dict]:
+        asked["dataset_id"] = dataset_id
+        asked["split"] = split
+        return []
+
+    monkeypatch.setattr(platform.store, "dataset_records_by_split", fake)
+    check = _alpha_contamination(platform, model, eval_set)
+
+    assert asked == {"dataset_id": "ds_alpha", "split": "train"}
+    assert check["passed"] is False
 
 
 def test_an_answer_that_cites_nothing_has_kept_nothing(

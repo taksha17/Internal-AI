@@ -151,7 +151,10 @@ def _alpha_contamination(
 ) -> dict[str, Any]:
     """Was the eval set's evidence already in the text the adapter learned from?"""
     dataset_id = str(model.card.get("dataset_id") or "")
-    rows = platform.store.dataset_records(dataset_id) if dataset_id else []
+    # Only the split the adapter trained on can leak. Reading every record made
+    # any eval drawn from the same corpus score 100% contaminated, because the
+    # held-out split is in the dataset too — a check that could never pass.
+    rows = platform.store.dataset_records_by_split(dataset_id, "train") if dataset_id else []
     training = [
         Record(
             id=str(row["id"]),
