@@ -145,12 +145,13 @@ def _repo_modules(parent: Path) -> dict[str, Any]:
         raise FileNotFoundError(f"no internal_ai package under {parent}")
     sys.path.insert(0, str(found))
     from internal_ai.training.alpha.adapt import _load_tokenizer, adapt
-    from internal_ai.training.alpha.pairs import prompt_for
+    from internal_ai.training.alpha.pairs import candidates_for, prompt_for_candidates
     from internal_ai.training.alpha.pin import RECIPE, PinnedBase, WeightShard, verify_snapshot
 
     return {
         "adapt": adapt,
-        "prompt_for": prompt_for,
+        "candidates_for": candidates_for,
+        "prompt_for_candidates": prompt_for_candidates,
         "load_tokenizer": _load_tokenizer,
         "PinnedBase": PinnedBase,
         "RECIPE": RECIPE,
@@ -267,6 +268,7 @@ def run(
     recipe: dict[str, Any],
     texts: list[str],
     queries: list[dict[str, str]],
+    corpus: list[tuple[str, str]],
     out: Path,
     base_root: Path,
     modules: dict[str, Any],
@@ -295,7 +297,12 @@ def run(
         learning_rate=1e-4,
         seed=seed,
     )
-    prompts = [modules["prompt_for"](item["query"]) for item in queries]
+    prompts = [
+        modules["prompt_for_candidates"](
+            str(item["query"]), modules["candidates_for"](str(item["query"]), corpus)
+        )
+        for item in queries
+    ]
     load_tokenizer = modules["load_tokenizer"]
     base_answers = _generate(prompts, directory, None, max_new_tokens, max_seq_len, load_tokenizer)
     adapter_answers = _generate(
@@ -328,8 +335,13 @@ def run(
             "loss_first": result.get("loss_first"),
             "loss_last": result.get("loss_last"),
         },
+        "corpus": {
+            "passages": len(corpus),
+            "candidates": int(recipe.get("candidates") or 0),
+            "sha256": recipe.get("corpus_sha256"),
+        },
         "generation": {
-            "prompt": modules["prompt_for"]("{query}"),
+            "prompt": modules["prompt_for_candidates"]("{query}", [("{key}", "{text}")]),
             "max_new_tokens": max_new_tokens,
             "max_seq_len": max_seq_len,
             "decoding": "greedy, one sequence, no sampling",
@@ -382,7 +394,9 @@ def _find_staged(root: Path) -> Path:
     raise FileNotFoundError(f"no staged dataset under {root}; mounted: {mounted}")
 
 
-def _staged(data: Path) -> tuple[dict[str, Any], list[str], list[dict[str, str]]]:
+def _staged(
+    data: Path,
+) -> tuple[dict[str, Any], list[str], list[dict[str, str]], list[tuple[str, str]]]:
     """Read the staged dataset, refusing anything that is not the recorded bytes."""
     recipe = json.loads((data / "recipe.json").read_text(encoding="utf-8"))
     train = data / "train.jsonl"
@@ -394,7 +408,21 @@ def _staged(data: Path) -> tuple[dict[str, Any], list[str], list[dict[str, str]]
     ]
     queries = json.loads((data / "queries.json").read_text(encoding="utf-8"))
     _check(data / "queries.json", str(recipe["queries_sha256"]), "question set")
-    return recipe, texts, queries
+    # The passages to choose from travel as well as the pairs, because the answer
+    # is now picked out of a list rather than recalled. The questions still carry
+    # nothing but an id and a question, which is what the staging check enforces.
+    _check(data / "corpus.jsonl", str(recipe["corpus_sha256"]), "search index")
+    corpus = [
+        (str(entry["key"]), str(entry["text"]))
+        for entry in (
+            json.loads(line)
+            for line in (data / "corpus.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        )
+    ]
+    if not corpus:
+        raise ValueError("the staged search index is empty, so no candidate list can be built")
+    return recipe, texts, queries, corpus
 
 
 def smoke(out: Path, base_root: Path) -> dict[str, Any]:
@@ -440,6 +468,7 @@ def smoke(out: Path, base_root: Path) -> dict[str, Any]:
         recipe,
         ["the ledger failed", "nightly reconciliation failed", "the nightly ledger failed"],
         [{"id": "rfc0000.txt:1", "query": "which ledger failed"}],
+        [("rfc0000.txt:1", "the nightly ledger failed")],
         out,
         base_root,
         modules,
@@ -472,7 +501,7 @@ def main() -> int:
     else:
         if args.data is None:
             args.data = _find_staged(Path("/kaggle/input"))
-        recipe, texts, queries = _staged(args.data)
+        recipe, texts, queries, corpus = _staged(args.data)
         adjustments = _prepare_environment()
         modules = _repo_modules(args.sources or args.data)
         base = _base_from(recipe, modules)
@@ -481,6 +510,7 @@ def main() -> int:
             recipe,
             texts,
             queries,
+            corpus,
             args.out,
             args.base_root,
             modules,

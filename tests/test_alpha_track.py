@@ -300,8 +300,11 @@ def test_an_adapter_a_keyword_search_matches_is_refused(
         [
             {
                 "record_key": "Acmy_Website/next.config.ts:36",
+                # The baseline copies the line now, so the line must not carry a
+                # token the citation check reads as a filename: it would fail on a
+                # perfect copy. No gold passage in the real corpus holds one.
                 "payload": (
-                    "which host is allowed in production? const allowedHost = 'app.example.com';"
+                    "which host is allowed in production? const allowedHost = 'production-host';"
                 ),
                 "source_id": "s",
                 "acl": [],

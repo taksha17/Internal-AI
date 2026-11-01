@@ -185,6 +185,49 @@ def test_contamination_is_measured_against_the_training_split(
     assert check["passed"] is False
 
 
+LEDGER = "the warehouse ledgerline reconciliation failed on the nightly feed."
+
+
+def test_the_keyword_baseline_searches_the_lines_the_answers_live_on(
+    platform, enroll_person, tmp_path: Path
+) -> None:
+    """Its index was the training split, which held none of the 32 answers.
+
+    A comparator that cannot reach any answer scores zero against every model, so
+    the gate that asks whether the adapter beats it passes on any kept citation.
+    """
+    from internal_ai.training.alpha.promote import keyword_baseline_answers
+
+    alpha_model(platform, enroll_person, tmp_path)
+    platform.store.add_dataset_records(
+        "ds_alpha",
+        [
+            {
+                "record_key": "notes.txt:7",
+                "payload": LEDGER,
+                "source_id": "s",
+                "acl": [],
+                "split": "heldout",
+            }
+        ],
+    )
+    eval_set = platform.store.get_eval_set(
+        alpha_eval_set(
+            platform,
+            [
+                {
+                    "query": "warehouse ledgerline reconciliation nightly",
+                    "hits": [{"path": "notes.txt", "line": 7, "text": LEDGER}],
+                }
+            ],
+        )
+    )
+
+    answers = keyword_baseline_answers(platform, eval_set, "ds_alpha")
+
+    assert answers == [f"{LEDGER} (notes.txt:7)"]
+
+
 def test_an_answer_that_cites_nothing_has_kept_nothing(
     platform, enroll_person, tmp_path: Path
 ) -> None:

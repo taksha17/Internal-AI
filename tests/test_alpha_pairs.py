@@ -4,15 +4,21 @@ from __future__ import annotations
 
 from internal_ai.training.alpha.pairs import (
     INSTRUCTION,
+    SELECTION,
+    candidates_for,
     citation_pairs,
     keywords_for,
     prompt_for,
+    prompt_for_candidates,
+    retrieval_pairs,
 )
 
 PAYLOAD = (
     "A server generating a 401 response MUST send a WWW-Authenticate header field. "
     "A server MAY send it on other responses."
 )
+# A passage is one sentence, so the second one is not part of the answer.
+FIRST = "A server generating a 401 response MUST send a WWW-Authenticate header field."
 
 
 def test_a_pair_ends_with_the_line_it_came_from() -> None:
@@ -95,3 +101,47 @@ def test_the_same_rows_always_produce_the_same_pairs() -> None:
 
 def test_generation_asks_in_the_same_shape_training_answered() -> None:
     assert prompt_for("Which header?") == (f"{INSTRUCTION}\nQuestion: Which header?\nAnswer:")
+
+
+CORPUS = [
+    ("rfc9110.txt:5026", FIRST),
+    ("rfc9111.txt:142", "HTTP is a stateless application-level request and response protocol."),
+]
+
+
+def test_the_candidates_are_the_ranked_search_the_baseline_runs() -> None:
+    offered = candidates_for("401 WWW-Authenticate header", CORPUS, limit=1)
+
+    assert offered == [("rfc9110.txt:5026", FIRST)]
+
+
+def test_the_same_question_always_gets_the_same_candidates() -> None:
+    assert candidates_for("401", CORPUS) == candidates_for("401", list(CORPUS))
+
+
+def test_a_selection_pair_offers_the_candidates_and_ends_with_the_copy() -> None:
+    [pair] = retrieval_pairs([{"record_key": "rfc9110.txt:5026", "payload": PAYLOAD}], CORPUS)
+
+    assert pair["text"].startswith(SELECTION)
+    assert "[rfc9110.txt:5026]" in pair["text"]
+    assert pair["text"].endswith(f"{FIRST} (rfc9110.txt:5026)")
+
+
+def test_a_passage_the_search_never_offers_is_not_padded_into_the_list() -> None:
+    """Appending the answer would teach the model to pick whichever looks appended."""
+    elsewhere = [("rfc9111.txt:142", "HTTP is a stateless application-level request protocol.")]
+
+    assert (
+        retrieval_pairs([{"record_key": "rfc9110.txt:5026", "payload": PAYLOAD}], elsewhere) == []
+    )
+
+
+def test_the_prompt_lists_every_candidate_it_must_choose_from() -> None:
+    prompt = prompt_for_candidates("Which header?", CORPUS)
+
+    assert prompt == (
+        f"{SELECTION}\nQuestion: Which header?\nCandidates:\n"
+        f"[rfc9110.txt:5026] {FIRST}\n"
+        "[rfc9111.txt:142] HTTP is a stateless application-level request and response protocol.\n"
+        "Answer:"
+    )
