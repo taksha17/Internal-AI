@@ -22,6 +22,7 @@ import json
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -118,6 +119,16 @@ def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> d
     queries_file = dataset_dir / "queries.json"
     queries_file.write_text(json.dumps(queries, indent=2) + "\n", encoding="utf-8")
     copy_package(dataset_dir)
+    # A dataset version uploads files, not directories: the first attempt carried
+    # train.jsonl and lost internal_ai entirely, so the kernel had no trainer to
+    # import. One archive is a file, and a file arrives.
+    bundle = dataset_dir / "internal_ai.zip"
+    if bundle.exists():
+        bundle.unlink()
+    with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted((dataset_dir / "internal_ai").rglob("*")):
+            if path.is_file() and "__pycache__" not in path.parts:
+                archive.write(path, path.relative_to(dataset_dir).as_posix())
     shutil.copyfile(Path(__file__).parent / "alpha_y15_kernel.py", dataset_dir / "kernel.py")
 
     recipe = {

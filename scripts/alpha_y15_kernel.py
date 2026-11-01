@@ -28,7 +28,9 @@ import json
 import platform as host
 import subprocess
 import sys
+import tempfile
 import time
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +115,15 @@ def _repo_modules(parent: Path) -> dict[str, Any]:
         ),
         None,
     )
+    if found is None:
+        # A dataset version carries files, not directories, so the package
+        # travels as an archive and is unpacked here rather than lost on upload.
+        archive = parent / "internal_ai.zip"
+        if archive.is_file():
+            unpacked = Path(tempfile.mkdtemp(prefix="internal-ai-pkg-"))
+            with zipfile.ZipFile(archive) as bundle:
+                bundle.extractall(unpacked)
+            found = unpacked
     if found is None:
         raise FileNotFoundError(f"no internal_ai package under {parent}")
     sys.path.insert(0, str(found))
