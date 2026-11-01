@@ -31,6 +31,9 @@ from internal_ai.training.alpha.pin import PRIMARY
 DATASET = "ds_9350fb760231"
 EVAL_SET = "evs_99206c7f7cb8"
 TITLE = "internal-ai-alpha-y15"
+# The dataset already owns this name, and Kaggle refuses a kernel on the slug a
+# dataset holds, so the kernel is pushed under its own.
+KERNEL_SLUG = "alpha-y15-t4-run"
 PACKAGE_FILES = (
     "__init__.py",
     "ids.py",
@@ -155,8 +158,8 @@ def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> d
     (kernel_dir / "kernel-metadata.json").write_text(
         json.dumps(
             {
-                "id": f"{owner}/{TITLE}",
-                "title": TITLE,
+                "id": f"{owner}/{KERNEL_SLUG}",
+                "title": KERNEL_SLUG,
                 "code_file": "kernel.py",
                 "language": "python",
                 "kernel_type": "script",
