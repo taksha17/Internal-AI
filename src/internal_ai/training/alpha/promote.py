@@ -47,7 +47,12 @@ def register_alpha(
             f"{LicenseClass.PERMISSIVE}"
         )
     dataset = require_released_dataset(platform.store.get_dataset(dataset_id))
-    digest = file_hash(adapter_path)
+    from internal_ai.ids import tree_hash
+
+    # The full-depth backend saves a PEFT adapter as a directory, so identity has
+    # to come from the whole tree. Hashing only a file would refuse the one
+    # adapter this package can actually promote.
+    digest = tree_hash(adapter_path) if adapter_path.is_dir() else file_hash(adapter_path)
     card = alpha_card(
         base,
         RECIPE,
