@@ -36,6 +36,7 @@ PROMPT = (
     "and line you used in the form rfc9110.txt:5026.\nQuestion: {query}\nAnswer:"
 )
 MAX_NEW_TOKENS = 64
+TITLE = "internal-ai-alpha-y15"
 SNAPSHOT_FILES = (
     "config.json",
     "tokenizer.json",
@@ -74,9 +75,17 @@ def _repo_modules(parent: Path) -> dict[str, Any]:
     step the repository audits, so the copy travels with the data and its hash is
     recorded rather than trusting whatever is installed on the box.
     """
-    if not (parent / "internal_ai" / "training" / "alpha" / "adapt.py").is_file():
+    found = next(
+        (
+            candidate
+            for candidate in (parent, parent / "src")
+            if (candidate / "internal_ai" / "training" / "alpha" / "adapt.py").is_file()
+        ),
+        None,
+    )
+    if found is None:
         raise FileNotFoundError(f"no internal_ai package under {parent}")
-    sys.path.insert(0, str(parent))
+    sys.path.insert(0, str(found))
     from internal_ai.training.alpha.adapt import _load_tokenizer, adapt
     from internal_ai.training.alpha.pin import RECIPE, PinnedBase, WeightShard, verify_snapshot
 
@@ -357,12 +366,17 @@ def smoke(out: Path, base_root: Path) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, help="staged dataset directory")
-    parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--base-root", type=Path, required=True)
+    parser.add_argument("--out", type=Path, default=Path("/kaggle/working"))
+    parser.add_argument("--base-root", type=Path, default=Path("/kaggle/tmp/base"))
     parser.add_argument("--sources", type=Path, help="parent of the internal_ai package")
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--download", action="store_true", help="fetch the pinned base")
+    parser.add_argument(
+        "--no-download",
+        dest="download",
+        action="store_false",
+        help="never fetch the pinned base, even if it is missing",
+    )
     parser.add_argument("--smoke", action="store_true", help="run on a tiny local model")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
@@ -370,7 +384,7 @@ def main() -> int:
         record = smoke(args.out, args.base_root)
     else:
         if args.data is None:
-            parser.error("--data is required unless --smoke is given")
+            args.data = Path("/kaggle/input") / TITLE
         recipe, texts, queries = _staged(args.data)
         modules = _repo_modules(args.sources or args.data / "src")
         base = _base_from(recipe, modules)
