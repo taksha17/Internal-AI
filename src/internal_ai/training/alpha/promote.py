@@ -17,7 +17,7 @@ from internal_ai.services.actor import Actor
 from internal_ai.services.alpha import reproducibility_beside
 from internal_ai.services.permissions import Action, require
 from internal_ai.training.alpha.card import alpha_card
-from internal_ai.training.alpha.citations import AskHit, CitationReport, score_answer
+from internal_ai.training.alpha.citations import LINE_NUMBER, AskHit, CitationReport, score_answer
 from internal_ai.training.alpha.pin import FALLBACK, PRIMARY, RECIPE, LicenseClass, PinnedBase
 from internal_ai.training.ownership import require_released_dataset
 from internal_ai.training.provenance import provenance_mode
@@ -187,13 +187,18 @@ def _alpha_contamination(
 
 
 def _score_answers(
-    eval_set: EvalSet, answers: list[str]
+    eval_set: EvalSet, answers: list[str], require_citation: bool = False
 ) -> tuple[int, list[str], list[dict[str, str]], list[float]]:
     """How many answers kept their citations, which ones did not, what leaked.
 
     The per-question flags are returned as well: promotion compares the adapter
     and the base question by question, and a mean alone cannot say whether the
     difference is larger than the noise it was measured in.
+
+    ``require_citation`` is for the keyword baseline. The scorer asks whether a
+    citation moved, so an answer that cites nothing passes it; a grep that found
+    no citable line would then score full marks and the comparison would be
+    worth nothing.
     """
     mismatches: list[str] = []
     leaks: list[dict[str, str]] = []
@@ -203,11 +208,39 @@ def _score_answers(
         hits = [AskHit(str(hit["path"]), int(hit["line"])) for hit in item.get("hits", [])]
         report = score_answer(answer, hits)
         mismatches.extend(report.mismatches)
-        if report.passed:
+        if report.passed and (not require_citation or LINE_NUMBER.search(answer)):
             cited += 1
         kept.append(1.0 if report.passed else 0.0)
         leaks.extend(_pii_leaks(answer, list(item.get("hits", []))))
     return cited, mismatches, leaks, kept
+
+
+def keyword_baseline_answers(platform: Platform, eval_set: EvalSet, dataset_id: str) -> list[str]:
+    """What a keyword search would answer, so the adapter has something dumb to beat.
+
+    The corpus indexed here is the text the adapter learned from, never the whole
+    dataset: indexing the held-out lines themselves would let a grep score full
+    marks by finding the very answer it is supposed to be searching for.
+
+    The answer is the top-ranked record's own key, which for a line-addressed
+    corpus is its ``path:line``. Ties go to the earlier record so two runs of the
+    same evaluation cannot disagree about what the baseline said.
+    """
+    from internal_ai.evals.metrics import bm25_scores
+
+    rows = platform.store.dataset_records_by_split(dataset_id, "train")
+    if not rows:
+        rows = platform.store.dataset_records(dataset_id)
+    if not rows:
+        raise ValueError("a keyword baseline needs the corpus the adapter learned from")
+    keys = [str(row["record_key"]) for row in rows]
+    texts = [str(row["payload"]) for row in rows]
+    answers: list[str] = []
+    for item in eval_set.items:
+        scores = bm25_scores(str(item.get("query", "")), texts)
+        best = max(range(len(scores)), key=lambda index: (scores[index], -index))
+        answers.append(f"The closest passage is {keys[best]}.")
+    return answers
 
 
 def evaluate_alpha(
@@ -248,6 +281,16 @@ def evaluate_alpha(
     base_cited, base_mismatches, _, base_kept = _score_answers(eval_set, baseline_answers)
     rate = round(cited / total, 6) if total else 0.0
     base_rate = round(base_cited / total, 6) if total else 0.0
+    if not model.dataset_ids:
+        raise ValueError(
+            "alpha evaluation needs the dataset the adapter learned from, so a keyword "
+            "search can be scored against the same corpus"
+        )
+    keyword_answers = keyword_baseline_answers(platform, eval_set, str(model.dataset_ids[0]))
+    keyword_cited, keyword_mismatches, _, keyword_kept = _score_answers(
+        eval_set, keyword_answers, require_citation=True
+    )
+    keyword_rate = round(keyword_cited / total, 6) if total else 0.0
     if cited > base_cited:
         verdict = (
             f"the adapter kept {cited} of {total} citations and its un-adapted base kept "
@@ -268,6 +311,14 @@ def evaluate_alpha(
             f"the adapter kept {cited} of {total} citations and its un-adapted base kept "
             f"{base_cited}; an adapter that loses to its base is not an improvement"
         )
+    keyword_verdict = (
+        f"the adapter kept {cited} of {total} citations and a keyword search kept {keyword_cited}"
+        if cited > keyword_cited
+        else (
+            f"a keyword search kept {keyword_cited} of {total} citations and the adapter kept "
+            f"{cited}; an adapter a grep already matches has earned nothing"
+        )
+    )
     checks = {
         "citations": {"passed": not mismatches, "mismatches": mismatches[:10]},
         "pii_regurgitation": {"passed": not leaks, "leaks": leaks[:10]},
@@ -280,6 +331,14 @@ def evaluate_alpha(
             "mismatches_on_base": base_mismatches[:10],
             "note": verdict,
         },
+        "beats_keyword": {
+            "passed": cited > keyword_cited,
+            "baseline": "bm25",
+            "adapter_citation_pass_rate": rate,
+            "keyword_citation_pass_rate": keyword_rate,
+            "mismatches_on_keyword": keyword_mismatches[:10],
+            "note": keyword_verdict,
+        },
     }
     metrics = {"citation_pass_rate": rate}
     baseline_metrics = {"citation_pass_rate": base_rate}
@@ -291,15 +350,23 @@ def evaluate_alpha(
         created_at=now_iso(),
         metrics=metrics,
         baseline_metrics=baseline_metrics,
-        per_case={"citation_pass_rate": {"candidate": kept, "baseline": base_kept}},
+        per_case={
+            "citation_pass_rate": {
+                "candidate": kept,
+                "baseline": base_kept,
+                "keyword": keyword_kept,
+            }
+        },
         checks=checks,
         passed=passed,
         notes=(
             "every answer kept its line numbers on the files the eval set named, and the "
-            f"adapter kept more of them than its base ({cited} of {total} against {base_cited})"
+            f"adapter kept more of them than its base ({cited} of {total} against {base_cited}) "
+            f"and more than a keyword search kept ({keyword_cited})"
             if passed
             else "an answer moved a citation, leaked personal data, overlapped the training "
-            f"text, or did not beat the un-adapted base ({cited} of {total} against {base_cited})"
+            f"text, or did not beat the un-adapted base ({cited} of {total} against {base_cited}) "
+            f"and the keyword search ({keyword_cited})"
         ),
     )
     platform.store.add_eval_report(eval_report)
@@ -352,6 +419,11 @@ def serve_alpha(platform: Platform, model_id: str, runner_dir: Path) -> Path:
         raise PermissionError(
             "alpha serving requires an eval report that beat the un-adapted base on the same "
             "frozen set"
+        )
+    if report.checks.get("beats_keyword", {}).get("passed") is not True:
+        raise PermissionError(
+            "alpha serving requires an eval report that beat a keyword search on the same frozen "
+            "set; an adapter a grep already matches has earned nothing"
         )
     approver = next(
         (

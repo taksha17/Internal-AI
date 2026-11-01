@@ -54,7 +54,7 @@ def dataset(platform, dataset_id: str, released: bool) -> None:
         dataset_id,
         [
             {
-                "record_key": "train-1",
+                "record_key": "docs/ledgerline.md:12",
                 "payload": TRAINING_TEXT,
                 "source_id": "s",
                 "acl": [],
@@ -256,6 +256,58 @@ def test_the_alpha_evaluation_refuses_an_unfrozen_eval_set(
 
     with pytest.raises(PermissionError, match="frozen"):
         evaluate_alpha(platform, model.id, eval_set.id, [GOOD_ANSWER], [GOOD_ANSWER])
+
+
+def test_an_adapter_a_keyword_search_matches_is_refused(
+    platform, enroll_person, tmp_path: Path
+) -> None:
+    """Y1.5 asks for a win over a grep, not a tie with one."""
+    from internal_ai.training.alpha.promote import evaluate_alpha
+
+    person = enroll_person(platform, "Elena Alpha", ["ml_lead"])
+    platform.store.add_dataset(
+        DatasetVersion(
+            id="ds_keyword",
+            name="company",
+            version=1,
+            content_hash="hash-ds_keyword",
+            record_count=1,
+            token_count=1,
+            created_at=now_iso(),
+            released=True,
+        )
+    )
+    platform.store.add_dataset_records(
+        "ds_keyword",
+        [
+            {
+                "record_key": "Acmy_Website/next.config.ts:36",
+                "payload": (
+                    "which host is allowed in production? const allowedHost = 'app.example.com';"
+                ),
+                "source_id": "s",
+                "acl": [],
+            }
+        ],
+    )
+    import json
+
+    adapter = tmp_path / "adapter.pt"
+    torch.save({"A": torch.zeros(1)}, adapter)
+    (tmp_path / "reproducibility.json").write_text(
+        json.dumps({"adapter_backend": "peft"}), encoding="utf-8"
+    )
+    model = register_alpha(platform, PRIMARY, adapter, "ds_keyword", person)
+    eval_set_id = alpha_eval_set(platform, [ALPHA_ITEM])
+
+    report = evaluate_alpha(platform, model.id, eval_set_id, [GOOD_ANSWER], [MOVED_ANSWER])
+
+    check = report.checks["beats_keyword"]
+    assert check["keyword_citation_pass_rate"] == 1.0
+    assert check["adapter_citation_pass_rate"] == 1.0
+    assert check["passed"] is False
+    assert report.passed is False
+    assert "grep already matches" in check["note"]
 
 
 def test_an_alpha_model_is_not_served_without_a_passing_frozen_report(
