@@ -136,12 +136,36 @@ def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> d
     }
     recipe_file = dataset_dir / "recipe.json"
     recipe_file.write_text(json.dumps(recipe, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    (out / "dataset-metadata.json").write_text(
+    owner = username()
+    (dataset_dir / "dataset-metadata.json").write_text(
         json.dumps(
             {
                 "title": TITLE,
-                "id": f"{username()}/{TITLE}",
+                "id": f"{owner}/{TITLE}",
                 "licenses": [{"name": "other"}],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    kernel_dir = out / "kernel"
+    kernel_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(Path(__file__).parent / "alpha_y15_kernel.py", kernel_dir / "kernel.py")
+    (kernel_dir / "kernel-metadata.json").write_text(
+        json.dumps(
+            {
+                "id": f"{owner}/{TITLE}",
+                "title": TITLE,
+                "code_file": "kernel.py",
+                "language": "python",
+                "kernel_type": "script",
+                "is_private": True,
+                "enable_gpu": True,
+                "enable_internet": True,
+                "dataset_sources": [f"{owner}/{TITLE}"],
+                "competition_sources": [],
+                "kernel_sources": [],
             },
             indent=2,
         )
@@ -150,6 +174,7 @@ def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> d
     )
     return {
         "dataset_dir": str(dataset_dir),
+        "kernel_dir": str(kernel_dir),
         "train_records": len(texts),
         "train_sha256": recipe["train_sha256"],
         "questions": len(queries),
