@@ -32,10 +32,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-PROMPT = (
-    "Corpus lookup. Answer only from the corpus text you were trained on, and cite the file "
-    "and line you used in the form rfc9110.txt:5026.\nQuestion: {query}\nAnswer:"
-)
+# The prompt is not written here: it comes from the package with the pairs, so
+# training and generation cannot drift into asking two different questions.
 MAX_NEW_TOKENS = 64
 TITLE = "internal-ai-alpha-y15"
 SNAPSHOT_FILES = (
@@ -119,10 +117,12 @@ def _repo_modules(parent: Path) -> dict[str, Any]:
         raise FileNotFoundError(f"no internal_ai package under {parent}")
     sys.path.insert(0, str(found))
     from internal_ai.training.alpha.adapt import _load_tokenizer, adapt
+    from internal_ai.training.alpha.pairs import prompt_for
     from internal_ai.training.alpha.pin import RECIPE, PinnedBase, WeightShard, verify_snapshot
 
     return {
         "adapt": adapt,
+        "prompt_for": prompt_for,
         "load_tokenizer": _load_tokenizer,
         "PinnedBase": PinnedBase,
         "RECIPE": RECIPE,
@@ -262,9 +262,12 @@ def run(
         adapter,
         max_seq_len=max_seq_len,
         epochs=epochs,
+        # The run at 2e-4 ended with a higher loss than it started (1.406 to
+        # 2.327). Halving it keeps the step inside the range this data supports.
+        learning_rate=1e-4,
         seed=seed,
     )
-    prompts = [PROMPT.format(query=item["query"]) for item in queries]
+    prompts = [modules["prompt_for"](item["query"]) for item in queries]
     load_tokenizer = modules["load_tokenizer"]
     base_answers = _generate(prompts, directory, None, max_new_tokens, max_seq_len, load_tokenizer)
     adapter_answers = _generate(
@@ -298,7 +301,7 @@ def run(
             "loss_last": result.get("loss_last"),
         },
         "generation": {
-            "prompt": PROMPT,
+            "prompt": modules["prompt_for"]("{query}"),
             "max_new_tokens": max_new_tokens,
             "max_seq_len": max_seq_len,
             "decoding": "greedy, one sequence, no sampling",
