@@ -26,6 +26,7 @@ import hashlib
 import importlib.metadata
 import json
 import platform as host
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -66,6 +67,37 @@ def _version(name: str) -> str:
         return importlib.metadata.version(name)
     except importlib.metadata.PackageNotFoundError:
         return "absent"
+
+
+def _prepare_environment() -> list[str]:
+    """Drop a torchao too old for peft, which otherwise stops LoRA from building.
+
+    Kaggle's image ships torchao 0.10 while peft 0.21 refuses anything below 0.16,
+    and peft raises from inside the dispatch path instead of skipping the backend,
+    so ``get_peft_model`` cannot run at all. Nothing in this run quantises, so the
+    package is not wanted; a run that changes its own environment records it.
+    """
+    actions: list[str] = []
+    try:
+        import torchao
+        from packaging.version import Version
+    except ImportError:
+        return actions
+    version = getattr(torchao, "__version__", "0")
+    try:
+        too_old = Version(version) < Version("0.16")
+    except ValueError:
+        too_old = True
+    if too_old:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "uninstall", "-y", "torchao"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        actions.append(f"uninstalled torchao {version}: peft 0.21 needs 0.16 or newer")
+        print(actions[-1], flush=True)
+    return actions
 
 
 def _repo_modules(parent: Path) -> dict[str, Any]:
@@ -214,6 +246,7 @@ def run(
     epochs: int,
     seed: int,
     max_new_tokens: int = MAX_NEW_TOKENS,
+    adjustments: list[str] | None = None,
 ) -> dict[str, Any]:
     """Adapt, answer the frozen questions twice, and record how it was done."""
     import torch
@@ -279,6 +312,7 @@ def run(
             "transformers": _version("transformers"),
             "peft": _version("peft"),
             "kaggle_kernel": host.node(),
+            "adjustments": adjustments or [],
         },
         "elapsed_seconds": round(time.time() - started, 3),
     }
@@ -293,6 +327,28 @@ def run(
         json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     return record
+
+
+def _find_staged(root: Path) -> Path:
+    """The staged dataset, wherever this box mounted it.
+
+    Kaggle decides the mount name, and a wrong guess costs a full kernel run to
+    discover, so the recipe is looked for instead of the folder being assumed.
+    When nothing matches, the error names what was mounted, which is the whole
+    diagnosis.
+    """
+    if not root.is_dir():
+        raise FileNotFoundError(f"nothing is mounted at {root}")
+    found = [
+        path.parent
+        for pattern in ("recipe.json", "*/recipe.json", "*/*/recipe.json", "*/*/*/recipe.json")
+        for path in sorted(root.glob(pattern))
+    ]
+    preferred = [path for path in found if path.name == TITLE]
+    if preferred or found:
+        return (preferred or found)[0]
+    mounted = ", ".join(sorted(entry.name for entry in root.iterdir())) or "nothing"
+    raise FileNotFoundError(f"no staged dataset under {root}; mounted: {mounted}")
 
 
 def _staged(data: Path) -> tuple[dict[str, Any], list[str], list[dict[str, str]]]:
@@ -384,9 +440,10 @@ def main() -> int:
         record = smoke(args.out, args.base_root)
     else:
         if args.data is None:
-            args.data = Path("/kaggle/input") / TITLE
+            args.data = _find_staged(Path("/kaggle/input"))
         recipe, texts, queries = _staged(args.data)
-        modules = _repo_modules(args.sources or args.data / "src")
+        adjustments = _prepare_environment()
+        modules = _repo_modules(args.sources or args.data)
         base = _base_from(recipe, modules)
         record = run(
             base,
@@ -399,6 +456,7 @@ def main() -> int:
             allow_download=args.download,
             epochs=args.epochs,
             seed=args.seed,
+            adjustments=adjustments,
         )
     print(json.dumps({key: record[key] for key in ("adapter", "environment")}, indent=2))
     return 0
