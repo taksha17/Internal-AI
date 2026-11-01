@@ -162,6 +162,25 @@ def test_identical_answers_from_both_runs_name_the_likely_cause(
     assert "adapter was not loaded" in report.checks["beats_base"]["note"]
 
 
+def test_an_answer_that_cites_nothing_has_kept_nothing(
+    platform, enroll_person, tmp_path: Path
+) -> None:
+    """Silence is not a kept citation, or the model that says least wins."""
+    _, model = alpha_model(platform, enroll_person, tmp_path)
+    eval_set_id = alpha_eval_set(platform)
+
+    report = evaluate_alpha(
+        platform,
+        model.id,
+        eval_set_id,
+        ["I could not find that in the corpus.", "No passage found."],
+        [GOOD_HOST, GOOD_KEY],
+    )
+
+    assert report.metrics["citation_pass_rate"] == 0.0
+    assert report.checks["beats_base"]["passed"] is False
+
+
 def test_an_evaluation_without_the_base_answers_is_refused(
     platform, enroll_person, tmp_path: Path
 ) -> None:

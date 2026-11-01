@@ -282,8 +282,10 @@ def evaluate_alpha(
             raise ValueError(
                 f"the eval set has {total} questions and {len(supplied)} {label} were given"
             )
-    cited, mismatches, leaks, kept = _score_answers(eval_set, answers)
-    base_cited, base_mismatches, _, base_kept = _score_answers(eval_set, baseline_answers)
+    cited, mismatches, leaks, kept = _score_answers(eval_set, answers, require_citation=True)
+    base_cited, base_mismatches, _, base_kept = _score_answers(
+        eval_set, baseline_answers, require_citation=True
+    )
     rate = round(cited / total, 6) if total else 0.0
     base_rate = round(base_cited / total, 6) if total else 0.0
     if not model.dataset_ids:
