@@ -41,6 +41,7 @@ PACKAGE_FILES = (
     "training/alpha/__init__.py",
     "training/alpha/pin.py",
     "training/alpha/adapt.py",
+    "training/alpha/pairs.py",
 )
 
 
@@ -87,11 +88,14 @@ def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> d
     rows = platform.store.dataset_records_by_split(dataset_id, "train")
     if not rows:
         raise SystemExit(f"refused: dataset {dataset_id} has no training split")
-    texts = [
-        {"record_key": str(row["record_key"]), "text": str(row["payload"])}
-        for row in rows
-        if str(row["payload"]).strip()
-    ]
+    from internal_ai.training.alpha.pairs import citation_pairs
+
+    # Raw prose taught the register and not the job: the first run answered in
+    # RFC voice and cited almost nothing. Each line becomes a pair now, so the
+    # model sees what an answer to a corpus question looks like.
+    texts = citation_pairs(rows)
+    if not texts:
+        raise SystemExit(f"refused: dataset {dataset_id} produced no citation pairs")
     eval_set = platform.store.get_eval_set(eval_set_id)
     if eval_set is None:
         raise SystemExit(f"refused: unknown eval set {eval_set_id}")
@@ -121,12 +125,15 @@ def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> d
         "dataset_id": dataset.id,
         "dataset_content_hash": dataset.content_hash,
         "train_records": len(texts),
+        "pair_format": "content_words_to_cited_sentence",
         "train_sha256": sha256(train_file),
         "queries_sha256": sha256(queries_file),
         "questions": len(queries),
         "eval_set_id": eval_set.id,
         "eval_set_hash": getattr(eval_set, "content_hash", ""),
-        "max_seq_len": 64,
+        # A pair is the instruction, the keywords and the answer, so 64 tokens
+        # would cut the citation off the end of every training example.
+        "max_seq_len": 256,
         "base": {
             "repo_id": PRIMARY.repo_id,
             "revision": PRIMARY.revision,
