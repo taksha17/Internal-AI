@@ -233,6 +233,25 @@ def _luhn_valid(digits: str) -> bool:
     return total % 10 == 0
 
 
+ISBN_PREFIXES = ("978", "979")
+
+
+def is_credit_card(text: str) -> bool:
+    """A number a card network would issue, not a digit run that happens to fit.
+
+    Luhn alone is not enough on technical prose: a dotted-decimal example and a
+    book's ISBN both look like candidates, and the audit used to flag them while
+    the scrubber quietly ignored them. ISBN-13 has the same length but starts
+    with 978 or 979, which no issuer uses, so those are read as books.
+    """
+    digits = re.sub(r"\D", "", text)
+    if not 13 <= len(digits) <= 19:
+        return False
+    if len(digits) == 13 and digits.startswith(ISBN_PREFIXES):
+        return False
+    return _luhn_valid(digits)
+
+
 def scrub_pii(
     records: list[Record], detectors: list[str] | None = None
 ) -> tuple[list[Record], dict[str, Any]]:
@@ -246,8 +265,7 @@ def scrub_pii(
             if kind == "credit_card":
 
                 def replace_card(match: re.Match[str]) -> str:
-                    digits = re.sub(r"\D", "", match.group(0))
-                    if _luhn_valid(digits):
+                    if is_credit_card(match.group(0)):
                         counters["credit_card"] += 1
                         return REDACTION_TEMPLATE.format(kind="credit_card")
                     return match.group(0)
