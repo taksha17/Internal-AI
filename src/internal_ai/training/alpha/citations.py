@@ -70,6 +70,10 @@ def _named_paths(sentence: str, known: dict[str, int]) -> list[str]:
 
 def score_answer(answer: str, hits: list[AskHit]) -> CitationReport:
     """Fail when a sentence puts one hit's line number on a different hit's path."""
+    # An item can cite two lines of the same file, so validity is a pair, not a
+    # path-to-line map: the map kept only the last line and then reported a
+    # citation of the other valid line as "belongs to X, not X".
+    valid = {(hit.path, hit.line) for hit in hits}
     known = {hit.path: hit.line for hit in hits}
     mismatches: list[str] = []
     for sentence in re.split(r"(?<=\.)\s+|\n", answer):
@@ -77,15 +81,14 @@ def score_answer(answer: str, hits: list[AskHit]) -> CitationReport:
         if not lines:
             continue
         for path in _named_paths(sentence, known):
-            owner_line = known.get(path)
-            if owner_line is None:
+            if path not in known:
                 mismatches.append(f"{path} is not an Ask hit")
                 continue
             for line in lines:
-                if owner_line == line:
+                if (path, line) in valid:
                     continue
                 owner = next((item for item in hits if item.line == line), None)
-                if owner is None:
+                if owner is None or owner.path == path:
                     mismatches.append(f"{path} has no line {line}")
                 else:
                     mismatches.append(f"line {line} belongs to {owner.path}, not {path}")

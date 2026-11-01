@@ -58,6 +58,7 @@ def dataset(platform, dataset_id: str, released: bool) -> None:
                 "payload": TRAINING_TEXT,
                 "source_id": "s",
                 "acl": [],
+                "split": "train",
             }
         ],
     )

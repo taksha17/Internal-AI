@@ -200,7 +200,11 @@ PII_PATTERNS: dict[str, re.Pattern[str]] = {
     ),
     "ssn": re.compile(r"(?<!\d)\d{3}-\d{2}-\d{4}(?!\d)"),
     "credit_card": re.compile(r"(?<!\d)(?:\d[ -]?){13,19}(?!\d)"),
-    "ip_address": re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
+    # A dotted section number (Section 8.1.2.1) is a valid address to any regex
+    # and to ipaddress.ip_address, so the marker in front is the only thing that
+    # separates the two. Without it the scrubber redacts the reference and the
+    # audit calls a correct quotation of it a leak.
+    "ip_address": re.compile(r"(?<![Ss]ection )(?<!\u00a7)\b(?:\d{1,3}\.){3}\d{1,3}\b"),
     "aws_access_key": re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
     "private_key": re.compile(
         r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"
