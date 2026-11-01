@@ -100,6 +100,23 @@ def _prepare_environment() -> list[str]:
     return actions
 
 
+def _package_roots(parent: Path) -> list[Path]:
+    """Every directory that could sit on sys.path for ``internal_ai``.
+
+    A dataset version uploads files only, so the package travels as a zip — and
+    Kaggle unpacks that zip into a folder named after the archive, which leaves the
+    package one level deeper than the staging directory had it
+    (``internal_ai/internal_ai/training/...``). The search is by shape rather than
+    by depth so either layout is found.
+    """
+    roots = [parent, parent / "src"]
+    for candidate in sorted(parent.rglob("training/alpha/adapt.py")):
+        package = candidate.parents[2]
+        if package.name == "internal_ai" and package.parents[0] not in roots:
+            roots.append(package.parents[0])
+    return roots
+
+
 def _repo_modules(parent: Path) -> dict[str, Any]:
     """The trainer and the pin, imported from the copy the dataset carries.
 
@@ -110,7 +127,7 @@ def _repo_modules(parent: Path) -> dict[str, Any]:
     found = next(
         (
             candidate
-            for candidate in (parent, parent / "src")
+            for candidate in _package_roots(parent)
             if (candidate / "internal_ai" / "training" / "alpha" / "adapt.py").is_file()
         ),
         None,
