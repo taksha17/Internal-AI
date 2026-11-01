@@ -38,6 +38,8 @@ KERNEL_SLUG = "alpha-y15-t4-run"
 PACKAGE_FILES = (
     "__init__.py",
     "ids.py",
+    "evals/__init__.py",
+    "evals/metrics.py",
     "training/__init__.py",
     "training/alpha/__init__.py",
     "training/alpha/pin.py",
@@ -89,14 +91,20 @@ def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> d
     rows = platform.store.dataset_records_by_split(dataset_id, "train")
     if not rows:
         raise SystemExit(f"refused: dataset {dataset_id} has no training split")
-    from internal_ai.training.alpha.pairs import citation_pairs
+    from internal_ai.training.alpha.pairs import CANDIDATE_LIMIT, passages, retrieval_pairs
 
-    # Raw prose taught the register and not the job: the first run answered in
-    # RFC voice and cited almost nothing. Each line becomes a pair now, so the
-    # model sees what an answer to a corpus question looks like.
-    texts = citation_pairs(rows)
+    # Raw prose taught the register and not the job, and keywords-to-sentence
+    # taught the shape of an answer and not the choice of one: the second run
+    # cited runs of consecutive lines out of whichever file it had seen most. The
+    # task is selection, so a pair offers the candidates a search returns. The
+    # index it searches is every released passage, which is what a deployed
+    # search covers; the pairs themselves still come from the train split only.
+    corpus = passages(platform.store.dataset_records(dataset_id))
+    if not corpus:
+        raise SystemExit(f"refused: dataset {dataset_id} produced no searchable passages")
+    texts = retrieval_pairs(rows, corpus)
     if not texts:
-        raise SystemExit(f"refused: dataset {dataset_id} produced no citation pairs")
+        raise SystemExit(f"refused: dataset {dataset_id} produced no selection pairs")
     eval_set = platform.store.get_eval_set(eval_set_id)
     if eval_set is None:
         raise SystemExit(f"refused: unknown eval set {eval_set_id}")
@@ -118,6 +126,15 @@ def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> d
     )
     queries_file = dataset_dir / "queries.json"
     queries_file.write_text(json.dumps(queries, indent=2) + "\n", encoding="utf-8")
+    # The index ships, not the answers: the box needs the passages to search, and
+    # the question file still carries nothing but an id and a question.
+    corpus_file = dataset_dir / "corpus.jsonl"
+    corpus_file.write_text(
+        "".join(
+            json.dumps({"key": key, "text": text}, sort_keys=True) + "\n" for key, text in corpus
+        ),
+        encoding="utf-8",
+    )
     copy_package(dataset_dir)
     # A dataset version uploads files, not directories: the first attempt carried
     # train.jsonl and lost internal_ai entirely, so the kernel had no trainer to
@@ -136,15 +153,19 @@ def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> d
         "dataset_id": dataset.id,
         "dataset_content_hash": dataset.content_hash,
         "train_records": len(texts),
-        "pair_format": "content_words_to_cited_sentence",
+        "pair_format": "candidates_to_copied_passage",
+        "candidates": CANDIDATE_LIMIT,
+        "corpus_records": len(corpus),
+        "corpus_sha256": sha256(corpus_file),
         "train_sha256": sha256(train_file),
         "queries_sha256": sha256(queries_file),
         "questions": len(queries),
         "eval_set_id": eval_set.id,
         "eval_set_hash": getattr(eval_set, "content_hash", ""),
-        # A pair is the instruction, the keywords and the answer, so 64 tokens
-        # would cut the citation off the end of every training example.
-        "max_seq_len": 256,
+        # A pair is the instruction, the question, five candidates and the answer.
+        # 256 cut the candidates off the end of every example and left the model
+        # no list to choose from.
+        "max_seq_len": 512,
         "base": {
             "repo_id": PRIMARY.repo_id,
             "revision": PRIMARY.revision,
@@ -198,6 +219,8 @@ def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> d
         "kernel_dir": str(kernel_dir),
         "train_records": len(texts),
         "train_sha256": recipe["train_sha256"],
+        "corpus_records": len(corpus),
+        "corpus_sha256": recipe["corpus_sha256"],
         "questions": len(queries),
         "queries_sha256": recipe["queries_sha256"],
         "commit": recipe["commit"],

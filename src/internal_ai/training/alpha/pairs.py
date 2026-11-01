@@ -31,6 +31,21 @@ MAX_ANSWER_WORDS = 80
 MIN_ANSWER_WORDS = 8
 MAX_PASSAGE_WORDS = 80
 
+# The second T4 run learned to write a citation and could not pick a line: it
+# cited runs of consecutive line numbers out of whichever file it had seen most.
+# Asking a 4B model to recall which line of which RFC answers a question it has
+# never seen is the wrong task, so the candidates a search would offer are put in
+# the prompt and the model's job becomes choosing one. Five because keyword
+# search over this corpus ranks the right passage inside the top five for most
+# questions; the number is measured, not chosen for looks.
+CANDIDATE_LIMIT = 5
+CANDIDATE_WORDS = 40
+# A candidate is copied, so the copy is what is scored: cite the key exactly as
+# the candidate list wrote it.
+SELECTION = (
+    "Corpus lookup. Exactly one candidate below answers the question: copy it and cite its "
+    "key as rfc9110.txt:5026. Write the copied sentence and the citation, nothing else."
+)
 LINE_KEY = re.compile(r"^(?P<path>[^:\s]+):(?P<line>\d+)$")
 
 # A sentence ends on these; a line ending in a colon or a bare word continues.
@@ -229,16 +244,16 @@ def _passage(lines: list[tuple[str, int, str]], start: int) -> tuple[str, int]:
     return " ".join(sentence.split()[:MAX_ANSWER_WORDS]), index
 
 
-def citation_pairs(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
-    """One training text per answerable passage: keywords in, cited sentence out.
+def passages(rows: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    """Every answerable passage as its citation key and its sentence.
 
     Rows that are not ``path:line``, and passages too short to be a sentence, are
-    skipped rather than guessed at: a pair whose citation is not a citation, or
+    skipped rather than guessed at: a passage whose citation is not a citation, or
     whose answer is half a clause, teaches the model to write the wrong thing
     confidently, which is worse than training on less text.
     """
     lines = _lines(rows)
-    pairs: list[dict[str, str]] = []
+    found: list[tuple[str, str]] = []
     index = 0
     while index < len(lines):
         path, line, _text = lines[index]
@@ -246,13 +261,83 @@ def citation_pairs(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
         index = max(next_index, index + 1)
         if len(sentence.split()) < MIN_ANSWER_WORDS or not SENTENCE_END.search(sentence):
             continue
+        found.append((f"{path}:{line}", sentence))
+    return found
+
+
+def _shown(text: str) -> str:
+    """The candidate as the model sees it, so the copy can be the target."""
+    return " ".join(text.split()[:CANDIDATE_WORDS])
+
+
+def candidates_for(
+    question: str, corpus: list[tuple[str, str]], limit: int = CANDIDATE_LIMIT
+) -> list[tuple[str, str]]:
+    """The passages a keyword search offers, in the order it ranked them.
+
+    Ties are broken by corpus order so two runs cannot offer different lists for
+    the same question, which would make the answers incomparable.
+    """
+    from internal_ai.evals.metrics import bm25_scores
+
+    keys = [key for key, _text in corpus]
+    scores = bm25_scores(question, [text for _key, text in corpus])
+    order = sorted(range(len(scores)), key=lambda index: (-scores[index], index))
+    return [(keys[index], _shown(corpus[index][1])) for index in order[:limit]]
+
+
+def prompt_for_candidates(question: str, candidates: list[tuple[str, str]]) -> str:
+    """The exact text the model sees when the answer is somewhere in the list.
+
+    Training and generation share this, for the same reason they share
+    ``prompt_for``: a pair that was asked differently from the way it is tested
+    measures the difference between two prompts.
+    """
+    offered = "\n".join(f"[{key}] {text}" for key, text in candidates)
+    return f"{SELECTION}\nQuestion: {question}\nCandidates:\n{offered}\nAnswer:"
+
+
+def retrieval_pairs(
+    rows: list[dict[str, Any]],
+    corpus: list[tuple[str, str]],
+    limit: int = CANDIDATE_LIMIT,
+) -> list[dict[str, str]]:
+    """Selection pairs: keywords, the candidates a search returns, the one that answers.
+
+    ``corpus`` is the whole index a deployed search would cover, while ``rows`` is
+    the training split the pairs may be built from, so a pair can offer a nearby
+    passage the adapter does not learn from. A passage the search does not return
+    is skipped rather than appended: padding the list with the answer would teach
+    the model to pick whichever candidate looks appended.
+    """
+    pairs: list[dict[str, str]] = []
+    for key, sentence in passages(rows):
         keywords = keywords_for(sentence)
         if not keywords:
             continue
+        offered = candidates_for(keywords, corpus, limit)
+        shown = dict(offered)
+        if key not in shown or len(shown[key].split()) < MIN_ANSWER_WORDS:
+            continue
         pairs.append(
             {
-                "record_key": f"{path}:{line}",
-                "text": f"{prompt_for(keywords)}\n{sentence} ({path}:{line})",
+                "record_key": key,
+                "text": f"{prompt_for_candidates(keywords, offered)}\n{shown[key]} ({key})",
             }
         )
+    return pairs
+
+
+def citation_pairs(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """One training text per answerable passage: keywords in, cited sentence out.
+
+    Kept as the record of the format the second run was trained on. It is the
+    format that taught the shape of an answer and not the choice of one.
+    """
+    pairs: list[dict[str, str]] = []
+    for key, sentence in passages(rows):
+        keywords = keywords_for(sentence)
+        if not keywords:
+            continue
+        pairs.append({"record_key": key, "text": f"{prompt_for(keywords)}\n{sentence} ({key})"})
     return pairs

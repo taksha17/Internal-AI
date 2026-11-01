@@ -226,28 +226,36 @@ def _score_answers(
 def keyword_baseline_answers(platform: Platform, eval_set: EvalSet, dataset_id: str) -> list[str]:
     """What a keyword search would answer, so the adapter has something dumb to beat.
 
-    The corpus indexed here is the text the adapter learned from, never the whole
-    dataset: indexing the held-out lines themselves would let a grep score full
-    marks by finding the very answer it is supposed to be searching for.
+    The index is every released passage, the same list the adapter is offered as
+    candidates. It used to be the training split only, on the reasoning that
+    indexing the held-out lines would let a grep find the answer it is searching
+    for -- but the answer is on a held-out line, so that index held none of the 32
+    answers and the baseline scored 0 of 32 against every model. A comparator that
+    cannot reach the answer measures nothing, and the gate that asks whether the
+    adapter beats it then passes on any single kept citation.
 
-    The answer is the top-ranked record's own key, which for a line-addressed
-    corpus is its ``path:line``. Ties go to the earlier record so two runs of the
+    The answer copies the top-ranked passage and cites its ``path:line``, exactly
+    as the adapter's candidates do, so beating it means choosing better than the
+    rank order and nothing else. Ties go to the earlier passage so two runs of the
     same evaluation cannot disagree about what the baseline said.
     """
     from internal_ai.evals.metrics import bm25_scores
+    from internal_ai.training.alpha.pairs import passages
 
-    rows = platform.store.dataset_records_by_split(dataset_id, "train")
+    rows = platform.store.dataset_records(dataset_id)
     if not rows:
-        rows = platform.store.dataset_records(dataset_id)
-    if not rows:
-        raise ValueError("a keyword baseline needs the corpus the adapter learned from")
-    keys = [str(row["record_key"]) for row in rows]
-    texts = [str(row["payload"]) for row in rows]
+        raise ValueError("a keyword baseline needs the corpus the adapter was run against")
+    # A corpus that is not line-addressed cannot be searched by citation, so the
+    # records themselves stand in; their keys are then whatever the dataset called
+    # them, which is still the finest grain the baseline can be asked about.
+    corpus = passages(rows) or [(str(row["record_key"]), str(row["payload"])) for row in rows]
+    keys = [key for key, _text in corpus]
+    texts = [text for _key, text in corpus]
     answers: list[str] = []
     for item in eval_set.items:
         scores = bm25_scores(str(item.get("query", "")), texts)
         best = max(range(len(scores)), key=lambda index: (scores[index], -index))
-        answers.append(f"The closest passage is {keys[best]}.")
+        answers.append(f"{texts[best]} ({keys[best]})")
     return answers
 
 
