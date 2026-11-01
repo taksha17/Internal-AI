@@ -8,7 +8,7 @@ import pytest
 import torch
 
 from internal_ai.domain import DatasetVersion, GateType, ModelVersion
-from internal_ai.ids import now_iso
+from internal_ai.ids import content_hash, now_iso, tree_hash
 from internal_ai.training.alpha.card import alpha_card
 from internal_ai.training.alpha.citations import AskHit, score_answer
 from internal_ai.training.alpha.pin import FALLBACK, PRIMARY, RECIPE
@@ -256,6 +256,23 @@ def test_the_alpha_evaluation_refuses_an_unfrozen_eval_set(
 
     with pytest.raises(PermissionError, match="frozen"):
         evaluate_alpha(platform, model.id, eval_set.id, [GOOD_ANSWER], [GOOD_ANSWER])
+
+
+def test_a_directory_adapter_is_registered_by_its_tree_hash(
+    platform, enroll_person, tmp_path: Path
+) -> None:
+    """The promotable backend saves a directory, so registering it must not need a file."""
+    person = enroll_person(platform, "Elena Alpha", ["ml_lead"])
+    dataset(platform, "ds_alpha", released=True)
+    adapter = tmp_path / "adapter"
+    adapter.mkdir()
+    (adapter / "adapter_config.json").write_text('{"r": 8}', encoding="utf-8")
+    (adapter / "adapter_model.safetensors").write_bytes(b"weights")
+
+    model = register_alpha(platform, PRIMARY, adapter, "ds_alpha", person)
+
+    expected = content_hash({"adapter": tree_hash(adapter), "base": PRIMARY.revision})
+    assert model.content_hash == expected
 
 
 def test_an_adapter_a_keyword_search_matches_is_refused(
