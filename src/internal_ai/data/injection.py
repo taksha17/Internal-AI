@@ -15,8 +15,11 @@ INSTRUCTION_PATTERNS: dict[str, re.Pattern[str]] = {
         r"(?i)\b(?:ignore|disregard|forget)\s+(?:all\s+)?(?:the\s+)?"
         r"(?:previous|prior|above|earlier)\s+(?:instructions?|prompts?|rules?|context)\b"
     ),
+    # "act as a client" is how a protocol describes a program, so only a role
+    # aimed at a model counts here; otherwise every specification is an injection.
     "persona": re.compile(
-        r"(?i)\byou\s+are\s+now\s+(?:a|an|the)\b|\bact\s+as\s+(?:a|an|the)\s+\w+"
+        r"(?i)\byou\s+are\s+now\s+(?:a|an|the)\b"
+        r"|\bact\s+as\s+(?:a|an|the)\s+(?:ai|assistant|chatbot|model|language\s+model|dan)\b"
         r"|\bsystem\s+prompt\b"
     ),
     "exfiltration": re.compile(

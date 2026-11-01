@@ -16,7 +16,7 @@ from typing import Any
 
 from internal_ai.audit import AuditLog
 from internal_ai.data.records import EXCLUDED_SENSITIVITY, Record
-from internal_ai.data.transforms import PII_PATTERNS
+from internal_ai.data.transforms import PII_PATTERNS, is_credit_card
 from internal_ai.domain import AuditOutcome
 from internal_ai.ids import new_id, now_iso
 from internal_ai.store import Store
@@ -117,7 +117,19 @@ def pii_spot_check(
     critical = 0
     for record in selected:
         for kind in detectors or list(PII_PATTERNS):
-            match = PII_PATTERNS[kind].search(record.text)
+            if kind == "credit_card":
+                # The same rule the scrubber applies, or the audit reports numbers
+                # the scrubber had already read and correctly left alone.
+                match = next(
+                    (
+                        hit
+                        for hit in PII_PATTERNS[kind].finditer(record.text)
+                        if is_credit_card(hit.group(0))
+                    ),
+                    None,
+                )
+            else:
+                match = PII_PATTERNS[kind].search(record.text)
             if not match:
                 continue
             findings[kind] = findings.get(kind, 0) + 1
