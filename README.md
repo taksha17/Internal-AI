@@ -1,11 +1,25 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="Logo/internal-ai-lockup-dark.png">
-    <img src="Logo/internal-ai-lockup.png" width="720" height="216" alt="internal-ai. Private by design.">
+    <source media="(prefers-color-scheme: dark)" srcset="Logo/internal-ai-lockup-clear-dark.png">
+    <img src="Logo/internal-ai-lockup-clear.png" width="330" alt="internal-ai. Private by design.">
   </picture>
 </p>
 
+<h1 align="center">internal-ai</h1>
+
 <p align="center"><strong>The control plane a company runs on its own machines to build, evaluate and serve a model it owns.</strong></p>
+
+<p align="center"><code>Python 3.12</code> &nbsp;·&nbsp; <code>FastAPI</code> &nbsp;·&nbsp; <code>htmx, vendored</code> &nbsp;·&nbsp; <code>SQLite</code> &nbsp;·&nbsp; <code>PolyForm Noncommercial 1.0.0</code></p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#what-it-does">What it does</a> ·
+  <a href="#two-tracks">Two tracks</a> ·
+  <a href="#what-stays-inside">Guarantees</a> ·
+  <a href="#refusals-you-will-meet">Refusals</a> ·
+  <a href="#verified-at-scale">Scale</a> ·
+  <a href="#documentation">Docs</a>
+</p>
 
 Most companies rent their intelligence: the data leaves, the weights stay on
 someone else's hardware, and the model card does not belong to them. This is the
@@ -13,7 +27,153 @@ other arrangement. A company installs this platform on machines it controls,
 points it at documents it already has, and ends up with a model whose training
 data, evaluation and serving all stayed inside the boundary.
 
-Agents do the engineering work. People take every irreversible decision.
+Agents do the engineering work. People take every irreversible decision — and
+the platform will not let an agent, or a requester, or a single person take one
+alone.
+
+## Quick start
+
+Python 3.12 and SQLite 3.35 or newer. CPU is enough; no GPU is required for
+anything below.
+
+### 1. Install
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
+.venv/bin/pip install -e ".[dev,train]"
+```
+
+`train` brings PyTorch. Add `alpha` only if you intend to adapt a pinned open
+base; the from-scratch track never needs it. After installing, `internal-ai` is
+the same program as `python -m internal_ai.cli`.
+
+### 2. Watch the governance loop
+
+The `--root` flag comes before the verb and names the directory holding the
+state.
+
+```bash
+.venv/bin/python -m internal_ai.cli --root var_demo demo
+```
+
+This is the platform's spine, not a model run. It is the Phase 0 no-op loop: a
+plan becomes 13 tasks, every gate it opens is decided by the simulated people in
+the roster, and the run finishes by verifying the audit chain.
+
+```
+plan submitted: 13 tasks, approved by program_lead
+...
+run summary:
+  "dispatched": 0,
+  "spend_usd": 21.0
+audit chain verified: True (279 events)
+```
+
+Read `dispatched: 0` literally: the demo exercises the plan, the gates and the
+audit chain, and dispatches no work. No model is trained here — the ledger and
+the refusals are the subject, not the training. It takes about a second.
+
+`demo` refuses in a root that already has console accounts, because it simulates
+human approvals and will not do that where a real person exists — use a fresh
+`--root`.
+
+### 3. Open the console
+
+```bash
+.venv/bin/python -m internal_ai.cli --root var_console people replace \
+  --id ppl_priya_raghunathan --name "Ada Admin" --title "Program lead" \
+  --roles program_lead,finance --groups platform-admins
+
+.venv/bin/python -m internal_ai.cli --root var_console console create-account \
+  --person "Ada Admin"
+
+.venv/bin/python -m internal_ai.cli --root var_console serve \
+  --host 127.0.0.1 --port 8080
+```
+
+`create-account` prints a one-time password once. Open
+[http://127.0.0.1:8080/console](http://127.0.0.1:8080/console), sign in, and set
+a password of at least 12 characters before the account can act.
+
+`serve` binds to loopback only. Reaching it from another machine needs
+`--allow-remote` together with `--ssl-certfile` and `--ssl-keyfile`; without TLS
+it refuses to start rather than expose a control plane over plain HTTP.
+
+### 4. Put documents through the data plane
+
+```bash
+# a synthetic corpus, if you do not have one yet
+.venv/bin/python -m internal_ai.cli --root var_quick sample \
+  --out var_quick/corpus --records 400
+
+# --source takes the file sample wrote, not the directory it wrote it into
+.venv/bin/python -m internal_ai.cli --root var_quick data build \
+  --source var_quick/corpus/corpus.jsonl --name quickstart
+# -> dataset ds_b5d060a1ad34, 45,736 tokens, quality_filter and dedup statistics
+```
+
+Then split, audit, and request the release gate. The ids below are the ones that
+run produced; yours will differ.
+
+```bash
+C=".venv/bin/python -m internal_ai.cli --root var_quick"
+
+$C data split     --dataset-id ds_b5d060a1ad34          # 0.8 / 0.1 / 0.1, seed forge-v1
+$C data pii-audit --dataset-id ds_b5d060a1ad34          # passed: true, sampled: 50
+
+$C gates request --gate-type dataset_release \
+  --title "Release quickstart sample" --subject ds_b5d060a1ad34 --by ml_lead
+# -> gate_5fa60f8fbdc5 opened; approvers: ml_lead, compliance
+
+$C gates approve --gate-id gate_5fa60f8fbdc5 --by compliance \
+  --note "PII audit passed, 50 records sampled"
+$C gates approve --gate-id gate_5fa60f8fbdc5 --by "Marcus Delgado" \
+  --note "spot-checked 20 records"
+```
+
+Two different people, and not the requester. On a root with no accounts yet,
+`--by` is an asserted name and the CLI says so on stderr; once an account exists,
+the same commands want `--as <person>` and a personal token instead.
+
+Release takes the approved gate explicitly, and one human step has no CLI verb —
+a domain expert reviews the language sample on the dataset page:
+
+```bash
+$C data release --dataset-id ds_b5d060a1ad34 --by data_owner \
+  --gate-id gate_5fa60f8fbdc5
+```
+
+Until that review exists this refuses with
+`a domain expert has not reviewed the language sample`. That is the console's
+job, and the refusal is the product working.
+
+### 5. Tokenizer, then find out whether training is allowed
+
+```bash
+$C tokenizer train --dataset-id ds_b5d060a1ad34
+# -> <root>/var/models/tokenizer-ds_b5d060a1ad34.json, vocab_size 1056, 59,066 tokens
+
+$C compute advise --dataset-id ds_b5d060a1ad34
+# small / 1b / 7b  ->  floor no, runnable no
+```
+
+`compute advise` reads the trainer's own `TOKENS_PER_PARAMETER_FLOOR` (20) and
+tells you the truth about a 59k-token corpus: no model the platform names can be
+trained on it. Training will refuse, and it should. A tokenizer trains once per
+dataset version and then freezes.
+
+### 6. The same path, end to end, with enough data
+
+```bash
+.venv/bin/python scripts/stress.py --records 45000 --steps 80
+```
+
+That is the run the [scale numbers](#verified-at-scale) come from: 36.4 minutes
+on a 6-core CPU-only workstation. It builds a corpus, clears the gates with real
+people, reviews the language sample, trains, evaluates and then races the
+guardrails. `--skip-serving` and `--skip-console` keep it to the build path when
+you only want the data and training stages.
 
 ## What it does
 
@@ -58,10 +218,26 @@ for the from-scratch track.
   samples, code and logs may.
 - Frozen eval sets are write-protected; a change is a new version behind a new
   gate.
-- Gates are human-only, and the requester cannot decide their own.
+- Gates are human-only, the requester cannot decide their own, and a gate passes
+  only when the approvers' roles cover every required role.
 - `audit_events` is append-only and hash-chained, enforced by triggers.
 - Every spend path goes through `BudgetManager` at every scope.
 - Engaging the kill switch is immediate; releasing it needs a different person.
+
+## Refusals you will meet
+
+The guardrails are the product, so they are worth reading before they surprise
+you. Every message below is what the platform actually printed.
+
+| You try | It says | Why |
+| --- | --- | --- |
+| `demo` in a root with accounts | `error: the demo simulates human approvals, so it only runs in a root with no console accounts` | a simulated approver must never stand in for a real one |
+| approve the gate you requested | `error: dual control violation: ml_lead requested gate … and cannot approve it` | dual control |
+| `data release` without `--gate-id` | `error: dataset release requires an approved dataset_release gate` | an approval is passed explicitly, never inferred |
+| release before the language sample is reviewed | `error: a domain expert has not reviewed the language sample` | a person must read the corpus |
+| `tokenizer train` twice | `tokenizer for ds_… is frozen; train it on a new dataset version` | a tokenizer is pinned to its dataset version |
+| `train run` before a frozen eval set | `training waits for a frozen eval set of questions a domain expert filed` | you cannot grade yourself with questions you wrote |
+| `train run` on too small a corpus | `35078 tokens and 209152 parameters are below 20 tokens per parameter` | the floor, and it does not move |
 
 ## Where those rules live
 
@@ -79,47 +255,18 @@ Change the rule in its own file, never around it.
 | Base models | [`training/alpha/pin.py`](src/internal_ai/training/alpha/pin.py) |
 | Provenance mode | [`training/provenance.py`](src/internal_ai/training/provenance.py), policy `P6` |
 
-## Run it
-
-Python 3.12. CPU is enough for the demo path.
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
-.venv/bin/pip install -e ".[dev,train]"
-```
-
-The whole loop — sample corpus, dataset, split, tokenizer, training from random
-weights, a frozen eval set, evaluation, registration, promotion, serving — on a
-throwaway root:
-
-```bash
-.venv/bin/python -m internal_ai.cli --root var_demo demo
-```
-
-The same path is what the test suite runs.
-
-To click through it, create the first account and start the console:
-
-```bash
-.venv/bin/python -m internal_ai.cli --root var_console people replace \
-  --id ppl_priya_raghunathan --name "Ada Admin" --title "Program lead" \
-  --roles program_lead --groups platform-admins
-.venv/bin/python -m internal_ai.cli --root var_console console create-account \
-  --person "Ada Admin"
-.venv/bin/python -m internal_ai.cli --root var_console serve --host 127.0.0.1 --port 8080
-```
-
-Open [http://127.0.0.1:8080/console](http://127.0.0.1:8080/console), sign in with
-the one-time password the command printed, and change it.
-
 ## The console
 
-One FastAPI process serves Jinja pages and the JSON API. htmx is vendored under
-`src/internal_ai/console/static/`: no CDN, no Node build, no frontend framework,
-no inline script and no inline style, enforced by the content security policy
-and by tests. The console is a third client of the same services as the CLI and
-the API, with the same governance — it is not a separate back office.
+One FastAPI process serves the Jinja pages and the JSON API. htmx is vendored
+under `src/internal_ai/console/static/`: no CDN, no Node build, no frontend
+framework, no inline script and no inline style, enforced by the content
+security policy and by tests. The console is a third client of the same services
+as the CLI and the API, with the same governance — it is not a separate back
+office.
+
+The browser never asserts a name. The session cookie is the person, every form
+carries that session's CSRF token, and both cookies are `SameSite=Strict`,
+`HttpOnly`, and `Secure` when TLS is on.
 
 ## Verified at scale
 
@@ -153,7 +300,7 @@ src/internal_ai/     control plane, data, training, evals, serving, console
 tests/               the suite, including the refusal tests
 scripts/             stress, probe and secret-scan tools
 docs/                architecture, runbook, tester guide, console build notes
-Logo/                the marks
+Logo/                the marks, plus transparent lockups for this page
 ```
 
 ## Documentation
@@ -192,8 +339,15 @@ one that claims less:
 ## Contributing
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md). One change is one branch and one pull
-request; the owner merges to `main`. Every change leaves `pytest`,
-`ruff check .` and `ruff format --check .` green.
+request; the owner merges to `main`, and an agent never does. A change leaves all
+four checks green:
+
+```bash
+.venv/bin/python -m pytest
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+.venv/bin/python scripts/secret_scan.py .
+```
 
 ## Security
 
