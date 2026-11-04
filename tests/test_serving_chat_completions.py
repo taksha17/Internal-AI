@@ -50,6 +50,15 @@ class Retrieval:
     ) -> list[RetrievalHit]:
         return self.hits
 
+    def keyword_search(
+        self,
+        dataset_id: str,
+        query: str,
+        principal: Principal,
+        top_k: int = 5,
+    ) -> list[RetrievalHit]:
+        return self.hits
+
 
 def _app(tmp_path: Any, monkeypatch: Any, text: str = GROUNDED) -> tuple[Any, Retrieval]:
     platform = Platform.create(root=tmp_path)
@@ -85,7 +94,6 @@ def _app(tmp_path: Any, monkeypatch: Any, text: str = GROUNDED) -> tuple[Any, Re
 def _open(app: Any, retrieval: Retrieval) -> Iterator[TestClient]:
     with TestClient(app) as client:
         app.state.retrieval = retrieval
-        app.state.embedders[""] = object()
         yield client
 
 

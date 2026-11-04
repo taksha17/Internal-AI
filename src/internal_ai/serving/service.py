@@ -23,6 +23,7 @@ import numpy as np
 
 from internal_ai.audit import AuditLog
 from internal_ai.domain import AuditOutcome, ModelVersion
+from internal_ai.evals.metrics import bm25_scores
 from internal_ai.store import Store
 from internal_ai.training.alpha.citations import hit_from_key
 
@@ -321,6 +322,68 @@ class RetrievalService:
                 "query_hash": hashlib.sha256(query.encode("utf-8")).hexdigest()[:16],
                 "query_length": len(query),
                 "top_k": top_k,
+            },
+            details={
+                "hits": len(hits),
+                "visible_documents": len(visible),
+                "total_documents": len(rows),
+            },
+        )
+        return hits
+
+    def keyword_search(
+        self,
+        dataset_id: str,
+        query: str,
+        principal: Principal,
+        top_k: int = 5,
+    ) -> list[RetrievalHit]:
+        """BM25 over what the caller may read, for a deployment with no embedder.
+
+        A fine-tuned generator has no embedder, so retrieval cannot borrow its
+        weights. Keyword search needs none, applies the same permission filter as
+        the dense path, and returns only documents that share a term with the
+        query: a zero score is not a match.
+        """
+        rows = self.corpus(dataset_id)
+        if not rows:
+            return []
+        visible = [
+            index
+            for index, row in enumerate(rows)
+            if principal.can_read(row["acl"], row["sensitivity"])
+        ]
+        if not visible:
+            return []
+        scores = bm25_scores(query, [rows[index]["payload"] for index in visible])
+        ranked = sorted(range(len(visible)), key=lambda i: -scores[i])[:top_k]
+        hits: list[RetrievalHit] = []
+        for position in ranked:
+            if scores[position] <= 0:
+                continue
+            row = rows[visible[position]]
+            cited = hit_from_key(row["record_key"])
+            hits.append(
+                RetrievalHit(
+                    document_id=row["record_key"],
+                    score=round(float(scores[position]), 6),
+                    snippet=" ".join(row["payload"].split()[:24]),
+                    source_id=row["source_id"],
+                    path=cited.path,
+                    line=cited.line,
+                )
+            )
+        self.audit.record(
+            actor=principal.user_id,
+            actor_kind="human",
+            action="serving.search",
+            subject=dataset_id,
+            outcome=AuditOutcome.SUCCESS,
+            inputs={
+                "query_hash": hashlib.sha256(query.encode("utf-8")).hexdigest()[:16],
+                "query_length": len(query),
+                "top_k": top_k,
+                "retriever": "bm25",
             },
             details={
                 "hits": len(hits),

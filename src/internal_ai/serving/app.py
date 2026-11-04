@@ -169,6 +169,41 @@ def create_serving_app(
             },
         )
 
+    def retriever_hits(
+        retrieval: RetrievalService,
+        model: ModelVersion,
+        dataset_id: str,
+        question: str,
+        principal: Principal,
+        top_k: int,
+    ) -> list[Any]:
+        """Retrieval for this deployment, bound separately from the generator.
+
+        A fine-tuned generator's path is a PEFT directory, not an embedding file;
+        handing it to the from-scratch embedder is how these routes crashed for
+        an adapter model. The dense path runs only when the model names a weights
+        file, and anything else is answered by keyword search over the corpus.
+        """
+        path = Path(model.path or "")
+        if model.path and path.is_file():
+            return retrieval.search(
+                embedder_for(model.path), dataset_id, question, principal, top_k
+            )
+        return retrieval.keyword_search(dataset_id, question, principal, top_k)
+
+    def embedder_path(model: ModelVersion) -> str:
+        path = Path(model.path or "")
+        if not model.path or not path.is_file():
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "no embedding model is bound to this deployment: the model in "
+                    "service is a generator, and a fine-tuned generator has no "
+                    "embedder to compute vectors with"
+                ),
+            )
+        return model.path
+
     def memorisation_sources(platform: Platform) -> list[str]:
         """Text an answer must not recite: the served model's corpus, sampled evenly."""
         model = served_model(platform.store, app.state.router)
@@ -240,12 +275,8 @@ def create_serving_app(
         if dataset_id is None:
             raise HTTPException(status_code=400, detail="no dataset bound to the model")
         try:
-            hits = retrieval.search(
-                embedder_for(model.path),
-                dataset_id,
-                request.query,
-                principal,
-                top_k=request.top_k,
+            hits = retriever_hits(
+                retrieval, model, dataset_id, request.query, principal, request.top_k
             )
         except HTTPException:
             raise
@@ -284,7 +315,7 @@ def create_serving_app(
         started = time.monotonic()
         platform = get_platform()
         model = in_service_model()
-        vectors = embedder_for(model.path).embed([request.query])
+        vectors = embedder_for(embedder_path(model)).embed([request.query])
         latency = (time.monotonic() - started) * 1000
         log_request(platform.audit, principal, "/v1/embed", 200, latency, {"model_id": model.id})
         return {
@@ -482,9 +513,7 @@ def create_serving_app(
         rows = retrieval.corpus(dataset_id)
         started = time.monotonic()
         with app.state.concurrency_semaphore:
-            hits = retrieval.search(
-                embedder_for(model.path), dataset_id, question, principal, top_k=request.top_k
-            )
+            hits = retriever_hits(retrieval, model, dataset_id, question, principal, request.top_k)
             if not hits:
                 readable = any(principal.can_read(row["acl"], row["sensitivity"]) for row in rows)
                 status = 403 if rows and not readable else 400
