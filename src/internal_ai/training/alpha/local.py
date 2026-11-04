@@ -170,8 +170,11 @@ def answer_adapter(platform: Platform, model: ModelVersion) -> LLMAdapter:
     runner_configured = os.environ.get("INTERNAL_AI_LOCAL_RUNNER", "").strip()
     if runner_configured:
         from internal_ai.llm import LocalRunnerAdapter
+        from internal_ai.training.alpha.backend import require_runner_hash
 
-        return LocalRunnerAdapter()
+        runner = LocalRunnerAdapter()
+        require_runner_hash(model, runner)
+        return runner
     adapter_path = Path(model.path or "")
     if adapter_path.is_dir() and (adapter_path / "adapter_config.json").exists():
         from internal_ai.training.alpha.backend import peft_backend

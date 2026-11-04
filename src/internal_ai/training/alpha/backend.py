@@ -30,6 +30,32 @@ def loaded_adapters() -> dict[str, str]:
     return dict(LOADED)
 
 
+def require_runner_hash(model: ModelVersion, adapter: Any) -> None:
+    """A runner may answer only for the adapter the card names, and must say which.
+
+    The runner owns the weights; this process never sees them. The report on its
+    health surface is the only evidence that the bytes promotion scored are the
+    bytes answering, so a missing report is a refusal rather than a pass.
+    """
+    expected = str(model.card.get("adapter_sha256") or "")
+    if not expected:
+        # Nothing was promoted for this model, so there is no adapter hash to hold
+        # the runner to; the plain runner path stays as it was.
+        return
+    reported = adapter.reported_adapter_hash()
+    if not reported:
+        raise PermissionError(
+            f"the runner at {adapter.health_url()} does not report which adapter it loaded; "
+            "a process that cannot name its adapter is refused"
+        )
+    if reported != expected:
+        raise PermissionError(
+            f"the runner reports adapter {reported[:16]} but the model card names "
+            f"{expected[:16]}: a tree_hash mismatch is a different adapter than the one "
+            "its eval report scored"
+        )
+
+
 def peft_backend(platform: Platform, model: ModelVersion) -> TransformersPeftBackend:
     """Load the adapter the card names, and refuse one whose tree hash drifted.
 

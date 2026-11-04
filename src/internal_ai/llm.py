@@ -232,6 +232,28 @@ class LocalRunnerAdapter:
         self.model = model or os.environ.get("INTERNAL_AI_LOCAL_MODEL", "qwen2.5-3b-lumen")
         self.timeout = timeout
 
+    def health_url(self) -> str:
+        """The runner's health surface sits at the root, not under the API prefix."""
+        root = self.base_url[:-3] if self.base_url.endswith("/v1") else self.base_url
+        return f"{root}/health"
+
+    def reported_adapter_hash(self) -> str | None:
+        """What the runner says it loaded; None when it cannot be asked.
+
+        A runner that cannot name its adapter cannot prove the promoted bytes are
+        the ones answering, so the missing report is a refusal, not a pass.
+        """
+        try:
+            with httpx.Client(timeout=min(self.timeout, 10.0)) as client:
+                response = client.get(self.health_url())
+            if response.status_code != 200:
+                return None
+            data = response.json()
+        except (httpx.HTTPError, ValueError):
+            return None
+        value = data.get("adapter_sha256") if isinstance(data, dict) else None
+        return str(value) if value else None
+
     def complete(
         self,
         prompt: str,
