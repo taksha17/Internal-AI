@@ -231,7 +231,11 @@ def test_the_alpha_evaluation_scores_the_answers_against_a_frozen_set(
     assert good.metrics["citation_pass_rate"] == 1.0
     assert good.baseline_metrics["citation_pass_rate"] == 0.0
 
-    moved = evaluate_alpha(platform, model.id, eval_set_id, [MOVED_ANSWER], [GOOD_ANSWER])
+    with pytest.raises(PermissionError, match="second look"):
+        evaluate_alpha(platform, model.id, eval_set_id, [GOOD_ANSWER], [MOVED_ANSWER])
+
+    moved_set = alpha_eval_set(platform, [ALPHA_ITEM])
+    moved = evaluate_alpha(platform, model.id, moved_set, [MOVED_ANSWER], [GOOD_ANSWER])
     assert moved.passed is False
     assert moved.checks["citations"]["passed"] is False
 
@@ -373,13 +377,13 @@ def test_serving_an_alpha_model_promotes_it_and_records_the_report(
     model = register_alpha(platform, PRIMARY, adapter, "ds_alpha", person)
     gate = request_alpha_promotion(platform, person, model.id, GOOD_ANSWER, HITS)
     approve_gate(platform, gate.id)
-    eval_set_id = alpha_eval_set(platform, [ALPHA_ITEM] * 40)
+    eval_set_id = alpha_eval_set(platform, [ALPHA_ITEM] * 240)
     report = evaluate_alpha(
         platform,
         model.id,
         eval_set_id,
-        [GOOD_ANSWER] * 40,
-        [GOOD_ANSWER] * 20 + [MOVED_ANSWER] * 20,
+        [GOOD_ANSWER] * 240,
+        [GOOD_ANSWER] * 120 + [MOVED_ANSWER] * 120,
     )
 
     manifest = serve_alpha(platform, model.id, tmp_path / "runner")

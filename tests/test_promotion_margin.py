@@ -16,6 +16,7 @@ from conftest import paired_scores
 from internal_ai.domain import EvalReport, EvalSet, ModelVersion
 from internal_ai.workflows import (
     PROMOTION_MARGIN,
+    PROMOTION_MIN_CASES,
     PROMOTION_SIGMA,
     confidence_refusal,
     margin_refusal,
@@ -74,6 +75,81 @@ def report_for(
 def test_the_rules_are_the_plans_numbers() -> None:
     assert PROMOTION_MARGIN == 0.05
     assert PROMOTION_SIGMA == 2.0
+    assert PROMOTION_MIN_CASES == 200
+
+
+def test_a_thirty_two_question_set_cannot_promote_the_figures_named(platform) -> None:
+    """The scored alpha run has a 1-of-32 lead; the floor says why that is not a claim."""
+    candidate(platform)
+    frozen(platform)
+    report_for(
+        platform,
+        {"citation_pass_rate": 29 / 32},
+        {"citation_pass_rate": 28 / 32},
+        {
+            "citation_pass_rate": {
+                "candidate": [1.0] * 29 + [0.0] * 3,
+                "baseline": [1.0] * 28 + [0.0] * 4,
+            }
+        },
+    )
+
+    with pytest.raises(PermissionError) as refused:
+        promote_model(platform, "mdl_margin", gate_approved=True, approver="ppl_lead")
+
+    message = str(refused.value)
+    assert "scored on 32 questions" in message
+    assert "at least 200" in message
+    assert platform.store.get_model("mdl_margin").status != "promoted"
+
+
+def test_a_lead_under_the_margin_over_keyword_is_refused_when_the_base_was_beaten(
+    platform,
+) -> None:
+    """Beat the base by a mile and the keyword search by a hair, and it is a hair."""
+    candidate(platform)
+    frozen(platform)
+    report_for(
+        platform,
+        {"citation_pass_rate": 0.625},
+        {"citation_pass_rate": 0.5},
+        {
+            "citation_pass_rate": {
+                "candidate": [1.0] * 150 + [0.0] * 90,
+                "baseline": [1.0] * 120 + [0.0] * 120,
+                "keyword": [1.0] * 145 + [0.0] * 95,
+            }
+        },
+    )
+
+    with pytest.raises(PermissionError) as refused:
+        promote_model(platform, "mdl_margin", gate_approved=True, approver="ppl_lead")
+
+    assert "candidate 0.62 vs keyword 0.60 on citation_pass_rate" in str(refused.value)
+    assert platform.store.get_model("mdl_margin").status != "promoted"
+
+
+def test_a_keyword_lead_inside_the_noise_is_refused(platform) -> None:
+    """A lead over the keyword search clears two standard errors like any other."""
+    candidate(platform)
+    frozen(platform)
+    pairs = [1.0] * 144 + [0.0] * 96
+    keyword = [1.0] * 72 + [0.0] * 72 + [1.0] * 52 + [0.0] * 44
+    baseline = [1.0] * 124 + [0.0] * 116
+    report_for(
+        platform,
+        {"citation_pass_rate": 0.6},
+        {"citation_pass_rate": 0.516667},
+        {"citation_pass_rate": {"candidate": pairs, "baseline": baseline, "keyword": keyword}},
+    )
+
+    with pytest.raises(PermissionError) as refused:
+        promote_model(platform, "mdl_margin", gate_approved=True, approver="ppl_lead")
+
+    message = str(refused.value)
+    assert "vs keyword 0.52 on citation_pass_rate" in message
+    assert "does not clear two standard errors" in message
+    assert platform.store.get_model("mdl_margin").status != "promoted"
 
 
 def test_a_keyword_lead_under_the_margin_is_refused_with_both_figures(platform) -> None:
@@ -83,7 +159,7 @@ def test_a_keyword_lead_under_the_margin_is_refused_with_both_figures(platform) 
         platform,
         {"recall_at_10": 0.41},
         {"recall_at_10": 0.39},
-        paired_scores("recall_at_10", 41, 39, 100),
+        paired_scores("recall_at_10", 98, 93, 240),
     )
 
     with pytest.raises(PermissionError) as refused:
@@ -117,7 +193,7 @@ def test_an_adapters_lead_over_its_base_is_held_to_the_margin(platform) -> None:
         platform,
         {"citation_pass_rate": 0.60},
         {"citation_pass_rate": 0.58},
-        paired_scores("citation_pass_rate", 60, 58, 100),
+        paired_scores("citation_pass_rate", 143, 139, 240),
     )
 
     with pytest.raises(PermissionError, match="un-adapted base"):
@@ -140,7 +216,7 @@ def test_a_lead_past_the_margin_and_the_noise_promotes(platform) -> None:
         platform,
         {"recall_at_10": 0.72},
         {"recall_at_10": 0.40},
-        paired_scores("recall_at_10", 72, 40, 100),
+        paired_scores("recall_at_10", 173, 96, 240),
     )
 
     promoted = promote_model(platform, "mdl_margin", gate_approved=True, approver="ppl_lead")
@@ -154,12 +230,12 @@ def test_a_lead_past_the_margin_but_inside_the_noise_is_refused(platform) -> Non
     frozen(platform)
     report_for(
         platform,
-        {"recall_at_10": 0.2},
-        {"recall_at_10": 0.125},
+        {"recall_at_10": 0.35},
+        {"recall_at_10": 0.275},
         {
             "recall_at_10": {
-                "candidate": [1.0] * 8 + [0.0] * 32,
-                "baseline": [0.0] * 8 + [1.0] * 5 + [0.0] * 27,
+                "candidate": [1.0] * 84 + [0.0] * 156,
+                "baseline": [0.0] * 84 + [1.0] * 66 + [0.0] * 90,
             }
         },
     )
@@ -167,7 +243,7 @@ def test_a_lead_past_the_margin_but_inside_the_noise_is_refused(platform) -> Non
     with pytest.raises(PermissionError) as refused:
         promote_model(platform, "mdl_margin", gate_approved=True, approver="ppl_lead")
 
-    assert "+0.08" in str(refused.value)
+    assert "+0.07" in str(refused.value)
     assert "does not clear two standard errors" in str(refused.value)
     assert platform.store.get_model("mdl_margin").status != "promoted"
 

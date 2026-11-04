@@ -627,16 +627,49 @@ MARGIN_METRICS = {
     "accuracy": "rules",
 }
 
+MARGIN_BASELINES = ("baseline", "keyword", "rules")
+
+
+def _baseline_label(metric: str, key: str) -> str:
+    return MARGIN_METRICS[metric] if key == "baseline" else key
+
+
+def _mean(values: list[float]) -> float:
+    return sum(values) / len(values)
+
+
+def _baseline_views(pair: dict[str, Any]) -> list[tuple[str, list[float], float]]:
+    """Every baseline the report's pairs can be judged against, designated first."""
+    views: list[tuple[str, list[float], float]] = []
+    for key in MARGIN_BASELINES:
+        scores = pair.get(key) or []
+        if scores:
+            counted = [float(value) for value in scores]
+            views.append((key, counted, _mean(counted)))
+    return views
+
+
+def _judged(
+    metric: str, report: Any
+) -> tuple[float, list[float], list[tuple[str, list[float], float]]]:
+    """The reported figure and every per-question view the report carries."""
+    pair = (getattr(report, "per_case", None) or {}).get(metric) or {}
+    candidate = [float(value) for value in pair.get("candidate") or []]
+    score = _mean(candidate) if len(candidate) >= 2 else float(report.metrics[metric])
+    return score, candidate, _baseline_views(pair)
+
 
 def margin_refusal(report: Any) -> str | None:
     """The lead the report claims, said out loud when it is too small to believe.
 
-    A promotion argues that a model beat something. The plan fixes that
-    something as the un-adapted base and the baseline the company already had,
-    by +0.05 on the metric being promoted on, and the gate holder reads a report
-    rather than re-running an evaluation. So the report has to carry the
-    comparison, and a report that never ran one has not shown a lead at all —
-    which is a refusal, not a caveat.
+    A promotion argues that a model beat something. The plan fixes the arguers
+    as the un-adapted base and the baseline the company already had, by +0.05
+    on the metric being promoted on, and the gate holder reads a report rather
+    than re-running an evaluation. So the report carries per-question scores for
+    every baseline it compares, and each one is held to the margin: clearing the
+    base by a mile while slipping under the margin against the keyword search is
+    still under the margin. A report that never ran a comparison has not shown
+    a lead at all — which is a refusal, not a caveat.
     """
     metrics = report.metrics or {}
     baseline = report.baseline_metrics or {}
@@ -647,24 +680,35 @@ def margin_refusal(report: Any) -> str | None:
             "was compared and nothing can be promoted on it"
         )
     for metric in judged:
+        score, _, views = _judged(metric, report)
+        for key, _, reference_mean in views:
+            label = _baseline_label(metric, key)
+            lead = score - reference_mean
+            if round(lead, 6) < PROMOTION_MARGIN:
+                return (
+                    f"candidate {score:.2f} vs {label} {reference_mean:.2f} on {metric}: "
+                    f"{lead:+.2f} is below the +{PROMOTION_MARGIN:.2f} margin"
+                )
+        if views:
+            continue
         against = MARGIN_METRICS[metric]
-        score = float(metrics[metric])
         if metric not in baseline:
             return (
                 f"candidate {score:.2f} on {metric} has no {against} figure in the report "
                 "to beat; a comparison that was never run cannot promote"
             )
-        base = float(baseline[metric])
-        lead = score - base
+        reference = float(baseline[metric])
+        lead = score - reference
         if round(lead, 6) < PROMOTION_MARGIN:
             return (
-                f"candidate {score:.2f} vs {against} {base:.2f} on {metric}: "
+                f"candidate {score:.2f} vs {against} {reference:.2f} on {metric}: "
                 f"{lead:+.2f} is below the +{PROMOTION_MARGIN:.2f} margin"
             )
     return None
 
 
 PROMOTION_SIGMA = 2.0
+PROMOTION_MIN_CASES = 200
 
 
 def paired_standard_error(candidate: list[float], baseline: list[float]) -> float | None:
@@ -678,6 +722,28 @@ def paired_standard_error(candidate: list[float], baseline: list[float]) -> floa
     mean = sum(differences) / count
     variance = sum((value - mean) ** 2 for value in differences) / (count - 1)
     return math.sqrt(variance / count)
+
+
+def case_floor_refusal(report: Any) -> str | None:
+    """Point 2 of docs/promotion.md: the set has to be big enough to argue with.
+
+    Fewer cases means the difference cannot be told from luck, so the run is
+    refused with the figures named rather than reported with a caveat. A report
+    without per-question scores is checked for size nowhere — its other refusal
+    (no pairs, no comparison) already keeps it from promoting.
+    """
+    metrics = report.metrics or {}
+    per_case = getattr(report, "per_case", None) or {}
+    for metric in sorted(metric for metric in MARGIN_METRICS if metric in metrics):
+        candidate = (per_case.get(metric) or {}).get("candidate") or []
+        size = len(candidate)
+        if size and size < PROMOTION_MIN_CASES:
+            return (
+                f"the frozen set was scored on {size} questions for {metric}; promoting on "
+                f"it needs at least {PROMOTION_MIN_CASES} labelled cases, so the lead "
+                "cannot yet be told from luck"
+            )
+    return None
 
 
 def confidence_refusal(report: Any) -> str | None:
@@ -696,8 +762,31 @@ def confidence_refusal(report: Any) -> str | None:
         return None
     per_case = report.per_case or {}
     for metric in judged:
+        score, candidate, views = _judged(metric, report)
+        for key, reference, reference_mean in views:
+            label = _baseline_label(metric, key)
+            error = paired_standard_error(candidate, reference)
+            if error is None:
+                return (
+                    f"the report carries no per-question {metric} scores for the candidate and "
+                    f"the {label} baseline, so its lead cannot be told from noise"
+                )
+            lead = score - reference_mean
+            needed = PROMOTION_SIGMA * error
+            if round(lead, 6) <= round(needed, 6):
+                return (
+                    f"candidate {score:.2f} vs {label} "
+                    f"{reference_mean:.2f} on {metric}: {lead:+.2f} does not clear two "
+                    f"standard errors ({needed:.3f} over {len(candidate)} questions)"
+                )
+        if views and candidate:
+            continue
+        if not candidate:
+            return (
+                f"the report carries no per-question {metric} scores for the candidate and "
+                f"the {MARGIN_METRICS[metric]} baseline, so its lead cannot be told from noise"
+            )
         pair = per_case.get(metric) or {}
-        candidate = [float(value) for value in pair.get("candidate") or []]
         against = [float(value) for value in pair.get("baseline") or []]
         error = paired_standard_error(candidate, against)
         if error is None:
@@ -705,7 +794,7 @@ def confidence_refusal(report: Any) -> str | None:
                 f"the report carries no per-question {metric} scores for the candidate and "
                 f"the {MARGIN_METRICS[metric]} baseline, so its lead cannot be told from noise"
             )
-        lead = float(metrics[metric]) - float(baseline.get(metric, 0.0))
+        lead = score - float((report.baseline_metrics or {}).get(metric, 0.0))
         needed = PROMOTION_SIGMA * error
         if round(lead, 6) <= round(needed, 6):
             return (
@@ -767,6 +856,9 @@ def promote_model(
             f"the supervised run dropped recall@10 by {float(drop):.2f} against the previous "
             "candidate, above the 0.05 the brief allows"
         )
+    case_floor = case_floor_refusal(report)
+    if case_floor is not None:
+        raise PermissionError(case_floor)
     refusal = margin_refusal(report) or confidence_refusal(report)
     if refusal is not None:
         raise PermissionError(refusal)

@@ -125,7 +125,7 @@ def test_a_regressed_model_needs_the_word_accepted_from_someone_else(platform) -
                 created_at=created,
                 metrics={"recall_at_10": recall},
                 baseline_metrics={"recall_at_10": 0.1},
-                per_case=paired_scores("recall_at_10", int(recall * 100), 10, 100),
+                per_case=paired_scores("recall_at_10", int(recall * 240), 24, 240),
                 passed=True,
                 judged_by="ppl_mia",
             )

@@ -286,14 +286,14 @@ def test_beating_the_base_promotes_and_keeps_both_numbers_on_the_card(
     person, model = alpha_model(platform, enroll_person, tmp_path)
     gate = request_alpha_promotion(platform, person, model.id, GOOD_HOST, HITS)
     approve_gate(platform, gate.id)
-    eval_set_id = alpha_eval_set(platform, many_items(40))
+    eval_set_id = alpha_eval_set(platform, many_items(240))
 
     report = evaluate_alpha(
         platform,
         model.id,
         eval_set_id,
-        [GOOD_HOST, GOOD_KEY] * 20,
-        [GOOD_HOST, GOOD_KEY] * 10 + [MOVED, GOOD_KEY] * 10,
+        [GOOD_HOST, GOOD_KEY] * 120,
+        [GOOD_HOST, GOOD_KEY] * 60 + [MOVED, GOOD_KEY] * 60,
     )
     assert report.passed is True, report.checks
     assert report.checks["beats_base"]["adapter_citation_pass_rate"] == 1.0

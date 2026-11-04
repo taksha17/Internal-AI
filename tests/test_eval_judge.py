@@ -7,6 +7,7 @@ refuses a self-run, and promotion refuses a self-judged report.
 
 from __future__ import annotations
 
+import pytest
 from conftest import enroll, paired_scores
 
 from internal_ai.domain import EvalReport, EvalSet, ModelVersion
@@ -51,7 +52,7 @@ def add_report(platform, model_id: str, judged_by: str, passed: bool = True) -> 
             created_at="2026-01-02T00:00:00+00:00",
             metrics={"recall_at_10": 0.8},
             baseline_metrics={"recall_at_10": 0.5},
-            per_case=paired_scores("recall_at_10", 32, 20, 40),
+            per_case=paired_scores("recall_at_10", 192, 120, 240),
             passed=passed,
             judged_by=judged_by,
         )
@@ -83,6 +84,24 @@ def test_the_report_records_who_judged_it(platform) -> None:
     assert named.judged_by == "alice"
     assert default.judged_by == "evaluation"
     assert platform.store.get_eval_report(named.id).judged_by == "alice"
+
+
+def test_a_frozen_set_is_scored_against_a_model_once(platform) -> None:
+    """Point 1 of docs/promotion.md: a second look needs a new freeze gate."""
+    harness = EvalHarness(platform.store, platform.audit)
+    eval_set = harness.create_eval_set("held-out", [{"query": "q", "relevant_ids": ["d1"]}])
+    harness.freeze_eval_set(eval_set.id, "ml_lead", gate_approved=True)
+    outcome = EvalOutcome(
+        passed=True, metrics={"recall_at_10": 0.8}, baseline_metrics={}, checks={}, notes=""
+    )
+
+    harness.record_report("mdl_x", eval_set.id, outcome, actor="evaluation", judged_by="alice")
+    with pytest.raises(PermissionError, match="second look"):
+        harness.record_report("mdl_x", eval_set.id, outcome, actor="evaluation", judged_by="bob")
+
+    other = harness.create_eval_set("held-out", [{"query": "q", "relevant_ids": ["d1"]}])
+    harness.freeze_eval_set(other.id, "ml_lead", gate_approved=True)
+    harness.record_report("mdl_y", eval_set.id, outcome, actor="evaluation", judged_by="carol")
 
 
 def test_a_report_the_builder_judged_cannot_promote(platform) -> None:

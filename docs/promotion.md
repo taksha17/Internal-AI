@@ -51,6 +51,8 @@ even when it is the best number on the page.
 - a failed safety probe, or a recall drop above 0.05;
 - a regression accepted by its own builder — the refusal names the metric, both
   figures, the model it fell behind and the questions that were lost;
+- a set scored on fewer than 200 questions for the metric being promoted on
+  (`workflows.case_floor_refusal`), with both figures named;
 - a lead under 0.05 over the un-adapted base or the keyword baseline, or a
   report that carries no such comparison at all;
 - a lead that does not clear two standard errors of the paired difference, or a
@@ -62,14 +64,24 @@ evaluation: a report that never ran the comparison has not shown a lead, and an
 approving human reading a number is not the same as the platform having checked
 it. So a report now carries one score per question for the candidate and for
 whatever it was compared against (`per_case`), and the standard error is
-computed from those pairs rather than estimated from a mean.
+computed from those pairs rather than estimated from a mean. A report may name
+more than one baseline in `per_case` — the un-adapted base, the keyword search,
+the shipped rules — and each named baseline is held to the margin and to the
+standard errors in turn.
+
+Point 6 is also enforced in code. Recording a second report for the same model
+on the same frozen eval set is refused — in `EvalHarness.record_report` and in
+the alpha scorer alike — with the message that a second look needs a new
+version behind a new `eval_set_freeze` gate. Sets that were never frozen and
+the synthetic `classifier::<dataset>` reports used for brief-bar checks are
+not frozen sets and stay recordable.
 
 The consequence is deliberate. A two-question eval set cannot promote anything,
 because one flipped answer is half the score and the paired difference cannot
 clear its own noise; the same applies to a short set that happens to show a
-friendly number. The 200-case floor in point 2 is still the reviewer's question
-rather than a coded refusal — the confidence rule refuses a set too small to
-support its lead, which is the part the arithmetic can decide.
+friendly number. Point 2 is a coded refusal as well (`workflows.case_floor_refusal`):
+a report scored on fewer than 200 questions is refused with the count it scored
+and the count it needed, whatever the size of the lead.
 
 ## What a refusal must say
 

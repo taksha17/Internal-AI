@@ -145,7 +145,7 @@ def test_a_passing_report_off_a_frozen_set_cannot_promote(platform) -> None:
                 created_at=created_at,
                 metrics={"recall_at_10": 1.0},
                 baseline_metrics={"recall_at_10": 0.4},
-                per_case=paired_scores("recall_at_10", 40, 16, 40),
+                per_case=paired_scores("recall_at_10", 200, 96, 240),
                 passed=True,
                 notes="pass",
             )

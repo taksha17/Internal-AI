@@ -169,11 +169,13 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
         model = platform.store.list_models()[0]
 
         mo.post(f"/console/models/{model.id}/evaluate", ok=False, eval_set_id=eval_set.id)
-        page = mia.post(f"/console/models/{model.id}/evaluate", eval_set_id=eval_set.id)
-        assert "succeeded" in page
         report = build.latest_report(platform, model.id)
-        assert report is not None
+        assert report is not None, (
+            "registering the model starts the evaluation, judged by someone else"
+        )
         assert report.passed, report.notes
+        page = mia.post(f"/console/models/{model.id}/evaluate", eval_set_id=eval_set.id)
+        assert "second look" in page
 
         mo.post(f"/console/models/{model.id}/promote", ok=False)
         mo.post(
@@ -182,8 +184,14 @@ def test_console_click_through_builds_and_promotes_a_model(tmp_path: Path) -> No
         )
         approve(platform, mia, GateType.MODEL_PROMOTION, model.id)
         approve(platform, dex, GateType.MODEL_PROMOTION, model.id)
-        mo.post(f"/console/models/{model.id}/promote")
-        assert platform.store.get_model(model.id).status == "promoted"
+        # The demo corpus cannot reach the promotion standard: its frozen set
+        # holds 114 filed-and-derived questions, under the 200-case floor, and
+        # the gate now refuses with the figures named instead of promoting a
+        # lead that cannot be measured.
+        page = mo.post(f"/console/models/{model.id}/promote", ok=False)
+        assert "scored on 114 questions" in page
+        assert "at least 200" in page
+        assert platform.store.get_model(model.id).status != "promoted"
 
         answer = mo.post("/console/ask", dataset_id=dataset_id, question="how do I reset my VPN")
         assert "Sources" in answer

@@ -353,6 +353,17 @@ class EvalHarness:
         judged_by: str | None = None,
     ) -> EvalReport:
         judge = judged_by or actor
+        eval_set = self.store.get_eval_set(eval_set_id)
+        already = [
+            item
+            for item in self.store.list_eval_reports(model_id)
+            if item.eval_set_id == eval_set_id
+        ]
+        if already and eval_set is not None and eval_set.frozen:
+            raise PermissionError(
+                f"{eval_set_id} has already been scored against {model_id}; a second look at "
+                "the same frozen set needs a new version behind a new eval_set_freeze gate"
+            )
         model = self.store.get_model(model_id)
         builder = str(model.card.get("registered_by") or "") if model is not None else ""
         if builder and judge == builder:

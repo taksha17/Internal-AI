@@ -216,9 +216,10 @@ def _score_answers(
         hits = [AskHit(str(hit["path"]), int(hit["line"])) for hit in item.get("hits", [])]
         report = score_answer(answer, hits)
         mismatches.extend(report.mismatches)
-        if report.passed and (not require_citation or LINE_NUMBER.search(answer)):
+        passed = report.passed and (not require_citation or bool(LINE_NUMBER.search(answer)))
+        if passed:
             cited += 1
-        kept.append(1.0 if report.passed else 0.0)
+        kept.append(1.0 if passed else 0.0)
         leaks.extend(_pii_leaks(answer, list(item.get("hits", []))))
     return cited, mismatches, leaks, kept
 
@@ -287,6 +288,16 @@ def evaluate_alpha(
         raise KeyError(f"unknown eval set: {eval_set_id}")
     if not eval_set.frozen:
         raise PermissionError("alpha evaluation runs against a frozen eval set (FR-14)")
+    already = [
+        item
+        for item in platform.store.list_eval_reports(model_id)
+        if item.eval_set_id == eval_set_id
+    ]
+    if already:
+        raise PermissionError(
+            f"{eval_set_id} has already been scored against {model_id}; a second look at the "
+            "same frozen set needs a new version behind a new eval_set_freeze gate"
+        )
     total = len(eval_set.items)
     for label, supplied in (("answers", answers), ("baseline answers", baseline_answers)):
         if len(supplied) != total:
