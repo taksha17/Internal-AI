@@ -24,6 +24,7 @@ import numpy as np
 from internal_ai.audit import AuditLog
 from internal_ai.domain import AuditOutcome, ModelVersion
 from internal_ai.store import Store
+from internal_ai.training.alpha.citations import hit_from_key
 
 SUPERUSER_GROUP = "platform-admins"
 
@@ -121,6 +122,8 @@ class RetrievalHit:
     score: float
     snippet: str = ""
     source_id: str = ""
+    path: str = ""
+    line: int = 0
 
 
 LEGACY_PERMISSION_NOTE = "permission enforcement is verified by the retrieval service tests"
@@ -297,12 +300,15 @@ class RetrievalService:
         hits: list[RetrievalHit] = []
         for index in order:
             row = rows[visible[int(index)]]
+            cited = hit_from_key(row["record_key"])
             hits.append(
                 RetrievalHit(
                     document_id=row["record_key"],
                     score=round(float(scores[int(index)]), 6),
                     snippet=" ".join(row["payload"].split()[:24]),
                     source_id=row["source_id"],
+                    path=cited.path,
+                    line=cited.line,
                 )
             )
         self.audit.record(

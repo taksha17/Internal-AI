@@ -265,8 +265,12 @@ def passages(rows: list[dict[str, Any]]) -> list[tuple[str, str]]:
     return found
 
 
-def _shown(text: str) -> str:
-    """The candidate as the model sees it, so the copy can be the target."""
+def shown(text: str) -> str:
+    """The candidate as the model sees it, so the copy can be the target.
+
+    Serving truncates its excerpts with the same cap, so a candidate shown at
+    question time is the candidate the pairs were trained on.
+    """
     return " ".join(text.split()[:CANDIDATE_WORDS])
 
 
@@ -283,7 +287,7 @@ def candidates_for(
     keys = [key for key, _text in corpus]
     scores = bm25_scores(question, [text for _key, text in corpus])
     order = sorted(range(len(scores)), key=lambda index: (-scores[index], index))
-    return [(keys[index], _shown(corpus[index][1])) for index in order[:limit]]
+    return [(keys[index], shown(corpus[index][1])) for index in order[:limit]]
 
 
 def prompt_for_candidates(question: str, candidates: list[tuple[str, str]]) -> str:

@@ -24,6 +24,22 @@ class AskHit:
     line: int
 
 
+_KEY_WITH_LINE = re.compile(r"^(?P<path>.+):(?P<line>\d+)$")
+
+
+def hit_from_key(record_key: str) -> AskHit:
+    """The line a retrieved record is cited at.
+
+    A line-addressed store keys its records ``path:line``, so the key carries
+    the citation a reader jumps to. Any other key names a whole record and is
+    cited at line 0, where a moved line number would be a mismatch.
+    """
+    match = _KEY_WITH_LINE.match(record_key)
+    if match is None:
+        return AskHit(record_key, 0)
+    return AskHit(match.group("path"), int(match.group("line")))
+
+
 @dataclass(frozen=True, slots=True)
 class CitationReport:
     passed: bool

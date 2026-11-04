@@ -437,10 +437,11 @@ def create_serving_app(
         """An OpenAI-shaped answer from the same guarded path as `/v1/answer`.
 
         Retrieval runs under the caller's own ACLs, and the finished answer goes
-        through the same citation and guardrail checks. A retrieved record has no
-        line of its own, so it is cited as `<record key>:0` — the whole document —
-        and an answer that puts any other line number on it is a mismatch, as it
-        is everywhere else.
+        through the same citation and guardrail checks. A record keyed
+        ``path:line`` keeps that citation a reader can open; a record keyed
+        anything else is cited as ``<record key>:0`` — the whole document — and
+        an answer that puts any other line number on it is a mismatch, as it is
+        everywhere else.
 
         A guardrail refusal is decided before the first token. A citation failure
         cannot be known until the answer exists, so a streamed reply carries the
@@ -496,7 +497,7 @@ def create_serving_app(
                     question=question,
                 )
                 raise HTTPException(status_code=status, detail=reason)
-            citations = [AskHit(hit.document_id, 0) for hit in hits]
+            citations = [AskHit(hit.path or hit.document_id, hit.line) for hit in hits]
             excerpts = [hit.snippet for hit in hits]
             try:
                 generator = answer_adapter(platform, model)
@@ -524,7 +525,7 @@ def create_serving_app(
             )
         except ValueError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
-        cited = [{"path": hit.document_id, "line": 0} for hit in hits]
+        cited = [{"path": hit.path or hit.document_id, "line": hit.line} for hit in hits]
         latency = (time.monotonic() - started) * 1000
 
         def event_details(outcome: str) -> dict[str, Any]:
