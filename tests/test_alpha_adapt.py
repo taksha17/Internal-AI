@@ -10,9 +10,11 @@ import pytest
 
 from internal_ai.training.alpha.adapt import (
     BACKEND,
+    DIVERGENCE_WINDOW,
     AdaptationUnavailable,
     _dtype,
     _loss_scaling,
+    _window_exploded,
     adapt,
 )
 from internal_ai.training.alpha.pin import PinnedBase, WeightShard
@@ -82,6 +84,40 @@ def test_training_lowers_the_loss_it_reports(tmp_path: Path) -> None:
     assert result["diverged_at"] is None
     assert result["trainable_parameters"] > 0
     assert result["layers"] == 2
+
+
+def test_a_divergence_in_a_later_epoch_refuses_the_run(tmp_path: Path) -> None:
+    """The B6 repro: one text, six epochs, an absurd learning rate.
+
+    The tiny model holds a normal learning rate no matter how large, so the loss
+    stays finite until a step the schedule has wound up; the divergence then
+    lands after the first pass, where the old guard read it as a finished run and
+    saved the adapter anyway.
+    """
+    base = tiny_snapshot(tmp_path)
+    out = tmp_path / "out"
+
+    with pytest.raises(ValueError, match="the loss diverged"):
+        adapt(
+            base,
+            tmp_path,
+            ["the ledger failed"],
+            out,
+            max_seq_len=16,
+            epochs=6,
+            learning_rate=2e4,
+            seed=0,
+        )
+
+    assert not out.exists()
+
+
+def test_the_divergence_guard_reads_a_window_not_a_single_sequence() -> None:
+    """One hard sequence is not divergence; a run whose newest window is far above
+    its first window is.
+    """
+    assert not _window_exploded([2.0, 8.0, 2.0, 2.0, 2.0, 2.0])
+    assert _window_exploded([2.0] * DIVERGENCE_WINDOW + [8.0] * DIVERGENCE_WINDOW)
 
 
 def test_the_adapter_it_saves_names_its_backend(tmp_path: Path) -> None:

@@ -23,6 +23,22 @@ from internal_ai.training.alpha.pin import RECIPE, PinnedBase, verify_snapshot
 BACKEND = "peft"
 TARGET_MODULES = ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj")
 DIVERGENCE_FACTOR = 3.0
+DIVERGENCE_WINDOW = 5
+
+
+def _window_exploded(losses: list[float]) -> bool:
+    """Whether the run's newest window sits far above its first window.
+
+    Sequences differ in difficulty, so a single step three times the first one
+    is ordinariness, not divergence; the mean of the newest window against the
+    mean of the first window does not move for one hard sequence. A run needs
+    more steps than a window to be judged by one.
+    """
+    if len(losses) < DIVERGENCE_WINDOW:
+        return False
+    first = sum(losses[:DIVERGENCE_WINDOW]) / DIVERGENCE_WINDOW
+    recent = sum(losses[-DIVERGENCE_WINDOW:]) / DIVERGENCE_WINDOW
+    return first > 0 and recent > DIVERGENCE_FACTOR * first
 
 
 class AdaptationUnavailable(RuntimeError):
@@ -200,12 +216,12 @@ def adapt(
             scheduler.step()
             optimizer.zero_grad(set_to_none=True)
             losses.append(float(loss.detach()))
-            if losses[0] > 0 and losses[-1] > DIVERGENCE_FACTOR * losses[0]:
+            if _window_exploded(losses):
                 diverged_at = len(losses)
                 break
         if diverged_at is not None:
             break
-    if diverged_at is not None and len(losses) < len(sequences):
+    if diverged_at is not None:
         raise ValueError(
             f"the loss diverged at step {diverged_at}; the run produced nothing worth keeping"
         )
