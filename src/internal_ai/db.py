@@ -189,7 +189,7 @@ CREATE TABLE IF NOT EXISTS datasets (
 );
 
 CREATE TABLE IF NOT EXISTS dataset_records (
-    id TEXT PRIMARY KEY,
+    id TEXT NOT NULL,
     dataset_id TEXT NOT NULL REFERENCES datasets(id),
     record_key TEXT NOT NULL,
     payload TEXT NOT NULL,
@@ -198,7 +198,8 @@ CREATE TABLE IF NOT EXISTS dataset_records (
     acl TEXT NOT NULL DEFAULT '[]',
     tokens INTEGER NOT NULL DEFAULT 0,
     split TEXT NOT NULL DEFAULT '',
-    meta TEXT NOT NULL DEFAULT '{}'
+    meta TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY (dataset_id, id)
 );
 CREATE INDEX IF NOT EXISTS idx_dataset_records_dataset ON dataset_records(dataset_id);
 
@@ -432,6 +433,42 @@ def init_db(conn: sqlite3.Connection) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(dataset_records)").fetchall()}
     if "split" not in columns:
         conn.execute("ALTER TABLE dataset_records ADD COLUMN split TEXT NOT NULL DEFAULT ''")
+    keys = [
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(dataset_records)").fetchall()
+        if row["pk"]
+    ]
+    if keys == ["id"]:
+        # Record ids come from the record, so rebuilding a corpus offers the same
+        # ids again. With the id as the whole key, that insert replaced the older
+        # version's rows and moved them to the new version: a released dataset
+        # read as empty while still claiming its record count.
+        conn.executescript(
+            """
+            CREATE TABLE dataset_records_by_version (
+                id TEXT NOT NULL,
+                dataset_id TEXT NOT NULL REFERENCES datasets(id),
+                record_key TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                sensitivity TEXT NOT NULL DEFAULT 'internal',
+                acl TEXT NOT NULL DEFAULT '[]',
+                tokens INTEGER NOT NULL DEFAULT 0,
+                split TEXT NOT NULL DEFAULT '',
+                meta TEXT NOT NULL DEFAULT '{}',
+                PRIMARY KEY (dataset_id, id)
+            );
+            INSERT INTO dataset_records_by_version
+                (id, dataset_id, record_key, payload, source_id, sensitivity, acl, tokens,
+                 split, meta)
+                SELECT id, dataset_id, record_key, payload, source_id, sensitivity, acl, tokens,
+                       split, meta FROM dataset_records;
+            DROP TABLE dataset_records;
+            ALTER TABLE dataset_records_by_version RENAME TO dataset_records;
+            CREATE INDEX IF NOT EXISTS idx_dataset_records_dataset
+                ON dataset_records(dataset_id);
+            """
+        )
     token_columns = {
         row["name"] for row in conn.execute("PRAGMA table_info(api_tokens)").fetchall()
     }
