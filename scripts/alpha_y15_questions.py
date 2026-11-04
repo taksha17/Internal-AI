@@ -4,8 +4,13 @@
 Every question names one line in the held-out split, carries the answer that
 line supports, and is checked before it is filed: the reference answer must
 survive the same citation scorer the adapted model will be judged by, or the
-question measures nothing. The set is then frozen behind ``eval_set_freeze``,
-which is the point at which it stops being something a model can be tuned to.
+question measures nothing.
+
+Filing is all this script does. ``eval_set_freeze`` is then opened for a domain
+expert to request and an ml lead to decide, and the set stays unfrozen until a
+person has decided it -- freezing is the point at which the set stops being
+something a model can be tuned to, so it cannot be the step an agent takes on
+their own behalf.
 
     .venv/bin/python scripts/alpha_y15_questions.py --root var_alpha/install \\
         --dataset ds_9350fb760231
@@ -20,10 +25,10 @@ from pathlib import Path
 from typing import Any
 
 from internal_ai.context import Platform
-from internal_ai.domain import GateType
 from internal_ai.evals.harness import EvalHarness
 from internal_ai.people import PeopleRegistry
-from internal_ai.services.build import eval_set_leakage
+from internal_ai.services import build
+from internal_ai.services.actor import Actor
 from internal_ai.training.alpha.citations import AskHit, score_answer
 
 # (citation, question, answer supported by that line)
@@ -213,8 +218,6 @@ QUESTIONS: tuple[tuple[str, str, str], ...] = (
     ),
 )
 
-PROXY_NOTE = "approved in writing by the owner, recorded by the agent acting on that instruction"
-
 
 def build_items(platform: Platform, dataset_id: str) -> list[dict[str, Any]]:
     held_out = {
@@ -249,6 +252,12 @@ def build_items(platform: Platform, dataset_id: str) -> list[dict[str, Any]]:
     return items
 
 
+def _actor(platform: Platform, role: str) -> Actor | None:
+    people = PeopleRegistry(platform.store).list_people()
+    real = [person for person in people if role in person["roles"] and not person["placeholder"]]
+    return Actor.from_person(real[0], authenticated=True) if real else None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path("var_alpha/install"))
@@ -264,40 +273,29 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             print(f"refused: {exc}", file=sys.stderr)
             return 1
+        # An expert writes the questions and the ml lead decides the freeze, so
+        # the requester is never the person who approves their own set.
+        actor = _actor(platform, "domain_expert")
+        if actor is None:
+            print("refused: no account holds the domain_expert role", file=sys.stderr)
+            return 1
         harness = EvalHarness(platform.store, platform.audit)
-        eval_set = harness.create_eval_set(args.name, items)
-        leakage = eval_set_leakage(platform, eval_set.id)
-        if not leakage["passed"]:
-            print(f"refused: the set would leak {leakage['outside_test_split']}", file=sys.stderr)
+        eval_set = harness.create_eval_set(args.name, items, actor=actor.id)
+        try:
+            gate = build.request_freeze(platform, actor, eval_set.id)
+        except ValueError as exc:
+            print(f"refused: {exc}", file=sys.stderr)
             return 1
-        gate = platform.gates.request(
-            GateType.EVAL_SET_FREEZE,
-            f"Freeze {args.name} v{eval_set.version}",
-            eval_set.id,
-            requested_by="evaluation",
-            evidence={
-                "coverage_analysis": (
-                    f"{leakage['items']} questions over {leakage['relevant_documents']} held-out "
-                    f"documents from sources {', '.join(leakage['datasets'])}"
-                ),
-                "leakage_check": json.dumps(leakage, sort_keys=True),
-            },
-        )
-        approver = PeopleRegistry(platform.store).get("Meera Nair")
-        if approver is None:
-            print("refused: no ml lead is enrolled in this install", file=sys.stderr)
-            return 1
-        platform.gates.decide(
-            gate.id, approver["name"], approved=True, note=PROXY_NOTE, evidence=gate.evidence
-        )
-        frozen = harness.freeze_eval_set(eval_set.id, approver["name"], gate_approved=True)
         result = {
-            "eval_set_id": frozen.id,
-            "items": len(frozen.items),
-            "frozen": frozen.frozen,
-            "approved_by": frozen.approved_by,
-            "content_hash": frozen.content_hash,
+            "eval_set_id": eval_set.id,
+            "items": len(eval_set.items),
+            "content_hash": eval_set.content_hash,
             "gate_id": gate.id,
+            "frozen": False,
+            "note": (
+                "the set is not frozen: deciding eval_set_freeze is a person's job, and "
+                "freezing without a decided gate is refused"
+            ),
             "dataset_id": args.dataset,
         }
         args.out.parent.mkdir(parents=True, exist_ok=True)
