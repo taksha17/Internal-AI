@@ -17,6 +17,7 @@ class CitedAnswer:
     passed: bool
     model: str
     mismatches: tuple[str, ...]
+    prompt: str = ""
 
 
 def selection_candidates(
@@ -36,12 +37,36 @@ def selection_candidates(
     return candidates
 
 
+def with_context(prompt: str, system: str, history: Sequence[tuple[str, str]]) -> str:
+    """Put the conversation above the selection prompt instead of inside it.
+
+    The tail ``Question: … / Candidates: … / Answer:`` is the text the adapter was
+    trained and scored in, so context a client sends joins it as a preamble: the
+    part that decides the answer's shape stays byte-identical to training, and a
+    system prompt or an earlier turn is read rather than silently dropped.
+    """
+    lines: list[str] = []
+    if system.strip():
+        lines.append(f"System: {system.strip()}")
+    for role, text in history:
+        if text.strip():
+            lines.append(f"{role.strip().capitalize()}: {text.strip()}")
+    if not lines:
+        return prompt
+    return "\n".join(lines) + "\n\n" + prompt
+
+
 def cited_answer(
     adapter: LLMAdapter,
     question: str,
     hits: list[AskHit],
     excerpts: list[str] | None = None,
     training_texts: Sequence[str] | None = None,
+    *,
+    system: str = "",
+    history: Sequence[tuple[str, str]] = (),
+    max_tokens: int = 400,
+    temperature: float = 0.0,
 ) -> CitedAnswer:
     """Ask the on-prem runner, then drop a reply that miscites or recites its corpus.
 
@@ -54,12 +79,13 @@ def cited_answer(
         prompt = prompt_for_candidates(question.strip(), selection_candidates(hits, excerpts))
     else:
         prompt = prompt_for(question.strip())
-    completion = adapter.complete(prompt, max_tokens=400, temperature=0.0)
+    prompt = with_context(prompt, system, history)
+    completion = adapter.complete(prompt, max_tokens=max_tokens, temperature=temperature)
     report = score_answer(completion.text, hits)
     recall = probe(completion.text, training_texts or [])
     if report.passed and recall.passed:
-        return CitedAnswer(completion.text.strip(), True, completion.model, ())
+        return CitedAnswer(completion.text.strip(), True, completion.model, (), prompt)
     problems = list(report.mismatches)
     problems.extend(f"repeats {span!r} from the training data" for span in recall.repeated[:3])
     safe = "\n".join(f"{hit.path}:{hit.line}" for hit in hits)
-    return CitedAnswer(safe, False, completion.model, tuple(problems))
+    return CitedAnswer(safe, False, completion.model, tuple(problems), prompt)

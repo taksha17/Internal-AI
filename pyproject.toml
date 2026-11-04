@@ -25,6 +25,7 @@ dev = [
     "pytest>=8.3",
     "pytest-cov>=6.0",
     "ruff>=0.7",
+    "openai>=1.40",
 ]
 train = ["torch>=2.4"]
 alpha = [

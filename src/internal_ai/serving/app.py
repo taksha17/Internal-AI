@@ -14,7 +14,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from internal_ai.context import Platform
 from internal_ai.data.tokenizer import Tokenizer
@@ -70,10 +70,24 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    """An OpenAI-shaped request: what this install honours, and nothing silent.
+
+    ``extra="forbid"`` is the point of the model: a field this install cannot
+    honour is a 422 naming it, rather than a value Pydantic quietly dropped.
+    ``stop``, ``seed`` and ``n`` are declared so the refusal can name them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
     model: str = ""
     messages: list[ChatMessage] = Field(default_factory=list)
     stream: bool = False
     top_k: int = 5
+    max_tokens: int | None = Field(default=None, ge=1, le=4096)
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    n: int = 1
+    stop: list[str] | str | None = None
+    seed: int | None = None
 
 
 def create_serving_app(
@@ -90,6 +104,7 @@ def create_serving_app(
         app.state.router = ModelRouter(platform.store, platform.audit)
         app.state.retrieval = RetrievalService(platform.store, platform.audit)
         app.state.embedders: dict[str, TorchEmbedder] = {}
+        app.state.tokenizers: dict[str, Any] = {}
         try:
             yield
         finally:
@@ -108,10 +123,23 @@ def create_serving_app(
     def get_platform() -> Platform:
         return app.state.platform
 
-    def authenticate(x_internal_key: str | None = Header(default=None)) -> Principal:
+    def authenticate(
+        x_internal_key: str | None = Header(default=None),
+        authorization: str | None = Header(default=None),
+    ) -> Principal:
+        """The key in either the install's own header or an OpenAI-shaped Bearer.
+
+        The official client only ever sends ``Authorization: Bearer``, so an
+        endpoint that calls itself OpenAI-compatible has to read it.
+        """
         if not key_table:
             raise HTTPException(status_code=503, detail="no serving keys configured")
-        principal = key_table.get(x_internal_key or "")
+        bearer = ""
+        if authorization:
+            scheme, _, value = authorization.partition(" ")
+            if scheme.lower() == "bearer":
+                bearer = value.strip()
+        principal = key_table.get(bearer or x_internal_key or "")
         if principal is None:
             raise HTTPException(status_code=401, detail="invalid api key")
         if not limiter.allow(principal.user_id):
@@ -238,6 +266,31 @@ def create_serving_app(
         rows = platform.store.dataset_records(model.dataset_ids[0])
         step = max(len(rows) // MEMORISATION_SAMPLE, 1)
         return [row["payload"] for row in rows[::step][:MEMORISATION_SAMPLE]]
+
+    def token_counter(model: ModelVersion) -> Any | None:
+        """The tokenizer that sits beside the model, or None if this install has none.
+
+        An adapter directory carries the tokenizer it was trained with, so usage
+        counts the tokens the model actually read and wrote instead of splitting
+        on whitespace.
+        """
+        if not model.path:
+            return None
+        if model.path in app.state.tokenizers:
+            return app.state.tokenizers[model.path]
+        path = Path(model.path)
+        if not path.is_dir() or not (path / "tokenizer.json").exists():
+            return None
+        try:
+            from tokenizers import Tokenizer
+        except ImportError:
+            return None
+        counter = Tokenizer.from_file(str(path / "tokenizer.json"))
+        app.state.tokenizers[model.path] = counter
+        return counter
+
+    def count_tokens(counter: Any | None, text: str) -> int:
+        return len(text.split()) if counter is None else len(counter.encode(text).ids)
 
     def embedder_for(model_path: str) -> TorchEmbedder:
         embedders: dict[str, TorchEmbedder] = app.state.embedders
@@ -517,18 +570,43 @@ def create_serving_app(
         from internal_ai.training.alpha.citations import AskHit
         from internal_ai.training.alpha.local import LocalGenerationUnavailable, answer_adapter
 
-        question = next(
+        asked = max(
             (
-                message.content.strip()
-                for message in reversed(request.messages)
+                index
+                for index, message in enumerate(request.messages)
                 if message.role == "user" and message.content.strip()
             ),
-            "",
+            default=None,
         )
-        if not question:
+        if asked is None:
             raise HTTPException(status_code=400, detail="the last user message is empty")
+        question = request.messages[asked].content.strip()
         if not 1 <= request.top_k <= 20:
             raise HTTPException(status_code=400, detail="top_k must be between 1 and 20")
+        for name, value in (("stop", request.stop), ("seed", request.seed)):
+            if value is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"{name} is not supported by this install: the answer is one "
+                        "cited selection, not a sampled completion"
+                    ),
+                )
+        if request.n != 1:
+            raise HTTPException(
+                status_code=400,
+                detail="n must be 1: this install returns one cited answer per request",
+            )
+        system_prompt = "\n".join(
+            message.content.strip()
+            for message in request.messages
+            if message.role == "system" and message.content.strip()
+        )
+        history = [
+            (message.role, message.content)
+            for message in request.messages[:asked]
+            if message.role in {"user", "assistant"} and message.content.strip()
+        ]
 
         platform = get_platform()
         model = served_by(request.model, principal)
@@ -571,6 +649,10 @@ def create_serving_app(
                     citations,
                     excerpts,
                     training_texts=memorisation_sources(platform),
+                    system=system_prompt,
+                    history=history,
+                    max_tokens=request.max_tokens or 400,
+                    temperature=request.temperature if request.temperature is not None else 0.0,
                 )
             except FileNotFoundError as exc:
                 raise HTTPException(
@@ -661,8 +743,9 @@ def create_serving_app(
                 latency_ms=latency,
                 failure="" if result.passed else FAILURE_CITATION,
             )
-            prompt_words = len(question.split()) + sum(len(hit.snippet.split()) for hit in hits)
-            answer_words = len(result.text.split())
+            counter = token_counter(model)
+            prompt_words = count_tokens(counter, result.prompt)
+            answer_words = count_tokens(counter, result.text)
             return {
                 **completion,
                 "choices": [
@@ -677,7 +760,11 @@ def create_serving_app(
                     "completion_tokens": answer_words,
                     "total_tokens": prompt_words + answer_words,
                 },
-                "usage_note": "whitespace counts; this install reports no billing tokens",
+                "usage_note": (
+                    "counts from the tokenizer shipped beside the model"
+                    if counter is not None
+                    else "whitespace counts; no tokenizer ships beside this model"
+                ),
                 "citation_passed": result.passed,
                 "mismatches": list(result.mismatches),
                 "guardrail_violations": violations,
