@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Take a public corpus through the governed data path, so questions can be frozen.
 
+``--holdout-documents`` splits by document instead of by paragraph: a held-out
+line whose neighbours are in the training text can be answered by having read
+the paragraph beside it, and no report on such a set can tell reading from
+recall.
+
 The freeze gate refuses an eval set whose labelled documents are not in a
 released dataset's held-out split, so the corpus has to be released first. This
 runs that path in the order the pipeline enforces: ingest, split, measure the
@@ -62,10 +67,34 @@ def enrol(platform: Platform) -> dict[str, dict[str, Any]]:
     return enrolled
 
 
-def build_and_ask(platform: Platform, corpus: Path, name: str) -> dict[str, Any]:
+def build_and_ask(
+    platform: Platform,
+    corpus: Path,
+    name: str,
+    version: int = 1,
+    by_document: bool = False,
+    holdout: set[str] | None = None,
+) -> dict[str, Any]:
     people = enrol(platform)
-    build = build_corpus(platform, [corpus], name=name, approved=True)
-    split = split_corpus(platform, build.dataset_id)
+    build = build_corpus(platform, [corpus], name=name, version=version, approved=True)
+    split = split_corpus(
+        platform,
+        build.dataset_id,
+        document_holdout=by_document,
+        test_groups=holdout,
+    )
+    held: set[str] = set()
+    if by_document:
+        held = {
+            str(row["record_key"]).rsplit(":", 1)[0]
+            for row in platform.store.dataset_records_by_split(build.dataset_id, "test")
+        }
+        missing = sorted((holdout or set()) - held)
+        if missing:
+            raise ValueError(
+                "those documents are not in the corpus, so naming them holds nothing out: "
+                + ", ".join(missing)
+            )
     tokenizer, coverage = train_tokenizer_for(platform, build.dataset_id, vocab_size=4000)
     pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
     dataset = platform.store.get_dataset(build.dataset_id) or build
@@ -93,6 +122,8 @@ def build_and_ask(platform: Platform, corpus: Path, name: str) -> dict[str, Any]
         "tokenizer": coverage.get("tokenizer_path"),
         "shards": coverage.get("shards"),
         "language_review": {"sampled": review["sampled"], "wrong": review["wrong"]},
+        "holdout_documents": sorted(held),
+        "grouped_by": split.stats.get("grouped_by"),
         "release_gate": gate.id,
         "released": False,
         "note": (
@@ -122,6 +153,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--corpus", type=Path, default=Path("var_alpha/corpus.jsonl"))
     parser.add_argument("--root", type=Path, default=Path("var_alpha/install"))
     parser.add_argument("--name", default="rfc")
+    parser.add_argument("--version", type=int, default=1)
+    parser.add_argument(
+        "--split-by-document",
+        action="store_true",
+        help="hold whole documents out instead of splitting paragraphs",
+    )
+    parser.add_argument(
+        "--holdout-documents",
+        default="",
+        help="comma-separated documents to hold out whatever the bucket says; implies the mode",
+    )
     parser.add_argument("--out", type=Path, default=Path("var_alpha/dataset.json"))
     parser.add_argument(
         "--release",
@@ -142,7 +184,15 @@ def main(argv: list[str] | None = None) -> int:
                 filed = json.loads(args.out.read_text(encoding="utf-8"))
                 result = {**filed, **release_filed(platform, str(filed["dataset_id"]))}
             else:
-                result = build_and_ask(platform, args.corpus, args.name)
+                named = {name.strip() for name in args.holdout_documents.split(",") if name.strip()}
+                result = build_and_ask(
+                    platform,
+                    args.corpus,
+                    args.name,
+                    version=args.version,
+                    by_document=args.split_by_document or bool(named),
+                    holdout=named or None,
+                )
         except (PermissionError, ValueError, KeyError) as exc:
             print(f"refused: {exc}", file=sys.stderr)
             return 1

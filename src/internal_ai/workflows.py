@@ -65,7 +65,13 @@ def build_corpus(
     )
 
 
-def split_corpus(platform: Platform, dataset_id: str, seed: str = "forge-v1") -> SplitResult:
+def split_corpus(
+    platform: Platform,
+    dataset_id: str,
+    seed: str = "forge-v1",
+    document_holdout: bool = False,
+    test_groups: set[str] | None = None,
+) -> SplitResult:
     dataset = platform.store.get_dataset(dataset_id)
     if dataset is None:
         raise KeyError(f"unknown dataset: {dataset_id}")
@@ -85,7 +91,8 @@ def split_corpus(platform: Platform, dataset_id: str, seed: str = "forge-v1") ->
         )
         for row in rows
     ]
-    result = make_splits(records, seed=seed)
+    group_of = (lambda record: record.record_key.rsplit(":", 1)[0]) if document_holdout else None
+    result = make_splits(records, seed=seed, group_of=group_of, test_groups=test_groups)
     assignments: dict[str, str] = {}
     for split_name, split_records in result.splits.items():
         for record in split_records:

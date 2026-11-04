@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -17,9 +18,13 @@ class SplitResult:
     stats: dict[str, Any] = field(default_factory=dict)
 
 
-def _bucket(record: Record, seed: str) -> float:
-    digest = hashlib.blake2b(f"{seed}:{record.record_key}".encode(), digest_size=8).digest()
+def _bucket(key: str, seed: str) -> float:
+    digest = hashlib.blake2b(f"{seed}:{key}".encode(), digest_size=8).digest()
     return int.from_bytes(digest, "big") / float(1 << 64)
+
+
+def _record_bucket(record: Record, seed: str) -> float:
+    return _bucket(record.record_key, seed)
 
 
 def make_splits(
@@ -27,17 +32,38 @@ def make_splits(
     ratios: tuple[float, float, float] = (0.8, 0.1, 0.1),
     seed: str = "forge-v1",
     leakage_threshold: int = 3,
+    group_of: Callable[[Record], str] | None = None,
+    test_groups: set[str] | None = None,
 ) -> SplitResult:
     """Split records deterministically and drop cross-split near duplicates.
 
     The default seed is kept as it was issued before the rename: it is the
     identifier the released dataset versions were split with, and changing it
     would silently produce a different assignment for every corpus.
+
+    ``group_of`` holds whole groups out together, hashing the group's name
+    instead of each record's. Splitting paragraphs lets a held-out line sit next
+    to its neighbour in the training text, so a model can answer a question
+    about it by having read the paragraph beside it; a document-level holdout is
+    the only version of that test a reader can believe. ``test_groups`` names
+    groups a person chose to hold out, because with a handful of documents the
+    bucket alone can put every small one in test and leave nothing to ask about.
     """
     train_ratio, val_ratio, _ = ratios
+    forced = set(test_groups or ())
     splits: dict[str, list[Record]] = {"train": [], "validation": [], "test": []}
+    groups: Counter[str] = Counter()
     for record in records:
-        value = _bucket(record, seed)
+        if group_of is None:
+            value = _record_bucket(record, seed)
+            group = ""
+        else:
+            group = group_of(record)
+            groups[group] += 1
+            if group in forced:
+                splits["test"].append(record)
+                continue
+            value = _bucket(group, seed)
         if value < train_ratio:
             splits["train"].append(record)
         elif value < train_ratio + val_ratio:
@@ -64,7 +90,7 @@ def make_splits(
             kept.append(record)
         splits[name] = kept
 
-    stats = {
+    stats: dict[str, Any] = {
         "seed": seed,
         "ratios": list(ratios),
         "counts": {name: len(items) for name, items in splits.items()},
@@ -72,6 +98,10 @@ def make_splits(
         "contamination_total": sum(removed.values()),
         "leakage_guard": "simhash_hamming",
     }
+    if group_of is not None:
+        stats["grouped_by"] = "document"
+        stats["groups"] = dict(sorted(groups.items()))
+        stats["test_groups"] = sorted(forced)
     return SplitResult(splits=splits, stats=stats)
 
 
