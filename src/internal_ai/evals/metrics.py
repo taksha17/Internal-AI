@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from collections import Counter
 from collections.abc import Sequence
 
@@ -123,6 +124,51 @@ def exact_match(predictions: Sequence[str], references: Sequence[str]) -> float:
         / len(references),
         6,
     )
+
+
+def token_f1(prediction: str, reference: str) -> float:
+    """The SQuAD overlap score between an extractive answer and its reference span.
+
+    A citation check says a line number landed on the line the answer named. It
+    says nothing about the sentence around it: an answer can cite the right line
+    and still say the opposite of what is written there. This scores the words,
+    so the two can be reported side by side.
+
+    Punctuation and articles are dropped before counting, because whether an
+    answer writes "the server" or "a server" is not a difference in what it
+    asserts, and counting it as one would make a correct answer look partial.
+    Empty text scores zero rather than dividing by nothing; an answer that is
+    only a citation has not answered.
+    """
+    predicted = _content_tokens(prediction)
+    expected = _content_tokens(reference)
+    if not predicted or not expected:
+        return 0.0
+    overlap = sum((Counter(predicted) & Counter(expected)).values())
+    if not overlap:
+        return 0.0
+    precision = overlap / len(predicted)
+    recall = overlap / len(expected)
+    return round(2 * precision * recall / (precision + recall), 6)
+
+
+_ARTICLES = frozenset({"a", "an", "the"})
+_WORD = re.compile(r"[a-z0-9]+")
+
+
+def _content_tokens(text: str) -> list[str]:
+    return [word for word in _WORD.findall(text.lower()) if word not in _ARTICLES]
+
+
+def extractive_f1(predictions: Sequence[str], references: Sequence[str]) -> float:
+    """The mean overlap across a set of answers, which is the figure a report carries."""
+    if not references:
+        return 0.0
+    scores = [
+        token_f1(prediction, reference)
+        for prediction, reference in zip(predictions, references, strict=False)
+    ]
+    return round(sum(scores) / len(references), 6)
 
 
 def token_accuracy(

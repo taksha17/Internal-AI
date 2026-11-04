@@ -134,7 +134,11 @@ def test_an_adapter_that_loses_to_its_base_is_refused_with_both_numbers(
     assert check["base_citation_pass_rate"] == 1.0
     assert "loses to its base" in check["note"]
     assert report.metrics["citation_pass_rate"] == 0.0
-    assert report.baseline_metrics == {"citation_pass_rate": 1.0}
+    assert report.baseline_metrics["citation_pass_rate"] == 1.0
+    # Both answers only point at the line, and neither says what it holds: the
+    # answer figure is carried so that gap is reported, not hidden by the citation.
+    assert report.metrics["answer_f1"] == 0.0
+    assert report.baseline_metrics["answer_f1"] < 0.5
 
 
 def test_matching_the_base_is_not_beating_it(platform, enroll_person, tmp_path: Path) -> None:

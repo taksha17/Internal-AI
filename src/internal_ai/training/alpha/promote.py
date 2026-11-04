@@ -11,6 +11,7 @@ from internal_ai.data.records import Record
 from internal_ai.data.splits import contamination_report
 from internal_ai.data.transforms import PII_PATTERNS
 from internal_ai.domain import AuditOutcome, EvalReport, EvalSet, GateType, ModelVersion
+from internal_ai.evals.metrics import token_f1
 from internal_ai.ids import content_hash, file_hash, new_id, now_iso
 from internal_ai.services import governance
 from internal_ai.services.actor import Actor
@@ -18,7 +19,13 @@ from internal_ai.services.alpha import reproducibility_beside
 from internal_ai.services.permissions import Action, require
 from internal_ai.training.alpha.audience import audience_for
 from internal_ai.training.alpha.card import alpha_card
-from internal_ai.training.alpha.citations import LINE_NUMBER, AskHit, CitationReport, score_answer
+from internal_ai.training.alpha.citations import (
+    LINE_NUMBER,
+    AskHit,
+    CitationReport,
+    score_answer,
+    without_citation,
+)
 from internal_ai.training.alpha.pin import FALLBACK, PRIMARY, RECIPE, LicenseClass, PinnedBase
 from internal_ai.training.ownership import require_released_dataset
 from internal_ai.training.provenance import provenance_mode
@@ -201,9 +208,24 @@ def _alpha_contamination(
     return contamination_report(eval_records, training)
 
 
+def _reference_span(item: dict[str, Any]) -> str:
+    """The text an answer is scored against: the span a person checked.
+
+    A set built from line-addressed records carries the reference as the item's
+    own ``answer``; the older sets carry only the retrieved hit it was written
+    from, which is the same line. An item with neither is scored as unanswered
+    rather than skipped, so one missing span cannot raise the mean.
+    """
+    written = str(item.get("answer") or "").strip()
+    if written:
+        return written
+    hits = item.get("hits") or []
+    return str(hits[0].get("text") or "") if hits else ""
+
+
 def _score_answers(
     eval_set: EvalSet, answers: list[str], require_citation: bool = False
-) -> tuple[int, list[str], list[dict[str, str]], list[float]]:
+) -> tuple[int, list[str], list[dict[str, str]], list[float], list[float]]:
     """How many answers kept their citations, which ones did not, what leaked.
 
     The per-question flags are returned as well: promotion compares the adapter
@@ -218,6 +240,7 @@ def _score_answers(
     mismatches: list[str] = []
     leaks: list[dict[str, str]] = []
     kept: list[float] = []
+    overlaps: list[float] = []
     cited = 0
     for item, answer in zip(eval_set.items, answers, strict=True):
         hits = [AskHit(str(hit["path"]), int(hit["line"])) for hit in item.get("hits", [])]
@@ -227,8 +250,13 @@ def _score_answers(
         if passed:
             cited += 1
         kept.append(1.0 if passed else 0.0)
+        overlaps.append(token_f1(without_citation(answer), _reference_span(item)))
         leaks.extend(_pii_leaks(answer, list(item.get("hits", []))))
-    return cited, mismatches, leaks, kept
+    return cited, mismatches, leaks, kept, overlaps
+
+
+def _mean_overlap(scores: list[float]) -> float:
+    return round(sum(scores) / len(scores), 6) if scores else 0.0
 
 
 def keyword_baseline_answers(platform: Platform, eval_set: EvalSet, dataset_id: str) -> list[str]:
@@ -311,22 +339,27 @@ def evaluate_alpha(
             raise ValueError(
                 f"the eval set has {total} questions and {len(supplied)} {label} were given"
             )
-    cited, mismatches, leaks, kept = _score_answers(eval_set, answers, require_citation=True)
-    base_cited, base_mismatches, _, base_kept = _score_answers(
+    cited, mismatches, leaks, kept, overlaps = _score_answers(
+        eval_set, answers, require_citation=True
+    )
+    base_cited, base_mismatches, _, base_kept, base_overlaps = _score_answers(
         eval_set, baseline_answers, require_citation=True
     )
     rate = round(cited / total, 6) if total else 0.0
     base_rate = round(base_cited / total, 6) if total else 0.0
+    answered = _mean_overlap(overlaps)
+    base_answered = _mean_overlap(base_overlaps)
     if not model.dataset_ids:
         raise ValueError(
             "alpha evaluation needs the dataset the adapter learned from, so a keyword "
             "search can be scored against the same corpus"
         )
     keyword_answers = keyword_baseline_answers(platform, eval_set, str(model.dataset_ids[0]))
-    keyword_cited, keyword_mismatches, _, keyword_kept = _score_answers(
+    keyword_cited, keyword_mismatches, _, keyword_kept, keyword_overlaps = _score_answers(
         eval_set, keyword_answers, require_citation=True
     )
     keyword_rate = round(keyword_cited / total, 6) if total else 0.0
+    keyword_answered = _mean_overlap(keyword_overlaps)
     if cited > base_cited:
         verdict = (
             f"the adapter kept {cited} of {total} citations and its un-adapted base kept "
@@ -376,8 +409,8 @@ def evaluate_alpha(
             "note": keyword_verdict,
         },
     }
-    metrics = {"citation_pass_rate": rate}
-    baseline_metrics = {"citation_pass_rate": base_rate}
+    metrics = {"citation_pass_rate": rate, "answer_f1": answered}
+    baseline_metrics = {"citation_pass_rate": base_rate, "answer_f1": base_answered}
     passed = all(bool(check.get("passed")) for check in checks.values())
     eval_report = EvalReport(
         id=new_id("rep"),
@@ -391,7 +424,12 @@ def evaluate_alpha(
                 "candidate": kept,
                 "baseline": base_kept,
                 "keyword": keyword_kept,
-            }
+            },
+            "answer_f1": {
+                "candidate": overlaps,
+                "baseline": base_overlaps,
+                "keyword": keyword_overlaps,
+            },
         },
         checks=checks,
         passed=passed,
@@ -403,6 +441,11 @@ def evaluate_alpha(
             else "an answer moved a citation, leaked personal data, overlapped the training "
             f"text, or did not beat the un-adapted base ({cited} of {total} against {base_cited}) "
             f"and the keyword search ({keyword_cited})"
+        )
+        + (
+            "; the answers themselves overlapped their reference spans at extractive F1 "
+            f"{answered:.2f} against the base's {base_answered:.2f} and a keyword search's "
+            f"{keyword_answered:.2f}, which a citation count alone cannot say"
         ),
     )
     platform.store.add_eval_report(eval_report)

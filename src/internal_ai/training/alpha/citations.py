@@ -17,6 +17,9 @@ PATH_RUN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]*")
 # stands on its own, so `app.ts` is not cited by `src/app.ts`.
 _PATH_BODY = r"A-Za-z0-9_/-"
 
+# A citation written inline: the record key a line-addressed store uses.
+_KEY_IN_TEXT = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]*:\d+")
+
 
 @dataclass(frozen=True, slots=True)
 class AskHit:
@@ -82,6 +85,40 @@ def _named_paths(sentence: str, known: dict[str, int]) -> list[str]:
             continue
         named.append(token)
     return named
+
+
+def _drop_citation_group(match: re.Match[str]) -> str:
+    """A bracketed parenthetical is citation text only when a citation is in it.
+
+    "(Unauthorized)" is part of what the sentence says and is left alone; the
+    line-addressed key in "(rfc/rfc7235.txt:312)" is not.
+    """
+    inner = match.group(0)
+    if _KEY_IN_TEXT.search(inner) or LINE_NUMBER.search(inner):
+        return " "
+    return inner
+
+
+def _drop_file_token(match: re.Match[str]) -> str:
+    token = match.group(0).rstrip(".")
+    # A slash between numbers is a status pair or a fraction, not a file.
+    return " " if _names_a_file(token) else match.group(0)
+
+
+def without_citation(answer: str) -> str:
+    """The answer with its citations removed, for scoring what it actually says.
+
+    A citation and an answer are two different claims, and the report carries a
+    number for each. Leaving the citation in the text would let one claim score
+    the other: an answer that copies a path and a line number without a sentence
+    would earn overlap for words that were never an answer, and a long key would
+    drag a correct sentence's score down instead.
+    """
+    text = re.sub(r"\([^()]*\)", _drop_citation_group, answer)
+    text = _KEY_IN_TEXT.sub(" ", text)
+    text = LINE_NUMBER.sub(" ", text)
+    text = PATH_RUN.sub(_drop_file_token, text)
+    return " ".join(text.split())
 
 
 def score_answer(answer: str, hits: list[AskHit]) -> CitationReport:
