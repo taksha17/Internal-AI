@@ -26,6 +26,7 @@ torch = pytest.importorskip("torch", reason="local generation needs the alpha ex
 save_file = pytest.importorskip(
     "safetensors.torch", reason="local generation needs the alpha extra"
 ).save_file
+pytest.importorskip("tokenizers", reason="local generation needs the alpha extra")
 
 WORDS = ("hello", "world", "the", "ledger", "failed", "[UNK]")
 

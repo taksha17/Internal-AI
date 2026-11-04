@@ -43,3 +43,31 @@ def test_stress_script_clears_the_language_release_gate(tmp_path: Path) -> None:
 
     reached_training = completed.returncode == 0 or "tokens per parameter" in completed.stderr
     assert reached_training, completed.stderr
+
+
+def test_a_run_under_the_floor_refuses_like_a_gate_not_as_a_crash(tmp_path: Path) -> None:
+    """A small --records hits the token floor; the refusal is the answer, not a traceback."""
+    root = tmp_path / "var_stress_floor"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--root",
+            str(root),
+            "--records",
+            "240",
+            "--steps",
+            "2",
+            "--skip-serving",
+            "--skip-console",
+        ],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        timeout=900,
+    )
+
+    assert completed.returncode == 2, completed.stdout
+    assert "tokens per parameter" in completed.stderr
+    assert "refused" in completed.stderr
+    assert "Traceback (most recent call last)" not in completed.stderr

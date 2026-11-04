@@ -499,6 +499,11 @@ def console_phase(root: Path, person: str) -> dict[str, Any]:
         log.close()
 
 
+def refused(reason: str) -> None:
+    """A gate refusal is the answer; a traceback makes it look like a crash."""
+    print(f"refused: {reason}", file=sys.stderr)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default="var_stress")
@@ -620,14 +625,28 @@ def main() -> int:
                 "floor the tokenizer coverage report measures"
             ),
         )
-        outcome = train_embedding_model(
-            platform,
-            dataset_id,
-            tokenizer,
-            config,
-            actor="ml_engineer",
-            pair_mode=args.pair_mode,
-        )
+        try:
+            outcome = train_embedding_model(
+                platform,
+                dataset_id,
+                tokenizer,
+                config,
+                actor="ml_engineer",
+                pair_mode=args.pair_mode,
+            )
+        except PermissionError as exc:
+            if "tokens per parameter" not in str(exc):
+                raise
+            refused(
+                f"the run never reached training: the corpus is {args.records} records, and {exc}"
+            )
+            print(
+                "the floor guards the from-scratch track: clear it with the default record "
+                "count, or with a corpus that clears it in its own right; the README's numbers "
+                "come from a run that did",
+                file=sys.stderr,
+            )
+            return 2
         train_seconds = clock.stop(
             tokens_seen=outcome.tokens_seen,
             final_loss=round(outcome.final_loss, 4),

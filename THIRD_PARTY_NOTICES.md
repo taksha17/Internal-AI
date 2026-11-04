@@ -28,6 +28,8 @@ list must be regenerated whenever a dependency changes.
 | torch | BSD-3-Clause | `train`, `alpha` |
 | safetensors | Apache-2.0 | `alpha` |
 | tokenizers | Apache-2.0 | `alpha` |
+| transformers | Apache-2.0 | `alpha` |
+| peft | MIT | `alpha` |
 
 ## Vendored
 

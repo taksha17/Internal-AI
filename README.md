@@ -189,11 +189,17 @@ you only want the data and training stages.
   and stops itself on divergence or a loss spike.
 - **Evaluation.** Frozen eval sets that only a person can approve, an
   independent evaluation agent, promotion gates, and model cards.
-- **Serving.** Authenticated inference and permission-aware retrieval, per-user
-  rate limits, and rollback.
+- **Serving.** Authenticated inference and permission-aware retrieval over an
+  OpenAI-compatible surface (`/v1/chat/completions`, `/v1/embed`, `/v1/answer`),
+  per-user rate limits, and rollback.
 - **Adaptation.** For companies that decide an existing open base is acceptable,
-  a rank-8 adapter over one pinned base, streamed from disk, recorded on every
-  model card by repo, revision and licence.
+  an adapter over one pinned base, recorded on every model card by repo,
+  revision and licence. Two trainers exist: a streamed rank-8 correction
+  recipe, and the PEFT backend that adapts the pinned base at full depth on
+  this machine; only the full-depth backend may promote. Adapter training runs
+  end to end on a public corpus through the governed export lane
+  (`scripts/alpha_y15_kaggle.py`), which is the Y1.5 scenario the `var_alpha`
+  install documents.
 
 It is not a chat product competing with frontier models, and it is not a
 distillation pipeline.
