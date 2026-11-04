@@ -172,5 +172,10 @@ def answer_adapter(platform: Platform, model: ModelVersion) -> LLMAdapter:
         from internal_ai.llm import LocalRunnerAdapter
 
         return LocalRunnerAdapter()
+    adapter_path = Path(model.path or "")
+    if adapter_path.is_dir() and (adapter_path / "adapter_config.json").exists():
+        from internal_ai.training.alpha.backend import peft_backend
+
+        return peft_backend(platform, model)
     require_open_weights(platform, "answering from the base model")
     return LocalModelAdapter(platform, model)

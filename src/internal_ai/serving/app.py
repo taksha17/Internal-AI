@@ -198,7 +198,13 @@ def create_serving_app(
     @app.get("/health")
     def health() -> dict[str, Any]:
         platform = get_platform()
-        return {"status": "ok", "models": len(platform.store.list_models())}
+        from internal_ai.training.alpha.backend import loaded_adapters
+
+        return {
+            "status": "ok",
+            "models": len(platform.store.list_models()),
+            "loaded_adapters": loaded_adapters(),
+        }
 
     @app.get("/v1/models")
     def list_models(principal: Principal = Depends(authenticate)) -> list[dict[str, Any]]:
