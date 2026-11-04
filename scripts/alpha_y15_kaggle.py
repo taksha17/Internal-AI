@@ -10,6 +10,12 @@ The staged copy of the trainer matters. An adapter only counts if it came from
 the step this repository audits, so the six modules that step needs travel with
 the data, hashed, instead of trusting whatever is installed on a rented box.
 
+The lane is a demo lane, and it is guarded like every data path: the corpus has
+to classify public from end to end, because the package carries raw released
+text outside the boundary; the install has to have switched the offline default
+off explicitly (``INTERNAL_AI_OFFLINE=0``); and the stage leaves an audit event
+naming the dataset, the counts and the commit it staged.
+
     .venv/bin/python scripts/alpha_y15_kaggle.py --root var_alpha/install \\
         --out var_alpha/kaggle
 """
@@ -26,6 +32,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from internal_ai.config import offline_mode
 from internal_ai.context import Platform
 from internal_ai.training.alpha.pin import PRIMARY
 
@@ -88,6 +95,20 @@ def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> d
     dataset = platform.store.get_dataset(dataset_id)
     if dataset is None or not dataset.released:
         raise SystemExit(f"refused: dataset {dataset_id} is not released")
+    records = platform.store.dataset_records(dataset_id)
+    sealed = [row for row in records if str(row.get("sensitivity") or "") != "public"]
+    if sealed:
+        raise SystemExit(
+            f"refused: {len(sealed)} of {len(records)} records in {dataset_id} are not public; "
+            "the export lane writes raw released text to a rented box, so it runs on "
+            "public corpora only"
+        )
+    if offline_mode():
+        raise SystemExit(
+            "refused: staging writes a package to a third-party box and the install is "
+            "offline (the default, INTERNAL_AI_OFFLINE=1); a lab may set "
+            "INTERNAL_AI_OFFLINE=0 for this run"
+        )
     rows = platform.store.dataset_records_by_split(dataset_id, "train")
     if not rows:
         raise SystemExit(f"refused: dataset {dataset_id} has no training split")
@@ -213,6 +234,21 @@ def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> d
         )
         + "\n",
         encoding="utf-8",
+    )
+    platform.audit.record(
+        actor="data_engineer",
+        actor_kind="human",
+        action="remote_training_export",
+        subject=dataset_id,
+        details={
+            "dataset_id": dataset.id,
+            "train_records": len(texts),
+            "questions": len(queries),
+            "corpus_records": len(corpus),
+            "eval_set_id": eval_set.id,
+            "commit": recipe["commit"],
+            "offline_override": offline_mode() is False,
+        },
     )
     return {
         "dataset_dir": str(dataset_dir),
