@@ -16,6 +16,7 @@ from internal_ai.services import governance
 from internal_ai.services.actor import Actor
 from internal_ai.services.alpha import reproducibility_beside
 from internal_ai.services.permissions import Action, require
+from internal_ai.training.alpha.audience import audience_for
 from internal_ai.training.alpha.card import alpha_card
 from internal_ai.training.alpha.citations import LINE_NUMBER, AskHit, CitationReport, score_answer
 from internal_ai.training.alpha.pin import FALLBACK, PRIMARY, RECIPE, LicenseClass, PinnedBase
@@ -68,6 +69,12 @@ def register_alpha(
         card["seed"] = record.get("seed")
         card["run_id"] = record.get("run_id")
         card["adapter_backend"] = record.get("adapter_backend")
+    # What the adapter learned cannot be unlearned, so the card carries the
+    # groups its training text restricted it to, and serving refuses the rest.
+    trained_on = platform.store.dataset_records_by_split(dataset_id, "train") or (
+        platform.store.dataset_records(dataset_id)
+    )
+    card["audience"] = audience_for(trained_on)
     existing = platform.store.list_models(name=base.repo_id.split("/")[-1].lower())
     version = max((item.version for item in existing), default=0) + 1
     model = ModelVersion(

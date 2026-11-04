@@ -27,6 +27,7 @@ from internal_ai.serving.guardrails import (
     validate_output_guardrails,
 )
 from internal_ai.serving.service import (
+    SUPERUSER_GROUP,
     ModelRouter,
     Principal,
     RateLimiter,
@@ -124,11 +125,35 @@ def create_serving_app(
             )
         return principal
 
-    def in_service_model() -> ModelVersion:
+    def audience_refusal(model: ModelVersion, principal: Principal) -> None:
+        """A model that learned from restricted documents answers only its audience.
+
+        Retrieval filters every document, but the weights do not: an adapter can
+        repeat what it learned to anyone who can call it. A principal outside the
+        audience recorded on the card is refused before retrieval or generation.
+        """
+        audience = [str(group) for group in (model.card.get("audience") or [])]
+        if not audience or SUPERUSER_GROUP in principal.groups:
+            return
+        if principal.groups & set(audience):
+            return
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": (
+                    "this model learned from documents that are readable only to "
+                    "its audience, and this key is outside it"
+                ),
+                "audience_groups": sorted(audience),
+            },
+        )
+
+    def in_service_model(principal: Principal) -> ModelVersion:
         """The model this request is answered by, or a refusal that says why not."""
         platform = get_platform()
         model = served_model(platform.store, app.state.router)
         if model is not None:
+            audience_refusal(model, principal)
             return model
         reasons = [
             reason
@@ -142,7 +167,7 @@ def create_serving_app(
             )
         raise HTTPException(status_code=404, detail="no embedding model is registered")
 
-    def served_by(name: str) -> ModelVersion:
+    def served_by(name: str, principal: Principal) -> ModelVersion:
         """The model this request is answered by. A named one is never swapped.
 
         A client that names a model meant that model. Falling back to whichever
@@ -151,9 +176,10 @@ def create_serving_app(
         """
         platform = get_platform()
         if not name:
-            return in_service_model()
+            return in_service_model(principal)
         resolved: ModelVersion | None = app.state.router.resolve(name)
         if resolved is not None:
+            audience_refusal(resolved, principal)
             return resolved
         known = platform.store.list_models(name=name)
         if not known:
@@ -268,7 +294,7 @@ def create_serving_app(
         started = time.monotonic()
         platform = get_platform()
         retrieval: RetrievalService = app.state.retrieval
-        model = in_service_model()
+        model = in_service_model(principal)
         dataset_id = request.dataset_id
         if dataset_id is None:
             dataset_id = model.dataset_ids[0] if model.dataset_ids else None
@@ -314,7 +340,7 @@ def create_serving_app(
     ) -> dict[str, Any]:
         started = time.monotonic()
         platform = get_platform()
-        model = in_service_model()
+        model = in_service_model(principal)
         vectors = embedder_for(embedder_path(model)).embed([request.query])
         latency = (time.monotonic() - started) * 1000
         log_request(platform.audit, principal, "/v1/embed", 200, latency, {"model_id": model.id})
@@ -354,7 +380,7 @@ def create_serving_app(
         # Enforce load ceiling: acquire concurrency semaphore
         with app.state.concurrency_semaphore:
             started = time.monotonic()
-            model = in_service_model()
+            model = in_service_model(principal)
             hits = [AskHit(item.path, item.line) for item in request.hits]
             excerpts = [item.text for item in request.hits]
             try:
@@ -505,7 +531,7 @@ def create_serving_app(
             raise HTTPException(status_code=400, detail="top_k must be between 1 and 20")
 
         platform = get_platform()
-        model = served_by(request.model)
+        model = served_by(request.model, principal)
         dataset_id = model.dataset_ids[0] if model.dataset_ids else ""
         if not dataset_id:
             raise HTTPException(status_code=400, detail="no dataset bound to the model")

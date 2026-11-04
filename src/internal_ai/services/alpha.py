@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from internal_ai.context import Platform
+from internal_ai.data.records import SENSITIVITY_ORDER
 from internal_ai.domain import AuditOutcome, GateStatus, GateType, RunSummary
 from internal_ai.ids import file_hash, new_id, now_iso, tree_hash
 from internal_ai.services.actor import Actor
@@ -71,6 +72,39 @@ def reproducibility_beside(adapter_path: Path) -> dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
+# The most sensitive class an adapter may learn from. A model cannot forget what
+# it was trained on, so a record above this class makes the run a refusal rather
+# than a narrower audience: the people who may not read it would otherwise be
+# answerable from it.
+ADAPTER_SENSITIVITY_CAP = "internal"
+
+
+def _sensitivity_rank(value: str) -> int:
+    """Where a class sits in the order; an unknown class ranks above every known one."""
+    try:
+        return SENSITIVITY_ORDER.index(value)
+    except ValueError:
+        return len(SENSITIVITY_ORDER)
+
+
+def _refuse_above_cap(rows: list[dict[str, Any]]) -> None:
+    cap = _sensitivity_rank(ADAPTER_SENSITIVITY_CAP)
+    above = sorted(
+        {
+            str(row.get("sensitivity") or "internal")
+            for row in rows
+            if str(row["payload"]).strip()
+            and _sensitivity_rank(str(row.get("sensitivity") or "internal")) > cap
+        }
+    )
+    if above:
+        raise PermissionError(
+            f"the released dataset holds {', '.join(above)} records and the adapter "
+            f"sensitivity cap is {ADAPTER_SENSITIVITY_CAP}; a model cannot unlearn what "
+            "it was trained on, so the run is refused"
+        )
+
+
 def _training_text(platform: Platform, dataset_id: str) -> list[str]:
     """The text the adapter learns from: the training split, else every record.
 
@@ -80,6 +114,7 @@ def _training_text(platform: Platform, dataset_id: str) -> list[str]:
     rows = platform.store.dataset_records_by_split(dataset_id, "train")
     if not rows:
         rows = platform.store.dataset_records(dataset_id)
+    _refuse_above_cap(rows)
     texts = [str(row["payload"]) for row in rows if str(row["payload"]).strip()]
     if not texts:
         raise ValueError("the released dataset holds no text to adapt on")
