@@ -46,8 +46,12 @@ EXCLUDED_SENSITIVITY = (
 )
 
 # The classes a source or a row may carry, from the one a reader may see to
-# the one nobody in the company may train on.
+# the one nobody in the company may train on. ``public`` sits at the bottom
+# because text that may leave the boundary has to be able to say so: the rented
+# lanes refuse everything else, and without this value an ingest could never
+# produce a record those lanes would accept.
 SENSITIVITY_ORDER: tuple[str, ...] = (
+    "public",
     "internal",
     "confidential",
     "customer_confidential",
@@ -89,6 +93,11 @@ class Source:
     source_id: str
     path: Path
     sensitivity: str = "internal"
+    # What a person declared about this source's legal standing. Only `public`
+    # lowers the class its records carry; a licensed source is readable under a
+    # licence, which is not the same permission as handing the text to a rented
+    # machine.
+    legal_status: str = ""
     acl: list[str] = field(default_factory=list)
     approved: bool = False
     owner: str = ""
@@ -222,6 +231,16 @@ def _label_meta(row: dict[str, Any], source: Source) -> dict[str, str]:
     return {"label": value} if value else {}
 
 
+def _declared_class(source: Source) -> str:
+    """The class this source's records start from.
+
+    Inspection only ever sees a path, so it cannot know a source was declared
+    publicly releasable. That declaration is deliberate, recorded, and the only
+    thing that makes records eligible for a rented lane.
+    """
+    return "public" if source.legal_status == "public" else source.sensitivity
+
+
 def ingest_source(source: Source) -> list[Record]:
     """Read a source into records. Unapproved sources yield nothing."""
     if not source.approved:
@@ -242,7 +261,7 @@ def ingest_source(source: Source) -> list[Record]:
                     text=text,
                     source_id=source.source_id,
                     sensitivity=_effective_sensitivity(
-                        source.sensitivity, str(row.get("sensitivity", "") or "")
+                        _declared_class(source), str(row.get("sensitivity", "") or "")
                     ),
                     acl=_bounded_acl(row, source),
                     meta={
@@ -267,7 +286,7 @@ def ingest_source(source: Source) -> list[Record]:
                     text=text,
                     source_id=source.source_id,
                     sensitivity=_effective_sensitivity(
-                        source.sensitivity, str(row.get("sensitivity", "") or "")
+                        _declared_class(source), str(row.get("sensitivity", "") or "")
                     ),
                     acl=_bounded_acl(row, source),
                     meta={"format": "csv", **_label_meta(row, source)},
@@ -284,7 +303,7 @@ def ingest_source(source: Source) -> list[Record]:
                     record_key=str(index),
                     text=chunk,
                     source_id=source.source_id,
-                    sensitivity=source.sensitivity,
+                    sensitivity=_declared_class(source),
                     acl=list(source.acl),
                     meta={"format": suffix.lstrip(".")},
                 )
@@ -298,7 +317,7 @@ def ingest_source(source: Source) -> list[Record]:
                     record_key=str(index),
                     text=chunk,
                     source_id=source.source_id,
-                    sensitivity=source.sensitivity,
+                    sensitivity=_declared_class(source),
                     acl=list(source.acl),
                     meta={"format": "txt"},
                 )

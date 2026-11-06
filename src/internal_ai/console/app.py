@@ -60,6 +60,7 @@ from internal_ai.services.triage import (
 from internal_ai.serving.guardrails import INSTALL_POLICY_KEY, configured_install_policy
 from internal_ai.serving.service import out_of_service
 from internal_ai.store import ALLOWED_TRANSITIONS, TransitionError
+from internal_ai.training.provenance import OPEN_WEIGHT_ALLOWED, POLICY_ID, provenance_mode
 
 HERE = Path(__file__).resolve().parent
 SESSION_COOKIE = "iai_session"
@@ -1795,6 +1796,71 @@ def mount_console(
             cost_gate_usd=build.TRAINING_COST_GATE_USD,
             install_policy=configured_install_policy(platform.store),
             install_stored_policy=platform.store.kv_get(INSTALL_POLICY_KEY, "") or "",
+        )
+
+    @app.get("/console/models/bases", include_in_schema=False)
+    def base_models_page(request: Request) -> Response:
+        from internal_ai.training.alpha import catalog
+
+        ctx = context(request)
+        platform = ctx.platform
+        mode = provenance_mode(platform)
+        groups = [
+            {
+                "label": catalog.SECTOR_LABELS[sector],
+                "rows": [
+                    {
+                        "candidate": candidate,
+                        "verdict": admission.verdict,
+                        "detail": admission.detail,
+                        "gate": gate_view(platform, ctx.actor, gate) if gate else None,
+                        "can_request": admission.verdict is catalog.Verdict.REFUSED_LICENCE,
+                    }
+                    for candidate, admission in rows
+                    for gate in (catalog.exception_for(platform, candidate),)
+                ],
+            }
+            for sector, rows in catalog.survey(platform, platform.settings.root).items()
+        ]
+        return render(
+            ctx,
+            "bases.html",
+            groups=groups,
+            withdrawn=catalog.WITHDRAWN,
+            verified_on=catalog.VERIFIED_ON,
+            provenance_open=mode == OPEN_WEIGHT_ALLOWED,
+            provenance_mode=mode,
+            policy_id=POLICY_ID,
+        )
+
+    @app.post("/console/models/bases/request", include_in_schema=False)
+    async def base_models_request(request: Request) -> Response:
+        from internal_ai.training.alpha import catalog
+
+        ctx = context(request)
+        form = await posted(ctx)
+        candidate = next(
+            (item for item in catalog.CATALOG if item.repo_id == form.get("repo_id", "")), None
+        )
+        if candidate is None:
+            raise HTTPException(status_code=404, detail="that base is not in the catalogue")
+        return await act(
+            ctx,
+            "/console/models/bases",
+            lambda: catalog.request_exception(
+                ctx.platform,
+                candidate,
+                ctx.actor.name,
+                revision=form.get("revision", ""),
+                usage_scope=form.get("usage_scope", ""),
+                licence_review=form.get("licence_review", ""),
+            ),
+            lambda gate: (
+                f"exception {gate.id} requested for {candidate.repo_id}; it covers revision "
+                f"{gate.evidence.get('base_revision', '')} and needs "
+                + " and ".join(gate.required_approvers)
+                + " to approve that revision"
+            ),
         )
 
     @app.post("/console/models/overfit", include_in_schema=False)

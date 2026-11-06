@@ -115,6 +115,26 @@ FALLBACK = PinnedBase(
 )
 
 
+# The first domain base: BioMistral 7B, Apache-2.0, pinned at the revision the
+# publisher's API reported on 2026-11-04. The repository ships a single
+# `pytorch_model.bin` and no safetensors shards, so the pin records one shard; the
+# digest is the one Hugging Face publishes for that LFS object. A pickle
+# checkpoint is a worse thing to load than a safetensors shard, and it is what this
+# publisher released.
+HEALTHCARE = PinnedBase(
+    repo_id="BioMistral/BioMistral-7B",
+    revision="9a11e1ffa817c211cbb52ee1fb312dc6b61b40a5",
+    license="Apache-2.0",
+    shards=(
+        WeightShard(
+            "pytorch_model.bin",
+            "01a733e7330b8671b5f9a67054a37a899c024ca20630ad6c190dffbf52384b0a",
+            14_483_611_465,
+        ),
+    ),
+)
+
+
 def verify_snapshot(base: PinnedBase, root: Path) -> Path:
     """Refuse a directory whose weight shards are not the pinned bytes."""
     directory = base.directory(root)
@@ -130,7 +150,7 @@ def verify_snapshot(base: PinnedBase, root: Path) -> Path:
     return directory
 
 
-PINNED: tuple[PinnedBase, ...] = (PRIMARY, FALLBACK)
+PINNED: tuple[PinnedBase, ...] = (PRIMARY, FALLBACK, HEALTHCARE)
 
 
 def available_base(

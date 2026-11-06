@@ -91,7 +91,17 @@ def copy_package(destination: Path) -> None:
         shutil.copyfile(source / name, target)
 
 
-def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> dict[str, Any]:
+def stage(
+    platform: Platform,
+    dataset_id: str,
+    eval_set_id: str,
+    out: Path,
+    title: str = TITLE,
+    slug: str = KERNEL_SLUG,
+    row_limit: int | None = None,
+    batch_size: int = 1,
+    gradient_accumulation: int = 1,
+) -> dict[str, Any]:
     dataset = platform.store.get_dataset(dataset_id)
     if dataset is None or not dataset.released:
         raise SystemExit(f"refused: dataset {dataset_id} is not released")
@@ -112,6 +122,11 @@ def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> d
     rows = platform.store.dataset_records_by_split(dataset_id, "train")
     if not rows:
         raise SystemExit(f"refused: dataset {dataset_id} has no training split")
+    # One candidate search costs about 0.3s over a corpus this size, so the split
+    # is capped and the cap travels in the recipe. A smaller run that finishes and
+    # is scored is evidence; a larger one that never returns is not.
+    if row_limit is not None:
+        rows = sorted(rows, key=lambda row: row["record_key"])[:row_limit]
     from internal_ai.training.alpha.pairs import CANDIDATE_LIMIT, passages, retrieval_pairs
 
     # Raw prose taught the register and not the job, and keywords-to-sentence
@@ -187,6 +202,13 @@ def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> d
         # 256 cut the candidates off the end of every example and left the model
         # no list to choose from.
         "max_seq_len": 512,
+        # Measured on the lane rather than assumed. On two T4s with Qwen3-4B,
+        # four sequences a step came out at 357.6 tokens a second against 372.5 at
+        # one (ratio 0.96), so a batch buys nothing there and the default is one.
+        # Two stagings that differ only here are what an A/B is, and the run
+        # reports tokens per second so the next comparison is read off artifacts.
+        "batch_size": max(1, int(batch_size)),
+        "gradient_accumulation": max(1, int(gradient_accumulation)),
         "base": {
             "repo_id": PRIMARY.repo_id,
             "revision": PRIMARY.revision,
@@ -203,8 +225,8 @@ def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> d
     (dataset_dir / "dataset-metadata.json").write_text(
         json.dumps(
             {
-                "title": TITLE,
-                "id": f"{owner}/{TITLE}",
+                "title": title,
+                "id": f"{owner}/{title}",
                 "licenses": [{"name": "other"}],
             },
             indent=2,
@@ -218,15 +240,15 @@ def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> d
     (kernel_dir / "kernel-metadata.json").write_text(
         json.dumps(
             {
-                "id": f"{owner}/{KERNEL_SLUG}",
-                "title": KERNEL_SLUG,
+                "id": f"{owner}/{slug}",
+                "title": slug,
                 "code_file": "kernel.py",
                 "language": "python",
                 "kernel_type": "script",
                 "is_private": True,
                 "enable_gpu": True,
                 "enable_internet": True,
-                "dataset_sources": [f"{owner}/{TITLE}"],
+                "dataset_sources": [f"{owner}/{title}"],
                 "competition_sources": [],
                 "kernel_sources": [],
             },
@@ -259,6 +281,8 @@ def stage(platform: Platform, dataset_id: str, eval_set_id: str, out: Path) -> d
         "corpus_sha256": recipe["corpus_sha256"],
         "questions": len(queries),
         "queries_sha256": recipe["queries_sha256"],
+        "batch_size": recipe["batch_size"],
+        "gradient_accumulation": recipe["gradient_accumulation"],
         "commit": recipe["commit"],
         "base": recipe["base"]["repo_id"],
         "eval_set_hash": recipe["eval_set_hash"],
@@ -271,10 +295,32 @@ def main() -> int:
     parser.add_argument("--dataset", default=DATASET)
     parser.add_argument("--eval-set", default=EVAL_SET)
     parser.add_argument("--out", type=Path, default=Path("var_alpha/kaggle"))
+    parser.add_argument("--title", default=TITLE, help="Kaggle dataset title to stage into")
+    parser.add_argument("--slug", default=KERNEL_SLUG, help="Kaggle kernel slug to push")
+    parser.add_argument("--rows", type=int, default=None, help="cap the training-split rows")
+    parser.add_argument("--batch-size", type=int, default=1, help="sequences per step on the lane")
+    parser.add_argument(
+        "--gradient-accumulation", type=int, default=1, help="micro-batches per optimizer step"
+    )
     args = parser.parse_args()
     platform = Platform.create(root=args.root, llm_kind="scripted")
     try:
-        print(json.dumps(stage(platform, args.dataset, args.eval_set, args.out), indent=2))
+        print(
+            json.dumps(
+                stage(
+                    platform,
+                    args.dataset,
+                    args.eval_set,
+                    args.out,
+                    args.title,
+                    args.slug,
+                    args.rows,
+                    args.batch_size,
+                    args.gradient_accumulation,
+                ),
+                indent=2,
+            )
+        )
         return 0
     finally:
         platform.close()

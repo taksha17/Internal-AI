@@ -43,6 +43,9 @@ Thumbs.db
 # Credentials handed to the agent: never committed, never printed
 .secrets/
 
+# Client data handed to an install: a record never enters the repository
+Datasets/
+
 # Internal working notes: kept on disk, never published
 /PRD Agent-Driven In-House LLM Build Platform.md
 /STATUS.md
@@ -54,3 +57,59 @@ Thumbs.db
 /docs/prd-traceability.md
 /docs/superpowers/
 /docs/yc-plan/
+
+# Build / deploy artifacts (generated, not source)
+site/.wrangler/
+site/node_modules/
+*.log
+dist/
+build/
+
+# Local development
+*.local.*
+local.*
+
+# Experimental / scratch directories (not for public repo)
+.hallmark/
+landing/
+my-video/
+website theme/
+docs/PLAN_V3.md
+docs/alpha-lane-results.md
+docs/healthcare-corpus.md
+
+# Scripts for one-off experiments (not part of the core platform)
+scripts/alpha_y15_ab.py
+scripts/check_claims.py
+scripts/colab_finetune.py
+scripts/colab_stage.py
+scripts/med_build.py
+scripts/med_measure.py
+scripts/med_questions.py
+scripts/med_register.py
+scripts/nba_ask.py
+scripts/nba_build.py
+scripts/nba_corpus.py
+scripts/nba_policy.py
+scripts/nba_release.py
+scripts/nba_score.py
+scripts/nba_serve.py
+scripts/pmc_fetch.py
+
+# Generated test files for experiments
+tests/test_alpha_catalog.py
+tests/test_alpha_lanes.py
+tests/test_colab_stage.py
+tests/test_console_bases.py
+tests/test_data_dedupe_memory.py
+tests/test_data_split_leakage.py
+tests/test_dataset_split_labelling.py
+tests/test_med_measure.py
+tests/test_med_questions.py
+tests/test_pmc_fetch.py
+tests/test_public_records.py
+
+# Alpha training experimental modules
+src/internal_ai/training/alpha/catalog.py
+src/internal_ai/training/alpha/lanes.py
+src/internal_ai/console/templates/bases.html

@@ -11,9 +11,15 @@ import pytest
 from internal_ai.training.alpha.adapt import (
     BACKEND,
     DIVERGENCE_WINDOW,
+    IGNORE_INDEX,
+    PAD_ID,
     AdaptationUnavailable,
+    _batches,
     _dtype,
+    _landed_placement,
     _loss_scaling,
+    _p50,
+    _padded,
     _window_exploded,
     adapt,
 )
@@ -112,12 +118,103 @@ def test_a_divergence_in_a_later_epoch_refuses_the_run(tmp_path: Path) -> None:
     assert not out.exists()
 
 
+def test_a_batch_pads_the_short_sequence_and_ignores_the_padding() -> None:
+    """Padding teaches the prediction of pad unless it is masked and ignored."""
+    rows, masks, labels = _padded([[1, 2, 3], [4, 5]])
+
+    assert rows == [[1, 2, 3], [4, 5, PAD_ID]]
+    assert masks == [[1, 1, 1], [1, 1, 0]]
+    assert labels == [[1, 2, 3], [4, 5, IGNORE_INDEX]]
+
+
+def test_batches_are_grouped_by_length_so_padding_stays_cheap() -> None:
+    """File order would pad every short sequence up to the longest in the file."""
+    groups = _batches([[1], [2, 3, 4], [5, 6]], 2)
+
+    assert [[len(ids) for ids in group] for group in groups] == [[1, 2], [3]]
+    assert sorted(len(ids) for group in groups for ids in group) == [1, 2, 3]
+
+
+def test_one_sequence_per_step_is_unchanged_by_default() -> None:
+    """The unbatched order is the order the text arrived in."""
+    groups = _batches([[1], [2, 3, 4], [5, 6]], 1)
+
+    assert groups == [[[1]], [[2, 3, 4]], [[5, 6]]]
+
+
+def test_a_batched_run_steps_once_per_accumulated_group(tmp_path: Path) -> None:
+    base = tiny_snapshot(tmp_path)
+
+    result = adapt(
+        base,
+        tmp_path,
+        TEXTS,
+        tmp_path / "out",
+        max_seq_len=16,
+        epochs=1,
+        seed=0,
+        batch_size=2,
+        gradient_accumulation=2,
+    )
+
+    assert result["sequences"] == 3
+    assert result["batch_size"] == 2
+    assert result["gradient_accumulation"] == 2
+    # Three sequences group into two batches, and both batches make one step.
+    assert result["optimizer_steps"] == 1
+    assert result["tokens"] > 0
+    assert result["tokens_per_second"] > 0
+    assert result["parallelism"] == "cpu"
+    assert result["diverged_at"] is None
+
+
+def test_an_unbatched_run_steps_once_per_sequence(tmp_path: Path) -> None:
+    base = tiny_snapshot(tmp_path)
+
+    result = adapt(base, tmp_path, TEXTS, tmp_path / "out", max_seq_len=16, epochs=1, seed=0)
+
+    assert result["optimizer_steps"] == result["sequences"] == 3
+    assert result["batch_size"] == 1
+    assert result["gradient_accumulation"] == 1
+    assert len([result["step_seconds_p50"]]) == 1
+    assert _p50([]) == 0.0
+
+
 def test_the_divergence_guard_reads_a_window_not_a_single_sequence() -> None:
     """One hard sequence is not divergence; a run whose newest window is far above
     its first window is.
     """
     assert not _window_exploded([2.0, 8.0, 2.0, 2.0, 2.0, 2.0])
     assert _window_exploded([2.0] * DIVERGENCE_WINDOW + [8.0] * DIVERGENCE_WINDOW)
+
+
+class _Placed:
+    """A model that reports where its layers went, the way an accelerate load does."""
+
+    def __init__(self, mapping: dict[str, object] | None) -> None:
+        if mapping is not None:
+            self.hf_device_map = mapping
+
+
+def test_the_record_says_where_the_layers_landed_not_only_what_was_asked() -> None:
+    """The 4B A/B recorded `auto` and a pipeline; neither says which card worked."""
+    placed = _Placed({"model.embed_tokens": 0, "model.layers.0": "cuda:1"})
+
+    assert _landed_placement(placed) == {
+        "model.embed_tokens": "0",
+        "model.layers.0": "cuda:1",
+    }
+
+
+def test_a_model_placed_on_one_card_reports_one_device() -> None:
+    """A quantised 7B fits a single T4, so a run claiming two cards is wrong."""
+    landed = _landed_placement(_Placed({"": 0}))
+
+    assert list(landed.values()) == ["0"]
+
+
+def test_a_model_without_a_device_map_reports_nothing_rather_than_a_guess() -> None:
+    assert _landed_placement(_Placed(None)) == {}
 
 
 def test_the_adapter_it_saves_names_its_backend(tmp_path: Path) -> None:

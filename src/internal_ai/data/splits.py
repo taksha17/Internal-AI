@@ -27,6 +27,36 @@ def _record_bucket(record: Record, seed: str) -> float:
     return _bucket(record.record_key, seed)
 
 
+def _near_lookup(fingerprints: list[int], threshold: int) -> Callable[[int], bool]:
+    """Whether a SimHash is within ``threshold`` of any indexed one, exactly.
+
+    Comparing a held-out record against every training record is quadratic, and at
+    the size of the PMC corpus it is 1.7e9 comparisons -- hours of work in a step
+    that runs immediately before a release. Splitting the 64-bit hash into
+    ``threshold + 1`` blocks makes the lookup exact rather than sampled: two hashes
+    within ``threshold`` bits differ in at most ``threshold`` blocks, so they agree
+    on at least one block and the pair is still found.
+    """
+    blocks = min(8, max(1, threshold + 1))
+    width = 64 // blocks
+    mask = (1 << width) - 1
+    index: dict[tuple[int, int], list[int]] = {}
+    for position, value in enumerate(fingerprints):
+        for block in range(blocks):
+            key = (block, (value >> (block * width)) & mask)
+            index.setdefault(key, []).append(position)
+
+    def within(fingerprint: int) -> bool:
+        for block in range(blocks):
+            key = (block, (fingerprint >> (block * width)) & mask)
+            for position in index.get(key, ()):
+                if hamming(fingerprint, fingerprints[position]) <= threshold:
+                    return True
+        return False
+
+    return within
+
+
 def make_splits(
     records: list[Record],
     ratios: tuple[float, float, float] = (0.8, 0.1, 0.1),
@@ -73,6 +103,7 @@ def make_splits(
 
     train_fingerprints = [simhash(record.text) for record in splits["train"]]
     train_exact = {record.fingerprint() for record in splits["train"]}
+    overlapping = _near_lookup(train_fingerprints, leakage_threshold)
     removed: Counter[str] = Counter()
     for name in ("validation", "test"):
         kept: list[Record] = []
@@ -80,11 +111,7 @@ def make_splits(
             if record.fingerprint() in train_exact:
                 removed[f"{name}_exact_overlap"] += 1
                 continue
-            fingerprint = simhash(record.text)
-            if any(
-                hamming(fingerprint, candidate) <= leakage_threshold
-                for candidate in train_fingerprints
-            ):
+            if overlapping(simhash(record.text)):
                 removed[f"{name}_near_overlap"] += 1
                 continue
             kept.append(record)
@@ -113,14 +140,14 @@ def contamination_report(
     """Check an eval set against a training corpus (FR-8, FR-14)."""
     train_fingerprints = [simhash(record.text) for record in training_records]
     train_exact = {record.fingerprint() for record in training_records}
+    overlapping = _near_lookup(train_fingerprints, threshold)
     exact_hits = 0
     near_hits = 0
     for record in eval_records:
         if record.fingerprint() in train_exact:
             exact_hits += 1
             continue
-        fingerprint = simhash(record.text)
-        if any(hamming(fingerprint, candidate) <= threshold for candidate in train_fingerprints):
+        if overlapping(simhash(record.text)):
             near_hits += 1
     total = len(eval_records)
     contaminated = exact_hits + near_hits

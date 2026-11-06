@@ -9,7 +9,8 @@ from pathlib import Path
 import pytest
 import torch
 
-from internal_ai.domain import DatasetVersion
+from internal_ai.domain import DatasetVersion, GateStatus, GateType
+from internal_ai.gates import GATE_CATALOG, GateError
 from internal_ai.ids import now_iso
 from internal_ai.training.alpha import fetch as fetch_module
 from internal_ai.training.alpha.pin import (
@@ -111,6 +112,141 @@ def test_fetch_uses_the_research_pin_when_it_is_asked_for(
 
     monkeypatch.setattr(fetch_module, "fetch_base", fake_fetch)
     assert fetch_module.fetch_primary_or_fallback(tmp_path, allow_research_licence=True) is FALLBACK
+
+
+EXCEPTION_EVIDENCE = {
+    "base_model_licence": "qwen-research (research_only)",
+    "licence_review": "legal read the terms and limited the use to internal retrieval",
+    "usage_scope": "internal retrieval only, never redistributed or served externally",
+}
+
+
+def released_dataset(platform, dataset_id: str = "ds_alpha") -> str:  # type: ignore[no-untyped-def]
+    platform.store.add_dataset(
+        DatasetVersion(
+            id=dataset_id,
+            name="company",
+            version=1,
+            content_hash=f"hash-{dataset_id}",
+            record_count=1,
+            token_count=1,
+            created_at=now_iso(),
+            released=True,
+        )
+    )
+    return dataset_id
+
+
+def open_exception(
+    platform,  # type: ignore[no-untyped-def]
+    base: PinnedBase,
+    requester,  # type: ignore[no-untyped-def]
+    approve=(),  # type: ignore[no-untyped-def]
+    revision: str | None = None,
+):
+    gate = platform.gates.request(
+        GateType.BASE_MODEL_EXCEPTION,
+        "Load a research-licensed base",
+        base.repo_id,
+        requester.id,
+        requested_by_kind="human",
+        evidence={**EXCEPTION_EVIDENCE, "base_revision": revision or base.revision},
+    )
+    for actor in approve:
+        platform.gates.decide(gate.id, actor.id, approved=True, note="licence reviewed")
+    return platform.store.get_gate(gate.id)
+
+
+def test_the_exception_gate_names_its_roles_and_evidence() -> None:
+    entry = GATE_CATALOG[GateType.BASE_MODEL_EXCEPTION]
+    assert str(GateType.BASE_MODEL_EXCEPTION) == "base_model_exception"
+    assert entry.approvers == ("program_lead", "legal")
+    assert set(entry.evidence) == {
+        "base_model_licence",
+        "licence_review",
+        "usage_scope",
+        "base_revision",
+    }
+
+
+def test_an_approved_exception_lets_the_adapter_register(
+    platform, enroll_person, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    lead = enroll_person(platform, "Mo Lead", ["ml_lead"])
+    programme = enroll_person(platform, "Pat Programme", ["program_lead"])
+    counsel = enroll_person(platform, "Lea Counsel", ["legal"])
+    dataset_id = released_dataset(platform)
+    gate = open_exception(platform, FALLBACK, lead, approve=(programme, counsel))
+    assert gate.status == GateStatus.APPROVED
+
+    adapter = tmp_path / "adapter.pt"
+    torch.save({"A": torch.zeros(1)}, adapter)
+    model = register_alpha(platform, FALLBACK, adapter, dataset_id, lead, gate_id=gate.id)
+    assert model.card["base_model_exception"] == gate.id
+    assert model.card["base_license"] == FALLBACK.license
+
+
+def test_the_approved_exception_is_found_without_a_gate_id(
+    platform, enroll_person, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    lead = enroll_person(platform, "Mo Lead", ["ml_lead"])
+    programme = enroll_person(platform, "Pat Programme", ["program_lead"])
+    counsel = enroll_person(platform, "Lea Counsel", ["legal"])
+    dataset_id = released_dataset(platform)
+    open_exception(platform, FALLBACK, lead, approve=(programme, counsel))
+
+    adapter = tmp_path / "adapter.pt"
+    torch.save({"A": torch.zeros(1)}, adapter)
+    model = register_alpha(platform, FALLBACK, adapter, dataset_id, lead)
+    assert model.card["base_model_exception"]
+
+
+def test_a_pending_exception_is_not_an_approval(platform, enroll_person, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    lead = enroll_person(platform, "Mo Lead", ["ml_lead"])
+    dataset_id = released_dataset(platform)
+    gate = open_exception(platform, FALLBACK, lead)
+    assert gate.status == GateStatus.PENDING
+
+    adapter = tmp_path / "adapter.pt"
+    torch.save({"A": torch.zeros(1)}, adapter)
+    with pytest.raises(PermissionError, match="base_model_exception"):
+        register_alpha(platform, FALLBACK, adapter, dataset_id, lead, gate_id=gate.id)
+
+
+def test_one_approver_cannot_cover_both_roles(platform, enroll_person, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    lead = enroll_person(platform, "Mo Lead", ["ml_lead"])
+    programme = enroll_person(platform, "Pat Programme", ["program_lead"])
+    dataset_id = released_dataset(platform)
+    gate = open_exception(platform, FALLBACK, lead, approve=(programme,))
+    assert gate.status == GateStatus.PENDING, "program_lead alone covered legal too"
+
+    adapter = tmp_path / "adapter.pt"
+    torch.save({"A": torch.zeros(1)}, adapter)
+    with pytest.raises(PermissionError, match="base_model_exception"):
+        register_alpha(platform, FALLBACK, adapter, dataset_id, lead, gate_id=gate.id)
+
+
+def test_the_requester_cannot_approve_their_own_exception(platform, enroll_person) -> None:  # type: ignore[no-untyped-def]
+    lead = enroll_person(platform, "Mo Lead", ["ml_lead", "program_lead"])
+    gate = open_exception(platform, FALLBACK, lead)
+    with pytest.raises(GateError, match="dual control"):
+        platform.gates.decide(gate.id, lead.id, approved=True, note="self")
+
+
+def test_an_exception_for_another_revision_does_not_cover_this_base(
+    platform, enroll_person, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    lead = enroll_person(platform, "Mo Lead", ["ml_lead"])
+    programme = enroll_person(platform, "Pat Programme", ["program_lead"])
+    counsel = enroll_person(platform, "Lea Counsel", ["legal"])
+    dataset_id = released_dataset(platform)
+    gate = open_exception(platform, FALLBACK, lead, approve=(programme, counsel), revision="0" * 40)
+    assert gate.status == GateStatus.APPROVED
+
+    adapter = tmp_path / "adapter.pt"
+    torch.save({"A": torch.zeros(1)}, adapter)
+    with pytest.raises(PermissionError, match="base_model_exception"):
+        register_alpha(platform, FALLBACK, adapter, dataset_id, lead, gate_id=gate.id)
 
 
 def test_registering_an_adapter_on_a_research_base_is_refused(

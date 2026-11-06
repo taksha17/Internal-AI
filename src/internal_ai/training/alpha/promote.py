@@ -32,12 +32,44 @@ from internal_ai.training.provenance import provenance_mode
 from internal_ai.workflows import latest_frozen_pass, model_card_markdown, promote_model
 
 
+def approved_base_model_exception(
+    platform: Platform,
+    base: PinnedBase,
+    gate_id: str | None = None,
+) -> Any:
+    """The approved exception covering these exact weights, if one exists.
+
+    An exception covers the revision a reviewer read, not every future revision
+    of the same repo id, so the evidence has to name the revision being loaded.
+    """
+    from internal_ai.domain import GateStatus, GateType
+
+    if gate_id:
+        gate = platform.store.get_gate(gate_id)
+        candidates = [gate] if gate is not None else []
+    else:
+        candidates = platform.store.list_gates(status=str(GateStatus.APPROVED))
+    for gate in candidates:
+        if gate is None or GateType(gate.gate_type) is not GateType.BASE_MODEL_EXCEPTION:
+            continue
+        if gate.status != GateStatus.APPROVED:
+            continue
+        if gate.subject != base.repo_id:
+            continue
+        if str(gate.evidence.get("base_revision") or "") != base.revision:
+            continue
+        return gate
+    return None
+
+
 def register_alpha(
     platform: Platform,
     base: PinnedBase,
     adapter_path: Path,
     dataset_id: str,
     actor: Actor,
+    *,
+    gate_id: str | None = None,
 ) -> ModelVersion:
     """Register an adapter as a candidate model.
 
@@ -48,12 +80,15 @@ def register_alpha(
     require(platform.audit, actor, Action.REGISTER_MODEL, str(adapter_path))
     if base not in (PRIMARY, FALLBACK):
         raise PermissionError("alpha may load only the pinned base named in this package")
+    exception = None
     if base.license_class != LicenseClass.PERMISSIVE:
-        raise PermissionError(
-            f"{base.repo_id} is {base.license} ({base.license_class}); registering an adapter "
-            "on it needs an approved base_model_exception, and this install allows "
-            f"{LicenseClass.PERMISSIVE}"
-        )
+        exception = approved_base_model_exception(platform, base, gate_id)
+        if exception is None:
+            raise PermissionError(
+                f"{base.repo_id} is {base.license} ({base.license_class}); registering an adapter "
+                "on it needs an approved base_model_exception, and this install allows "
+                f"{LicenseClass.PERMISSIVE}"
+            )
     dataset = require_released_dataset(platform.store.get_dataset(dataset_id))
     from internal_ai.ids import tree_hash
 
@@ -68,6 +103,8 @@ def register_alpha(
         dataset.content_hash,
         digest,
     )
+    if exception is not None:
+        card["base_model_exception"] = exception.id
     card["provenance_mode"] = provenance_mode(platform)
     record = reproducibility_beside(adapter_path)
     if record:

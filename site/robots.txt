@@ -1,0 +1,10 @@
+# internal-ai — allow all crawlers
+User-agent: *
+Allow: /
+
+# Disallow API endpoints and private paths
+Disallow: /api/
+Disallow: /functions/
+
+# Sitemap (add when domain is live)
+# Sitemap: https://internal-ai.app/sitemap.xml

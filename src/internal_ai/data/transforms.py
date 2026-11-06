@@ -103,10 +103,15 @@ def deduplicate(
     Candidates come from banded SimHash lookup, then a Jaccard check over
     character shingles confirms the match so the looser hash radius does not
     produce false positives.
+
+    Memory is bounded by the corpus, not by the corpus times its shingles: the
+    confirmation recomputes a candidate's shingles instead of keeping one set per
+    record. The first PMC ingest was killed by the OOM killer at 5 GiB with
+    154,415 records still queued, because holding a shingle set each cost more than
+    the text it was meant to protect.
     """
     seen_exact: set[str] = set()
     fingerprints: list[tuple[int, int]] = []
-    shingles_by_index: list[set[str]] = []
     buckets: dict[tuple[int, int], list[int]] = {}
     kept: list[Record] = []
     exact_removed = 0
@@ -129,14 +134,16 @@ def deduplicate(
                 if hamming(fingerprint, fingerprints[candidate][0]) <= threshold:
                     candidates.add(candidate)
         for candidate in candidates:
-            if jaccard(document_shingles, shingles_by_index[candidate]) >= jaccard_threshold:
+            # Recompute rather than retain: a band collision is rare, so this
+            # costs a few documents of work instead of a corpus of memory.
+            confirmed = shingles(records[fingerprints[candidate][1]].text)
+            if jaccard(document_shingles, confirmed) >= jaccard_threshold:
                 duplicate = True
                 break
         if duplicate:
             near_removed += 1
             continue
         fingerprints.append((fingerprint, index))
-        shingles_by_index.append(document_shingles)
         for band in range(bands):
             key = (band, (fingerprint >> (band * band_bits)) & ((1 << band_bits) - 1))
             buckets.setdefault(key, []).append(len(fingerprints) - 1)

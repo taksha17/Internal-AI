@@ -60,6 +60,7 @@ class GateType(StrEnum):
     PRODUCTION_DEPLOYMENT = "production_deployment"
     BUDGET_INCREASE = "budget_increase"
     POLICY_DECISION = "policy_decision"
+    BASE_MODEL_EXCEPTION = "base_model_exception"
 
 
 class GateStatus(StrEnum):

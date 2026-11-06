@@ -213,6 +213,7 @@ def _generate(
     max_new_tokens: int,
     max_seq_len: int,
     load_tokenizer: Any,
+    load_in_4bit: bool = False,
 ) -> list[str]:
     """Greedy answers from the base, with the adapter when there is one.
 
@@ -227,17 +228,40 @@ def _generate(
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float16 if device == "cuda" else torch.float32
     tokenizer = load_tokenizer(directory)
-    try:
-        model = AutoModelForCausalLM.from_pretrained(directory, local_files_only=True, dtype=dtype)
-    except TypeError:  # transformers 4 spells the same argument torch_dtype
+    sharded = device == "cuda" and torch.cuda.device_count() > 1
+    if load_in_4bit:
+        # A 7B is 14.5 GB at half precision, which neither T4 holds with room for
+        # activations, so the quantisation is not a speed-up here, it is the fit.
+        from transformers import BitsAndBytesConfig
+
         model = AutoModelForCausalLM.from_pretrained(
-            directory, local_files_only=True, torch_dtype=dtype
+            directory,
+            local_files_only=True,
+            quantization_config=BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=dtype,
+                bnb_4bit_use_double_quant=True,
+            ),
+            device_map="auto",
         )
+    else:
+        split = {"device_map": "auto"} if sharded else {}
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                directory, local_files_only=True, dtype=dtype, **split
+            )
+        except TypeError:  # transformers 4 spells the same argument torch_dtype
+            model = AutoModelForCausalLM.from_pretrained(
+                directory, local_files_only=True, torch_dtype=dtype, **split
+            )
+        if not sharded:
+            model = model.to(device)
     if adapter is not None:
         from peft import PeftModel
 
         model = PeftModel.from_pretrained(model, str(adapter))
-    model = model.to(device).eval()
+    model = model.eval()
     answers: list[str] = []
     for prompt in prompts:
         encoded = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_seq_len)
@@ -275,6 +299,7 @@ def run(
     allow_download: bool,
     epochs: int,
     seed: int,
+    load_in_4bit: bool | None = None,
     max_new_tokens: int = MAX_NEW_TOKENS,
     adjustments: list[str] | None = None,
 ) -> dict[str, Any]:
@@ -283,6 +308,11 @@ def run(
 
     started = time.time()
     max_seq_len = int(recipe.get("max_seq_len") or 64)
+    # The staged recipe already decided how the weights are held for the lane it
+    # was built for. On Kaggle that decision is the difference between a 7B
+    # fitting two T4s and not starting at all.
+    if load_in_4bit is None:
+        load_in_4bit = str(recipe.get("quantisation") or "") == "nf4-4bit"
     directory = _ensure_base(base, base_root, allow_download, modules)
     adapter = out / "adapter"
     result = modules["adapt"](
@@ -296,6 +326,11 @@ def run(
         # 2.327). Halving it keeps the step inside the range this data supports.
         learning_rate=1e-4,
         seed=seed,
+        load_in_4bit=load_in_4bit,
+        # The staged recipe decided how many sequences a step carries, because a
+        # two-card lane is a pipeline and a batch is what fills it.
+        batch_size=int(recipe.get("batch_size") or 1),
+        gradient_accumulation=int(recipe.get("gradient_accumulation") or 1),
     )
     prompts = [
         modules["prompt_for_candidates"](
@@ -304,9 +339,17 @@ def run(
         for item in queries
     ]
     load_tokenizer = modules["load_tokenizer"]
-    base_answers = _generate(prompts, directory, None, max_new_tokens, max_seq_len, load_tokenizer)
+    base_answers = _generate(
+        prompts, directory, None, max_new_tokens, max_seq_len, load_tokenizer, load_in_4bit
+    )
     adapter_answers = _generate(
-        prompts, directory, adapter, max_new_tokens, max_seq_len, load_tokenizer
+        prompts,
+        directory,
+        adapter,
+        max_new_tokens,
+        max_seq_len,
+        load_tokenizer,
+        load_in_4bit,
     )
     device_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else host.processor()
     record = {
@@ -316,6 +359,8 @@ def run(
             "content_hash": recipe.get("dataset_content_hash"),
         },
         "commit": recipe.get("commit"),
+        "lane": recipe.get("lane", "kaggle-t4x2"),
+        "quantisation": "nf4-4bit" if load_in_4bit else "fp16",
         "base": {
             "repo_id": base.repo_id,
             "revision": base.revision,
@@ -332,6 +377,15 @@ def run(
             "layers": result.get("layers"),
             "sequences": result.get("sequences"),
             "epochs": result.get("epochs"),
+            # How the step was paid for, so the next run can be compared with this
+            # one on the lane rather than on a recollection of it.
+            "parallelism": result.get("parallelism"),
+            "batch_size": result.get("batch_size"),
+            "gradient_accumulation": result.get("gradient_accumulation"),
+            "optimizer_steps": result.get("optimizer_steps"),
+            "tokens": result.get("tokens"),
+            "step_seconds_p50": result.get("step_seconds_p50"),
+            "tokens_per_second": result.get("tokens_per_second"),
             "loss_first": result.get("loss_first"),
             "loss_last": result.get("loss_last"),
         },
@@ -351,6 +405,7 @@ def run(
         "environment": {
             "python": host.python_version(),
             "device": device_name,
+            "gpus": torch.cuda.device_count() if torch.cuda.is_available() else 0,
             "torch": _version("torch"),
             "transformers": _version("transformers"),
             "peft": _version("peft"),

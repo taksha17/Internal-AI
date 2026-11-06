@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>internal-ai — the control plane for models you own</title>
+  <meta name="description" content="Companies cannot train on their own data without sending it to someone else's cloud, where the model belongs to someone else. internal-ai is the installable control plane that turns a company's own documents into a model it owns — offline by default, governed by people, auditable end to end.">
+  <meta name="author" content="Internal-AI">
+  <meta name="publisher" content="Internal-AI">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="theme-color" content="#f2f7f5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#070d18" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <link rel="canonical" href="https://internal-ai.app/">
+  <link rel="alternate" hreflang="en" href="https://internal-ai.app/">
+  <link rel="alternate" hreflang="x-default" href="https://internal-ai.app/">
+  <link rel="icon" href="assets/internal-ai-icon.svg" type="image/svg+xml" sizes="any">
+  <link rel="icon" href="assets/internal-ai-icon.png" type="image/png" sizes="512x512">
+  <link rel="apple-touch-icon" href="assets/internal-ai-icon.png">
+  <link rel="stylesheet" href="styles.css" media="screen">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="internal-ai">
+  <meta property="og:title" content="internal-ai — the control plane for models you own">
+  <meta property="og:description" content="Governance as code. Offline by default. Build, evaluate and serve a model you own, on machines you control.">
+  <meta property="og:image" content="https://internal-ai.app/assets/console-walk-poster.jpg">
+  <meta property="og:image:alt" content="The internal-ai console, walkthrough poster">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="internal-ai — the control plane for models you own">
+  <meta name="twitter:description" content="Governance as code. Offline by default. Build, evaluate and serve a model you own, on machines you control.">
+  <meta name="twitter:image" content="https://internal-ai.app/assets/console-walk-poster.jpg">
+  <meta property="og:url" content="https://internal-ai.app/">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"internal-ai","applicationCategory":"BusinessApplication","operatingSystem":"Linux (self-hosted)","copyrightHolder":{"@type":"Organization","name":"Internal-AI"},"license":"https://polyformproject.org/licenses/noncommercial/1.0.0/","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","description":"PolyForm Noncommercial 1.0.0 — noncommercial use free; commercial licence applies."}}</script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="masthead" role="banner">
+    <div class="wrap">
+      <a class="wordmark" href="#top" aria-label="internal-ai home">
+        <img class="mark" src="assets/internal-ai-icon.svg" alt="" width="30" height="30">
+        <span><b>internal</b><b class="accent">-ai</b></span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#problem">Problem</a>
+        <a href="#solution">Platform</a>
+        <a href="#governance">Governance</a>
+        <a href="#evidence">Evidence</a>
+      </nav>
+      <a class="btn btn-primary btn-sm cta" href="#request">Request access</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- HERO SECTION -->
+    <section class="hero band-night" id="top" aria-labelledby="hero-heading">
+      <div class="wrap">
+        <div class="hero-grid">
+          <div class="hero-content">
+            <span class="kicker">Private by design</span>
+            <h1 id="hero-heading">The control plane for models you <span class="g">own</span>.</h1>
+            <p class="lede">Every company sits on documents, tickets and resolved questions it could train on — and can't, without sending them outside to someone else's cloud, where the model belongs to someone else. <strong>internal-ai is the other arrangement</strong>: install it on machines you control, point it at data you already have, and ship a model whose training data, evals and serving all stayed inside the boundary. <strong>Governance as code. Offline by default.</strong></p>
+            <div class="hero-actions">
+              <a class="btn btn-primary" href="#request">Request access</a>
+              <a class="btn btn-ghost" href="#console">Watch the walkthrough</a>
+            </div>
+            <div class="hero-proof">
+              <span class="kicker">Proof</span>
+              <p>One stress run, 16 GB CPU-only: <b>41,294 records ingested, 20,455 redactions, 140,176 training tokens at 1,653 tokens/s in 36.4 minutes</b> — and the harness <b>refused</b> to promote a model that hadn't earned it. A platform that says no is the one you can trust with the data.</p>
+            </div>
+          </div>
+          <div class="console" role="img" aria-label="Illustration of the internal-ai console: a midnight rail beside an Approvals page with a dataset-release gate and an append-only audit log.">
+            <div class="console-bar">
+              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="url">console.local · /approvals</span>
+            </div>
+            <div class="console-body">
+              <div class="console-rail" aria-hidden="true">
+                <span class="brandchip">
+                  <svg viewBox="0 0 512 512" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="175" y="51" width="162" height="162" rx="81" stroke="#24313A" stroke-width="38"/>
+                    <rect x="175" y="175" width="162" height="162" rx="81" stroke="#8AA99B" stroke-width="38"/>
+                    <rect x="175" y="299" width="162" height="162" rx="81" stroke="#9A5B23" stroke-width="38"/>
+                  </svg>
+                </span>
+                <span class="rail-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 8h6V4h-6z"/></svg>Overview</span>
+                <span class="rail-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>Datasets</span>
+                <span class="rail-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M9 2.5v3M15 2.5v3M9 18.5v3M15 18.5v3M2.5 9h3M2.5 15h3M18.5 9h3M18.5 15h3"/></svg>Training</span>
+                <span class="rail-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V5z"/><path d="M8 9h8M8 13h5"/></svg>Evaluations</span>
+                <span class="rail-row on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>Approvals</span>
+                <span class="rail-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l3 3v15H6z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Audit log</span>
+              </div>
+              <div class="console-main">
+                <div class="console-top">
+                  <span class="crumb">Approvals</span>
+                  <span class="pill"><i class="d"></i>Local · no external calls</span>
+                  <span class="kill">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>
+                    Kill switch
+                  </span>
+                </div>
+                <div class="console-card">
+                  <div class="t">Dataset release</div>
+                  <div class="s">A domain expert reviewed the sample. A named second person decides.</div>
+                  <div class="row">
+                    <span class="tag tag-olive">Gate · dataset_release</span>
+                    <span class="tag tag-blush">Second person required</span>
+                  </div>
+                </div>
+                <div class="console-audit">
+                  <span class="chain">audit_events</span>
+                  <span>append-only · hash-chained</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <dl class="hero-facts">
+          <div><dt>One install, every key.</dt><dd>Console, CLI and JSON API are one service — one boundary to audit.</dd></div>
+          <div><dt>One pipeline.</dt><dd>Sources, datasets, training, evals, gates, serving — one governed path.</dd></div>
+          <div><dt>Agents do the work. People decide.</dt><dd>Nothing irreversible ships without a human who can be named.</dd></div>
+          <div><dt>Nothing leaves by default.</dt><dd>No outbound call unless you deliberately switch one on.</dd></div>
+          <div><dt>Every decision is on the record.</dt><dd>An append-only, hash-chained audit log.</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <!-- TAGLINE REVEAL SECTION (mandatory per B11) -->
+    <section class="section tagline-reveal" id="tagline" aria-labelledby="tagline-heading">
+      <div class="wrap">
+        <div class="tagline-content">
+          <h2 id="tagline-heading" class="tagline-text">
+            <span class="tagline-word" data-word-index="0">Own</span>
+            <span class="tagline-word" data-word-index="1">the</span>
+            <span class="tagline-word" data-word-index="2">model.</span>
+            <span class="tagline-word" data-word-index="3">Keep</span>
+            <span class="tagline-word" data-word-index="4">the</span>
+            <span class="tagline-word" data-word-index="5">data.</span>
+            <span class="tagline-word" data-word-index="6">Prove</span>
+            <span class="tagline-word" data-word-index="7">the</span>
+            <span class="tagline-word" data-word-index="8">result.</span>
+          </h2>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROBLEM SECTION -->
+    <section class="section section-alt problem reveal" id="problem" aria-labelledby="problem-heading">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">The problem</span>
+          <h2 id="problem-heading">Own the model. Keep the data. Prove the result.</h2>
+          <p>For a regulated team, the hard question is the third one. Banks, hospitals and defence cannot send their data out, and cannot ship a model they cannot explain.</p>
+        </div>
+        <div class="problem-grid">
+          <article class="problem-block">
+            <span class="num">01</span>
+            <h3>Renting has a ceiling.</h3>
+            <p>Every prompt leaves your boundary, and the weights, the model card and the upgrade schedule belong to someone else. For a regulated team, that makes the best model the least usable.</p>
+          </article>
+          <article class="problem-block">
+            <span class="num">02</span>
+            <h3>Open weights change the maths, not the work.</h3>
+            <p>Downloading a model takes minutes. Turning your workflows into evals, your experts' knowledge into training data and your production failures into fixes takes a platform.</p>
+          </article>
+          <article class="problem-block">
+            <span class="num">03</span>
+            <h3>Ownership is a loop.</h3>
+            <p>Workflow becomes eval, expertise becomes data, failure becomes improvement, and all of it carries forward to the next base model. Most teams build this by hand, once, and let it rot.</p>
+          </article>
+          <article class="problem-block">
+            <span class="num">04</span>
+            <h3>Governed, or it does not ship.</h3>
+            <p>Who approved this data? Who can see what the model learned? Can you prove it after an audit? If the answer is not built in, it will not pass review.</p>
+          </article>
+        </div>
+        <div class="loop">
+          <span class="loop-label">The loop, named</span>
+          <ol class="loop-steps">
+            <li><b>Workflow</b><span class="arrow" aria-hidden="true">→</span><span>eval</span><small>Expert-approved frozen sets</small></li>
+            <li><b>Expertise</b><span class="arrow" aria-hidden="true">→</span><span>data</span><small>Released, scrubbed, lineaged</small></li>
+            <li><b>Failure</b><span class="arrow" aria-hidden="true">→</span><span>improvement</span><small>Traces become triage cases</small></li>
+            <li><b>Every step</b><small>Gates, audit, offline by default</small></li>
+          </ol>
+        </div>
+        <p class="problem-turn">internal-ai is that loop, with the governance already built in.
+          <a href="#solution">See the loop in the platform</a></p>
+        <div class="inside">
+          <span class="inside-label">What stays inside</span>
+          <ul>
+            <li>No raw record leaves the boundary.</li>
+            <li>No third-party model output enters training.</li>
+            <li>No gate is decided by its requester.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- SOLUTION / PLATFORM SECTION -->
+    <section class="section reveal" id="solution" aria-labelledby="solution-heading">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">Platform</span>
+          <h2 id="solution-heading">Everything between your data and a model you own.</h2>
+          <p>One control plane, one data plane, and the training, evaluation and serving that surround them. Agents do the engineering work; people take every irreversible decision.</p>
+        </div>
+        <div class="grid grid-3">
+          <article class="card">
+            <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.4"/><circle cx="5" cy="19" r="2.4"/><circle cx="19" cy="19" r="2.4"/><path d="M12 7.4v4.2M12 11.6 6.6 17M12 11.6 17.4 17"/></svg></span>
+            <h3>Control plane</h3>
+            <p>A dependency-ordered task graph, ten role agents with declared capabilities, gates that need a named second person, budgets at five scopes, a kill switch, and an append-only hash-chained audit log.</p>
+          </article>
+          <article class="card">
+            <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span>
+            <h3>Data plane</h3>
+            <p>Ingestion, exact and near-duplicate removal, PII and secret scrubbing, quality and language filters, immutable dataset versions, a tokenizer trained from scratch, and leakage-safe splits.</p>
+          </article>
+          <article class="card">
+            <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M9 2.5v3M15 2.5v3M9 18.5v3M15 18.5v3M2.5 9h3M2.5 15h3M18.5 9h3M18.5 15h3"/></svg></span>
+            <h3>Training</h3>
+            <p>A from-scratch transformer that records its commit, config, dataset hash and seed. It checkpoints, resumes, caps cost, streams metrics, and stops itself on divergence or a loss spike.</p>
+          </article>
+          <article class="card">
+            <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V5z"/><path d="M8 9h8M8 13h5"/><path d="M9 22l3-3 3 3"/></svg></span>
+            <h3>Evaluation</h3>
+            <p>Frozen eval sets that only a person can approve, an independent evaluation agent, promotion gates, and model cards. A score is three numbers on the same frozen set, or it is not a score.</p>
+          </article>
+          <article class="card">
+            <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg></span>
+            <h3>Serving</h3>
+            <p>Authenticated inference and permission-aware retrieval, per-user rate limits, and rollback. Every answer carries the passages it was shown, so an answer can be checked against its own evidence.</p>
+          </article>
+          <article class="card">
+            <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.4"/><circle cx="6" cy="19" r="2.4"/><circle cx="18" cy="12" r="2.4"/><path d="M6 7.4v9.2M8.2 5.6c5 .3 8 2.1 9.8 5.2"/></svg></span>
+            <h3>Adaptation</h3>
+            <p>For an install that decides an existing open base is acceptable: a rank-8 adapter over one pinned base, streamed from disk, recorded on every model card by repo, revision and licence.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- BENEFITS SECTION (outcome-driven) -->
+    <section class="section section-alt benefits reveal" id="benefits" aria-labelledby="benefits-heading">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">Why it matters</span>
+          <h2 id="benefits-heading">Outcomes you can take to review.</h2>
+          <p>Each capability exists because a regulated team needed it to ship. The proof is in what the platform refuses to do.</p>
+        </div>
+        <div class="benefits-grid">
+          <article class="benefit-card">
+            <div class="benefit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+            <h3>Your data never leaves</h3>
+            <p><strong>No raw record crosses the boundary.</strong> Ingestion, scrubbing, tokenization, training, and serving all run on your machines. Schemas, aggregates, and redacted samples may leave — the records do not.</p>
+          </article>
+          <article class="benefit-card">
+            <div class="benefit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+            <h3>Governance that holds up</h3>
+            <p><strong>Every irreversible decision has a named approver.</strong> Gates require a second person. The audit log is append-only and hash-chained. A suppressed check is a lie with a green tick — the platform refuses to weaken one.</p>
+          </article>
+          <article class="benefit-card">
+            <div class="benefit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+            <h3>Evals that mean something</h3>
+            <p><strong>Frozen sets only a person can approve.</strong> An independent evaluation agent runs every promotion. A score is three numbers on the same frozen set — adapter, base, keyword — or it is not a score.</p>
+          </article>
+          <article class="benefit-card">
+            <div class="benefit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></div>
+            <h3>Offline by default</h3>
+            <p><strong>No outbound call unless you switch one on.</strong> The alpha track loads a pinned base through a gate decided by program lead and legal. The from-scratch track has no code path that reads pretrained parameters, and none may be added.</p>
+          </article>
+          <article class="benefit-card">
+            <div class="benefit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5"/></svg></div>
+            <h3>Improvement that compounds</h3>
+            <p><strong>Ownership is a loop.</strong> Workflow becomes eval, expertise becomes data, failure becomes improvement — and all of it carries forward to the next base model. Most teams build this by hand once and let it rot. internal-ai ships it.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- HOW IT WORKS SECTION -->
+    <section class="section how-it-works reveal" id="how-it-works" aria-labelledby="how-heading">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">How it works</span>
+          <h2 id="how-heading">Three steps to a model you own.</h2>
+          <p>Point the platform at your data. The rest is governed automation.</p>
+        </div>
+        <div class="steps-grid">
+          <article class="step">
+            <div class="step-number">01</div>
+            <h3>Ingest and prepare</h3>
+            <p>Connect your sources — documents, tickets, resolved questions. The data plane handles exact and near-duplicate removal, PII and secret scrubbing, quality and language filters, and immutable dataset versioning. A tokenizer trained from scratch on your corpus.</p>
+            <ul class="step-details">
+              <li>Sources stay inside the boundary</li>
+              <li>Redaction is measurable (20,455 in stress run)</li>
+              <li>Leakage-safe splits by construction</li>
+            </ul>
+          </article>
+          <article class="step">
+            <div class="step-number">02</div>
+            <h3>Train and evaluate</h3>
+            <p>Launch a from-scratch transformer or an alpha adapter over a pinned base. The trainer records commit, config, dataset hash, and seed. It checkpoints, resumes, caps cost, streams metrics, and stops itself on divergence or a loss spike.</p>
+            <ul class="step-details">
+              <li>Provenance mode: scratch_only or gated alpha</li>
+              <li>Frozen eval sets, human-approved only</li>
+              <li>Promotion gate: adapter vs base vs keyword</li>
+            </ul>
+          </article>
+          <article class="step">
+            <div class="step-number">03</div>
+            <h3>Serve and improve</h3>
+            <p>Authenticated inference with permission-aware retrieval. Every answer carries the passages it was shown. Traces become triage cases — failure feeds the next training run. Gates, audit, and offline default govern every step.</p>
+            <ul class="step-details">
+              <li>Per-user rate limits and rollback</li>
+              <li>Trace-to-triage pipeline built in</li>
+              <li>Kill switch engages on one click</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- TWO TRACKS SECTION -->
+    <section class="section section-alt reveal" id="tracks" aria-labelledby="tracks-heading">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">Two tracks</span>
+          <h2 id="tracks-heading">Random initialisation, or one pinned base. Never a silent middle.</h2>
+          <p>Provenance mode is a per-install setting decided through a gate, not a flag on a run. The default refuses every base load.</p>
+        </div>
+        <div class="tracks">
+          <article class="track hero-track">
+            <span class="flag">Default · on</span>
+            <h3>From scratch</h3>
+            <p class="from">Random initialisation on approved internal data.</p>
+            <dl>
+              <div><dt>Starts from</dt><dd>Random initialisation, trained on data that never left the boundary.</dd></div>
+              <div><dt>Reads pretrained weights</dt><dd>There is no code path that reads them, and none may be added.</dd></div>
+              <div><dt>Gate before any weight loads</dt><dd>None — there is nothing to load.</dd></div>
+            </dl>
+            <p class="gate">This is the default, and it has no path that reads pretrained parameters.</p>
+          </article>
+          <article class="track alt">
+            <span class="flag">Off by default</span>
+            <h3>Alpha (adapter)</h3>
+            <p class="from">One pinned open base already on disk, adapted into an adapter the company owns.</p>
+            <dl>
+              <div><dt>Starts from</dt><dd>A hash-pinned base, allowlisted and recorded by repo, revision and licence.</dd></div>
+              <div><dt>Gate before any weight loads</dt><dd><code>policy_decision</code> on <code>P6</code>, decided by <code>program_lead</code> and <code>legal</code>.</dd></div>
+              <div><dt>Licence exception</dt><dd>A base whose licence class is not permissive needs its own <code>base_model_exception</code> gate.</dd></div>
+            </dl>
+            <p class="gate">Alpha output is never training data for the from-scratch track.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- GOVERNANCE SECTION -->
+    <section class="section reveal" id="governance" aria-labelledby="governance-heading">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">Governance</span>
+          <h2 id="governance-heading">The rules are the product.</h2>
+          <p>These hold through every redesign, and the repository refuses to weaken one to make a result look better. A suppressed check is a lie with a green tick.</p>
+        </div>
+        <ul class="checks">
+          <li>
+            <span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
+            <span><b>No training on third-party model output.</b> <span class="body">Distillation is a non-goal; task data comes from internal documents and resolved questions.</span></span>
+          </li>
+          <li>
+            <span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
+            <span><b>Raw records never leave the boundary.</b> <span class="body">Schemas, aggregate statistics, redacted samples, code and logs may.</span></span>
+          </li>
+          <li>
+            <span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
+            <span><b>Frozen eval sets are write-protected.</b> <span class="body">A change is a new version behind a new gate.</span></span>
+          </li>
+          <li>
+            <span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
+            <span><b>Gates are human-only.</b> <span class="body">And the requester cannot decide their own.</span></span>
+          </li>
+          <li>
+            <span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
+            <span><b>The audit log is append-only and hash-chained.</b> <span class="body">Enforced by triggers; every write goes through <code>AuditLog.record</code>.</span></span>
+          </li>
+          <li>
+            <span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
+            <span><b>Every spend path goes through the budget manager.</b> <span class="body">At every scope, with no path that bypasses it.</span></span>
+          </li>
+          <li>
+            <span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
+            <span><b>The kill switch engages on one click.</b> <span class="body">Releasing it needs a different person.</span></span>
+          </li>
+          <li>
+            <span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
+            <span><b>Provenance mode is explicit.</b> <span class="body"><code>scratch_only</code> refuses every base load; <code>open_weight_allowed</code> is gated.</span></span>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- CONSOLE WALKTHROUGH -->
+    <section class="section band-night reveal" id="console" aria-labelledby="console-heading">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="kicker">The console</span>
+          <h2 id="console-heading">See it work.</h2>
+          <p>A narrated walkthrough of a real console session — the same governance the CLI and the JSON API run on. One FastAPI process, htmx vendored, no CDN, no inline script or style.</p>
+        </div>
+        <figure class="video-frame">
+          <video controls preload="none" poster="assets/console-walk-poster.jpg" aria-label="A narrated walkthrough of the internal-ai console.">
+            <source src="assets/console-walk-narrated.mp4" type="video/mp4">
+            Your browser does not support embedded video. <a href="assets/console-walk-narrated.mp4">Download the walkthrough (MP4)</a>.
+          </video>
+          <figcaption class="video-cap">
+            <span class="live"><i class="d"></i>Real console, real gates</span>
+            <span class="muted">Recorded on the worked install · audio narrated</span>
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- EVIDENCE SECTION -->
+    <section class="section reveal" id="evidence" aria-labelledby="evidence-heading">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">Evidence</span>
+          <h2 id="evidence-heading">Verified at scale — and honest when it falls short.</h2>
+          <p>One stress run on a 16 GB CPU-only workstation. Two things are quoted for: the audit chain held after two deliberate races, and the harness refused to promote a model that had not earned it.</p>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="n">41,294</div><div class="k">records ingested</div><div class="s">from 51,750 rows, with 20,455 redactions</div></div>
+          <div class="stat"><div class="n">140,176</div><div class="k">training tokens</div><div class="s">at 1,653 tokens/s, stopped early by the divergence guard</div></div>
+          <div class="stat"><div class="n">36.4 min</div><div class="k">end to end</div><div class="s">16 GB CPU-only, exited clean</div></div>
+          <div class="stat"><div class="n">17</div><div class="k">audit events</div><div class="s">chain verified after two races</div></div>
+        </div>
+        <p class="scale-note">Promotion was refused: recall@10 0.000 against a 0.000 keyword baseline. A slim model on a synthetic corpus does not beat keyword search, and the right behaviour is to say so — that is the data-volume problem, not a bug in the pipeline.</p>
+      </div>
+    </section>
+
+    <!-- FAQ SECTION -->
+    <section class="section section-alt faq reveal" id="faq" aria-labelledby="faq-heading">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">Questions</span>
+          <h2 id="faq-heading">Answers to the questions we hear most.</h2>
+        </div>
+        <dl class="faq-list">
+          <div class="faq-item">
+            <dt><button class="faq-question" aria-expanded="false" aria-controls="faq-1">Is this a managed service or self-hosted?</button></dt>
+            <dd id="faq-1" class="faq-answer" hidden><p>Self-hosted. You install internal-ai on machines you control — your VPC, your bare metal, your isolated environment. The platform runs as a single FastAPI process with no outbound calls unless you deliberately enable them.</p></dd>
+          </div>
+          <div class="faq-item">
+            <dt><button class="faq-question" aria-expanded="false" aria-controls="faq-2">What hardware do I need?</button></dt>
+            <dd id="faq-2" class="faq-answer" hidden><p>The stress run completed on a 16 GB CPU-only workstation in 36.4 minutes. For production, GPU acceleration is supported but not required. The platform caps cost and stops on divergence, so you control the spend.</p></dd>
+          </div>
+          <div class="faq-item">
+            <dt><button class="faq-question" aria-expanded="false" aria-controls="faq-3">Can I use an existing open model as a base?</button></dt>
+            <dd id="faq-3" class="faq-answer" hidden><p>Yes, through the alpha track. One pinned base (hash-pinned, allowlisted, recorded by repo, revision, and licence) can be adapted into a rank-8 adapter. This requires a <code>policy_decision</code> gate approved by program lead and legal. Alpha output is never training data for the from-scratch track.</p></dd>
+          </div>
+          <div class="faq-item">
+            <dt><button class="faq-question" aria-expanded="false" aria-controls="faq-4">How does the evaluation work?</button></dt>
+            <dd id="faq-4" class="faq-answer" hidden><p>Frozen eval sets that only a person can approve. An independent evaluation agent runs every promotion. A score is three numbers on the same frozen set — your adapter, the unadapted base, and keyword search — or it is not a score.</p></dd>
+          </div>
+          <div class="faq-item">
+            <dt><button class="faq-question" aria-expanded="false" aria-controls="faq-5">What happens to my data?</button></dt>
+            <dd id="faq-5" class="faq-answer" hidden><p>It never leaves your boundary. Ingestion, scrubbing, tokenization, training, evaluation, and serving all run on your machines. Only schemas, aggregate statistics, redacted samples, code, and logs may leave — never raw records.</p></dd>
+          </div>
+          <div class="faq-item">
+            <dt><button class="faq-question" aria-expanded="false" aria-controls="faq-6">What licence does this use?</button></dt>
+            <dd id="faq-6" class="faq-answer" hidden><p>PolyForm Noncommercial 1.0.0. Noncommercial use is free; commercial use requires a separate licence. The repository is private — access is by request through the form below.</p></dd>
+          </div>
+          <div class="faq-item">
+            <dt><button class="faq-question" aria-expanded="false" aria-controls="faq-7">How does the kill switch work?</button></dt>
+            <dd id="faq-7" class="faq-answer" hidden><p>One click engages it immediately. Releasing it requires a different person. Every action is recorded in the append-only, hash-chained audit log.</p></dd>
+          </div>
+          <div class="faq-item">
+            <dt><button class="faq-question" aria-expanded="false" aria-controls="faq-8">Can I integrate with my existing CI/CD?</button></dt>
+            <dd id="faq-8" class="faq-answer" hidden><p>Yes. The control plane exposes a JSON API and CLI. The task graph is dependency-ordered and agents declare their capabilities. Gates, budgets, and the audit log are all programmable.</p></dd>
+          </div>
+        </dl>
+      </div>
+    </section>
+
+    <!-- REQUEST ACCESS / FINAL CTA -->
+    <section class="section section-alt reveal" id="request" aria-labelledby="request-heading">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">Request access</span>
+          <h2 id="request-heading">Ask for a seat.</h2>
+          <p>The repository is private, so the front door is this form. Leave the GitHub username that should receive the invitation, and a person reads it — to add you, or to say it is not a fit. No tracking pixel and no sequence.</p>
+        </div>
+        <form class="request-form" method="post" action="/api/access">
+          <div class="field">
+            <label for="github">GitHub username</label>
+            <input id="github" name="github" type="text" required maxlength="39" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="octocat" aria-describedby="github-hint">
+            <p class="hint" id="github-hint">The account that should be invited. Not an email address.</p>
+          </div>
+          <div class="field">
+            <label for="context">What would you run it on?</label>
+            <textarea id="context" name="context" rows="4" maxlength="2000" placeholder="The documents, tickets and resolved questions you already have, and roughly how much of it." aria-describedby="context-hint"></textarea>
+            <p class="hint" id="context-hint">Optional, and it is what a first answer is based on.</p>
+          </div>
+          <div class="hp" aria-hidden="true">
+            <label for="website">Website</label>
+            <input id="website" name="website" type="text" tabindex="-1" autocomplete="off">
+          </div>
+          <div class="request-actions">
+            <button class="btn btn-primary" type="submit">Request access</button>
+          </div>
+          <p class="muted cta-note">The username and that note are filed as an issue in the private repository. Nothing else is collected, and no third party sees the submission.</p>
+        </form>
+      </div>
+    </section>
+
+    <!-- FINAL CTA BAND -->
+    <section class="cta band-night" id="get-started" aria-labelledby="cta-heading">
+      <div class="wrap">
+        <div class="cta-inner">
+          <span class="kicker">Get started</span>
+          <h2 id="cta-heading">Own the model you already have the data for.</h2>
+          <p>internal-ai runs on your machines, under your own licence terms, with no outbound call unless you deliberately switch one on. Start on the from-scratch track, add an adapter only through a gate.</p>
+          <div class="cta-actions">
+            <a class="btn btn-primary" href="#request">Request access</a>
+          </div>
+          <p class="muted cta-note">Licence: PolyForm Noncommercial 1.0.0 · Repository access by request · Runs fully offline.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer band-night" role="contentinfo">
+    <div class="wrap">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <a class="wordmark on-night" href="#top">
+            <img class="mark" src="assets/internal-ai-icon.svg" alt="" width="30" height="30">
+            <span><b>internal</b><b class="accent">-ai</b></span>
+          </a>
+          <p>The control plane a company runs on its own machines to build, evaluate and serve a model it owns. Privacy by design.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <ul>
+            <li><a href="#solution">Capabilities</a></li>
+            <li><a href="#tracks">Two tracks</a></li>
+            <li><a href="#governance">Governance</a></li>
+            <li><a href="#console">Console</a></li>
+            <li><a href="#evidence">Evidence</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h4>Access</h4>
+          <ul>
+            <li><a href="#request">Request access</a></li>
+            <li><a href="#console">Walkthrough</a></li>
+            <li><a href="https://polyformproject.org/licenses/noncommercial/1.0.0/" rel="noopener">Licence</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>© 2026 Internal-AI. PolyForm Noncommercial 1.0.0.</span>
+        <span class="sep"></span>
+        <span>Private by design · Offline by default</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="landing.js" defer></script>
+</body>
+</html>

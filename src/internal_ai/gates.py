@@ -20,6 +20,9 @@ HUMAN_APPROVER_ROLES: dict[GateType, tuple[str, ...]] = {
     GateType.PRODUCTION_DEPLOYMENT: ("engineering_manager", "security"),
     GateType.BUDGET_INCREASE: ("program_lead", "finance"),
     GateType.POLICY_DECISION: ("program_lead", "legal"),
+    # A base whose licence is not permissive is a legal risk carried by the
+    # programme, so it needs the same pair that decides policy, on its own gate.
+    GateType.BASE_MODEL_EXCEPTION: ("program_lead", "legal"),
 }
 
 EVIDENCE_REQUIREMENTS: dict[GateType, tuple[str, ...]] = {
@@ -36,6 +39,14 @@ EVIDENCE_REQUIREMENTS: dict[GateType, tuple[str, ...]] = {
     GateType.PRODUCTION_DEPLOYMENT: ("load_test", "rollback_plan", "access_controls"),
     GateType.BUDGET_INCREASE: ("spend_report", "justification"),
     GateType.POLICY_DECISION: ("decision_rationale", "legal_review"),
+    # The revision is evidence because an exception covers the weights a reviewer
+    # saw, not every future revision of the same repo id.
+    GateType.BASE_MODEL_EXCEPTION: (
+        "base_model_licence",
+        "licence_review",
+        "usage_scope",
+        "base_revision",
+    ),
 }
 
 

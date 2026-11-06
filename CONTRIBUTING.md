@@ -20,9 +20,9 @@ python3 -m venv .venv
 .venv/bin/pip install -e ".[dev,train]"
 ```
 
-The `alpha` extra (`safetensors`, `tokenizers`) is only needed for the adapter
-track. Without it those tests skip, and CI runs without it on purpose: the suite
-that guards the guardrails must stay runnable without a two-gigabyte wheel.
+The `alpha` extra (`safetensors`, `tokenizers`, `transformers`, `peft`) is only
+needed for the adapter track. CI installs it, so those tests run there; a local
+install without it skips them.
 
 Run the data plane from a git checkout, not an exported copy:
 `DataPipeline.release` stamps `git rev-parse HEAD` and refuses a tree whose

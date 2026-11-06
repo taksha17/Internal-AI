@@ -582,6 +582,7 @@ def build_dataset(platform: Platform, actor: Actor, runner: JobRunner, source_id
                         source_id=source_id,
                         path=Path(source["path"]),
                         sensitivity=source["sensitivity"],
+                        legal_status=str(source.get("legal_status") or ""),
                         acl=source["acl"],
                         approved=True,
                         owner=source["requested_by"],
@@ -654,7 +655,18 @@ def dataset_view(platform: Platform, actor: Actor, dataset_id: str) -> dict[str,
     }
 
 
-def split_dataset(platform: Platform, actor: Actor, dataset_id: str) -> dict[str, Any]:
+def split_dataset(
+    platform: Platform,
+    actor: Actor,
+    dataset_id: str,
+    document_holdout: bool = False,
+) -> dict[str, Any]:
+    """Split a corpus; ``document_holdout`` holds whole articles out together.
+
+    Paragraph-level splits put a held-out line's neighbours in the training text, so
+    a question about it can be answered by having read the paragraph beside it. Ask
+    for a document holdout whenever the held-out records will be quoted at someone.
+    """
     from internal_ai.workflows import split_corpus
 
     require(platform.audit, actor, Action.BUILD_DATASET, dataset_id)
@@ -663,7 +675,7 @@ def split_dataset(platform: Platform, actor: Actor, dataset_id: str) -> dict[str
         raise KeyError(f"unknown dataset: {dataset_id}")
     if dataset.released:
         raise ValueError("a released dataset is immutable; build a new version to re-split")
-    result = split_corpus(platform, dataset_id)
+    result = split_corpus(platform, dataset_id, document_holdout=document_holdout)
     return result.stats
 
 

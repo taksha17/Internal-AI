@@ -5,6 +5,8 @@
 {% block content %}
 {{ m.page_head("Models", "Models are trained from random initialisation on a released dataset. No pretrained weights are ever loaded.") }}
 
+<p class="muted small">Adapting a published base is the alpha track, and it stays off until policy P6 is decided. The bases a sector might adapt, and what stands between one and a loaded weight, are on <a href="/console/models/bases">base models by sector</a>.</p>
+
 {% if can("set_serving_policy") %}
 <form method="post" action="/console/models/guardrail-default" class="inline-form card">{{ m.csrf_field() }}
   <label>Flagged answers across the install

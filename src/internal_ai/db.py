@@ -202,6 +202,8 @@ CREATE TABLE IF NOT EXISTS dataset_records (
     PRIMARY KEY (dataset_id, id)
 );
 CREATE INDEX IF NOT EXISTS idx_dataset_records_dataset ON dataset_records(dataset_id);
+CREATE INDEX IF NOT EXISTS idx_dataset_records_key
+    ON dataset_records(dataset_id, record_key);
 
 CREATE TABLE IF NOT EXISTS models (
     id TEXT PRIMARY KEY,
@@ -467,6 +469,8 @@ def init_db(conn: sqlite3.Connection) -> None:
             ALTER TABLE dataset_records_by_version RENAME TO dataset_records;
             CREATE INDEX IF NOT EXISTS idx_dataset_records_dataset
                 ON dataset_records(dataset_id);
+            CREATE INDEX IF NOT EXISTS idx_dataset_records_key
+                ON dataset_records(dataset_id, record_key);
             """
         )
     token_columns = {
