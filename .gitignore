@@ -77,6 +77,7 @@ website theme/
 docs/PLAN_V3.md
 docs/alpha-lane-results.md
 docs/healthcare-corpus.md
+docs/healthcare-release-packet.md
 
 # Scripts for one-off experiments (not part of the core platform)
 scripts/alpha_y15_ab.py
