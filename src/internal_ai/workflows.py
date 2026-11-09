@@ -944,6 +944,8 @@ def model_card_markdown(model: ModelVersion) -> str:
         f"- Base license: {card.get('base_license', 'none')}",
         f"- Provenance: {card.get('provenance_mode', 'scratch_only')}",
         f"- Dataset: {card.get('dataset_id')} (hash {card.get('dataset_hash')})",
+        f"- Knowledge cutoff: {card.get('knowledge_cutoff', 'unknown')}",
+        f"- Web access: {card.get('web_access', 'off')}",
         f"- Data sources: {', '.join(card.get('data_sources', [])) or 'unknown'}",
         f"- Commit: {card.get('commit')}",
         f"- Seed: {card.get('seed')}",

@@ -452,3 +452,51 @@ def test_an_alpha_model_needs_a_released_dataset(platform, enroll_person, tmp_pa
     lead = enroll_person(platform, "Mo Lead", ["ml_lead"])
     with pytest.raises(PermissionError, match="released"):
         register_alpha(platform, PRIMARY, adapter, "ds_draft", lead)
+
+
+def _register_card_model(platform, enroll_person, tmp_path: Path, dataset_id: str = "ds_alpha"):
+    person = enroll_person(platform, "Elena Alpha", ["ml_lead"])
+    dataset(platform, dataset_id, released=True)
+    adapter = tmp_path / "adapter.pt"
+    torch.save({"A": torch.zeros(1)}, adapter)
+    return person, register_alpha(platform, PRIMARY, adapter, dataset_id, person)
+
+
+def test_alpha_card_states_its_knowledge_cutoff_and_web_access(
+    platform, enroll_person, tmp_path: Path
+) -> None:
+    person = enroll_person(platform, "Elena Alpha", ["ml_lead"])
+    dataset(platform, "ds_alpha", released=True)
+    platform.audit.record(
+        actor=person.id,
+        actor_kind="human",
+        action="dataset.released",
+        subject="ds_alpha",
+        details={},
+    )
+    release_event = platform.store.list_audit(
+        action="dataset.released", subject="ds_alpha", limit=1
+    )[0]
+    adapter = tmp_path / "adapter.pt"
+    torch.save({"A": torch.zeros(1)}, adapter)
+    model = register_alpha(platform, PRIMARY, adapter, "ds_alpha", person)
+    assert model.card["knowledge_cutoff"] == release_event.created_at
+    assert model.card["web_access"] == "off"
+    text = model_card_markdown(model)
+    assert f"Knowledge cutoff: {release_event.created_at}" in text
+    assert "Web access: off" in text
+
+
+def test_alpha_card_without_a_release_event_says_unknown_not_a_guess(
+    platform, enroll_person, tmp_path: Path
+) -> None:
+    _, model = _register_card_model(platform, enroll_person, tmp_path)
+    assert model.card["knowledge_cutoff"] == "unknown"
+
+
+def test_alpha_card_records_install_web_posture(
+    platform, enroll_person, tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("INTERNAL_AI_OFFLINE", "0")
+    _, model = _register_card_model(platform, enroll_person, tmp_path)
+    assert model.card["web_access"] == "per_install"
