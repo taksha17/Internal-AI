@@ -1,0 +1,11 @@
+{
+  // internal-ai.dev is a Worker serving ./site as static assets; this account
+  // has no Pages project, so `npx wrangler deploy` from the repository root is
+  // the publish step. page behaviour (307 to /index.html, plain 404 for a
+  // missing path) is the Worker default and is left untouched.
+  "name": "internal-ai",
+  "compatibility_date": "2024-01-01",
+  "assets": {
+    "directory": "./site"
+  }
+}
