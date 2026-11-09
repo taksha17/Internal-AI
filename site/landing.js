@@ -1,3 +1,5 @@
+document.documentElement.classList.add('js');
+
 // FAQ accordion
 document.querySelectorAll('.faq-question').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -8,47 +10,77 @@ document.querySelectorAll('.faq-question').forEach(btn => {
   });
 });
 
-// Scroll reveal for sections
-(() => {
-  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (prefersReduced) {
-    document.querySelectorAll('.reveal').forEach(el => el.classList.add('visible'));
-    return;
+const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const format = (value, decimals) =>
+  value.toLocaleString('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+
+const revealables = [...document.querySelectorAll('.reveal')];
+const tagline = document.querySelector('.tagline-reveal');
+const words = [...document.querySelectorAll('.tagline-word')];
+const figures = [...document.querySelectorAll('[data-count]')];
+
+/* Relative to the viewport: true once the element's top has passed 92% of the
+   window height. Geometry rather than IntersectionObserver, so a page rendered
+   in a covered or unpainted window still resolves instead of staying blank. */
+const reached = (el, cut) => {
+  const box = el.getBoundingClientRect();
+  const height = window.innerHeight || document.documentElement.clientHeight;
+  return box.top < height * cut && box.bottom > 0;
+};
+
+function countUp(el) {
+  const target = Number(el.dataset.count);
+  const decimals = Number(el.dataset.decimals || 0);
+  const start = performance.now();
+  const duration = 1100;
+
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = format(target * eased, decimals);
+    if (t < 1) requestAnimationFrame(step);
+    else el.textContent = format(target, decimals);
+  };
+
+  requestAnimationFrame(step);
+}
+
+function paint() {
+  pending = false;
+
+  revealables.forEach(el => {
+    if (!el.classList.contains('visible') && reached(el, 0.94)) {
+      el.classList.add('visible');
+    }
+  });
+
+  if (tagline && words.length && reached(tagline, 0.9)) {
+    words.forEach(word => word.classList.add('visible'));
   }
 
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        entry.target.classList.add('visible');
-        observer.unobserve(entry.target);
-      }
-    });
-  }, { threshold: 0.15, rootMargin: '0px 0px -50px 0px' });
+  figures.forEach(el => {
+    if (el.dataset.counted || !reached(el, 0.92)) return;
+    el.dataset.counted = '1';
+    countUp(el);
+  });
+}
 
-  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
-})();
+let pending = false;
+const schedule = () => {
+  if (pending) return;
+  pending = true;
+  requestAnimationFrame(paint);
+};
 
-// Tagline reveal scroll animation (words stagger)
-(() => {
-  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (prefersReduced) {
-    document.querySelectorAll('.tagline-word').forEach(w => w.classList.add('visible'));
-    return;
-  }
-
-  const words = document.querySelectorAll('.tagline-word');
-  if (!words.length) return;
-
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        words.forEach((word, i) => {
-          setTimeout(() => word.classList.add('visible'), i * 70);
-        });
-        observer.disconnect();
-      }
-    });
-  }, { threshold: 0.3 });
-
-  observer.observe(document.querySelector('.tagline-reveal'));
-})();
+if (reduced) {
+  revealables.forEach(el => el.classList.add('visible'));
+  words.forEach(word => word.classList.add('visible'));
+} else {
+  window.addEventListener('scroll', schedule, { passive: true });
+  window.addEventListener('resize', schedule);
+  paint();
+}

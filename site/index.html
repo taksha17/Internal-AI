@@ -17,7 +17,7 @@
   <link rel="icon" href="assets/internal-ai-icon.svg" type="image/svg+xml" sizes="any">
   <link rel="icon" href="assets/internal-ai-icon.png" type="image/png" sizes="512x512">
   <link rel="apple-touch-icon" href="assets/internal-ai-icon.png">
-  <link rel="stylesheet" href="styles.css" media="screen">
+  <link rel="stylesheet" href="styles.css?v=4" media="screen">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="internal-ai">
   <meta property="og:title" content="internal-ai — the control plane for models you own">
@@ -35,7 +35,7 @@
   <a class="skip" href="#main">Skip to content</a>
 
   <header class="masthead" role="banner">
-    <div class="wrap">
+    <div class="wrap masthead-inner">
       <a class="wordmark" href="#top" aria-label="internal-ai home">
         <img class="mark" src="assets/internal-ai-icon.svg" alt="" width="30" height="30">
         <span><b>internal</b><b class="accent">-ai</b></span>
@@ -46,32 +46,43 @@
         <a href="#governance">Governance</a>
         <a href="#evidence">Evidence</a>
       </nav>
+      <span class="scope" aria-hidden="true"><i class="d"></i>OFFLINE</span>
       <a class="btn btn-primary btn-sm cta" href="#request">Request access</a>
     </div>
   </header>
 
   <main id="main">
-    <!-- HERO SECTION -->
+    <!-- HERO -->
     <section class="hero band-night" id="top" aria-labelledby="hero-heading">
-      <div class="wrap">
-        <div class="hero-grid">
-          <div class="hero-content">
-            <span class="kicker">Private by design</span>
-            <h1 id="hero-heading">The control plane for models you <span class="g">own</span>.</h1>
-            <p class="lede">Every company sits on documents, tickets and resolved questions it could train on — and can't, without sending them outside to someone else's cloud, where the model belongs to someone else. <strong>internal-ai is the other arrangement</strong>: install it on machines you control, point it at data you already have, and ship a model whose training data, evals and serving all stayed inside the boundary. <strong>Governance as code. Offline by default.</strong></p>
-            <div class="hero-actions">
-              <a class="btn btn-primary" href="#request">Request access</a>
-              <a class="btn btn-ghost" href="#console">Watch the walkthrough</a>
-            </div>
-            <div class="hero-proof">
-              <span class="kicker">Proof</span>
-              <p>One stress run, 16 GB CPU-only: <b>41,294 records ingested, 20,455 redactions, 140,176 training tokens at 1,653 tokens/s in 36.4 minutes</b> — and the harness <b>refused</b> to promote a model that hadn't earned it. A platform that says no is the one you can trust with the data.</p>
-            </div>
+      <div class="dot-field" aria-hidden="true"></div>
+      <div class="glow glow-a" aria-hidden="true"></div>
+      <div class="glow glow-b" aria-hidden="true"></div>
+      <div class="wrap hero-wrap">
+        <div class="hero-copy reveal">
+          <a class="announce" href="#request">
+            <b>SELF-HOSTED</b>
+            <span class="rule" aria-hidden="true"></span>
+            PolyForm Noncommercial · repository access by request
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15"/><path d="M13 6l6 6-6 6"/></svg>
+          </a>
+          <h1 id="hero-heading">The control plane <br>for models you <span class="own">own<span class="underline" aria-hidden="true"></span></span>.</h1>
+          <p class="lede">Every company sits on documents, tickets and resolved questions it could train on — and can't, without sending them outside to someone else's cloud. <strong>internal-ai is the other arrangement</strong>: run it on machines you control, and ship a model whose data, evals and serving never left.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#request">Request access</a>
+            <a class="btn btn-ghost" href="#console">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+              Watch the walkthrough
+            </a>
           </div>
-          <div class="console" role="img" aria-label="Illustration of the internal-ai console: a midnight rail beside an Approvals page with a dataset-release gate and an append-only audit log.">
+          <p class="hero-scope mono">governance as code <span class="dot">·</span> offline by default <span class="dot">·</span> no raw record leaves</p>
+        </div>
+
+        <div class="showcase reveal" role="img" aria-label="Illustration of the internal-ai console: a midnight rail beside an Approvals page with a dataset-release gate waiting on a second person, an audit chain and a spend meter.">
+          <div class="console">
             <div class="console-bar">
-              <span class="lights"><i></i><i></i><i></i></span>
+              <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
               <span class="url">console.local · /approvals</span>
+              <span class="wire" aria-hidden="true">offline</span>
             </div>
             <div class="console-body">
               <div class="console-rail" aria-hidden="true">
@@ -85,7 +96,6 @@
                 <span class="rail-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 8h6V4h-6z"/></svg>Overview</span>
                 <span class="rail-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>Datasets</span>
                 <span class="rail-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M9 2.5v3M15 2.5v3M9 18.5v3M15 18.5v3M2.5 9h3M2.5 15h3M18.5 9h3M18.5 15h3"/></svg>Training</span>
-                <span class="rail-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V5z"/><path d="M8 9h8M8 13h5"/></svg>Evaluations</span>
                 <span class="rail-row on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>Approvals</span>
                 <span class="rail-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l3 3v15H6z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Audit log</span>
               </div>
@@ -98,12 +108,35 @@
                     Kill switch
                   </span>
                 </div>
-                <div class="console-card">
-                  <div class="t">Dataset release</div>
-                  <div class="s">A domain expert reviewed the sample. A named second person decides.</div>
+                <div class="console-card gate">
+                  <div class="gate-head">
+                    <div>
+                      <div class="t">Dataset release</div>
+                      <div class="s">A domain expert reviewed the sample. A named second person decides.</div>
+                    </div>
+                    <span class="gate-state">PENDING</span>
+                  </div>
                   <div class="row">
                     <span class="tag tag-olive">Gate · dataset_release</span>
                     <span class="tag tag-blush">Second person required</span>
+                  </div>
+                  <div class="gate-act" aria-hidden="true">
+                    <span class="fake-btn">Approve</span>
+                    <span class="fake-btn">Reject</span>
+                    <span class="cursor"></span>
+                  </div>
+                </div>
+                <div class="console-split">
+                  <div class="console-mini">
+                    <div class="mini-label">audit_events</div>
+                    <div class="chain-line"><span>001</span><b>dataset.release.requested</b></div>
+                    <div class="chain-line"><span>002</span><b>gate.opened</b></div>
+                    <div class="chain-line live"><span>003</span><b>awaiting approver</b><i class="blink" aria-hidden="true"></i></div>
+                  </div>
+                  <div class="console-mini">
+                    <div class="mini-label">budget · install</div>
+                    <div class="meter"><i style="width:62%"></i></div>
+                    <div class="mini-foot"><span>$0.00 outbound</span><span>62%</span></div>
                   </div>
                 </div>
                 <div class="console-audit">
@@ -113,8 +146,11 @@
               </div>
             </div>
           </div>
+          <div class="float float-a" aria-hidden="true"><b>2 of 3</b><span>roles satisfied</span></div>
+          <div class="float float-b" aria-hidden="true"><i class="d"></i><span>no outbound call</span></div>
         </div>
-        <dl class="hero-facts">
+
+        <dl class="hero-facts reveal">
           <div><dt>One install, every key.</dt><dd>Console, CLI and JSON API are one service — one boundary to audit.</dd></div>
           <div><dt>One pipeline.</dt><dd>Sources, datasets, training, evals, gates, serving — one governed path.</dd></div>
           <div><dt>Agents do the work. People decide.</dt><dd>Nothing irreversible ships without a human who can be named.</dd></div>
@@ -124,31 +160,36 @@
       </div>
     </section>
 
-    <!-- TAGLINE REVEAL SECTION (mandatory per B11) -->
-    <section class="section tagline-reveal" id="tagline" aria-labelledby="tagline-heading">
-      <div class="wrap">
-        <div class="tagline-content">
-          <h2 id="tagline-heading" class="tagline-text">
-            <span class="tagline-word" data-word-index="0">Own</span>
-            <span class="tagline-word" data-word-index="1">the</span>
-            <span class="tagline-word" data-word-index="2">model.</span>
-            <span class="tagline-word" data-word-index="3">Keep</span>
-            <span class="tagline-word" data-word-index="4">the</span>
-            <span class="tagline-word" data-word-index="5">data.</span>
-            <span class="tagline-word" data-word-index="6">Prove</span>
-            <span class="tagline-word" data-word-index="7">the</span>
-            <span class="tagline-word" data-word-index="8">result.</span>
-          </h2>
+    <!-- INVARIANT TICKER -->
+    <div class="ticker" aria-label="What holds at every step">
+      <div class="ticker-track">
+        <div class="ticker-group">
+          <span class="ticker-item"><i class="dot"></i>append-only audit</span>
+          <span class="ticker-item"><i class="dot"></i>hash-chained events</span>
+          <span class="ticker-item"><i class="dot"></i>gates human-only</span>
+          <span class="ticker-item"><i class="dot"></i>requester cannot approve</span>
+          <span class="ticker-item"><i class="dot"></i>frozen eval sets</span>
+          <span class="ticker-item"><i class="dot"></i>one pinned base, decided by gate</span>
+          <span class="ticker-item"><i class="dot"></i>raw records stay inside</span>
+        </div>
+        <div class="ticker-group" aria-hidden="true">
+          <span class="ticker-item"><i class="dot"></i>append-only audit</span>
+          <span class="ticker-item"><i class="dot"></i>hash-chained events</span>
+          <span class="ticker-item"><i class="dot"></i>gates human-only</span>
+          <span class="ticker-item"><i class="dot"></i>requester cannot approve</span>
+          <span class="ticker-item"><i class="dot"></i>frozen eval sets</span>
+          <span class="ticker-item"><i class="dot"></i>one pinned base, decided by gate</span>
+          <span class="ticker-item"><i class="dot"></i>raw records stay inside</span>
         </div>
       </div>
-    </section>
+    </div>
 
-    <!-- PROBLEM SECTION -->
-    <section class="section section-alt problem reveal" id="problem" aria-labelledby="problem-heading">
+    <!-- PROBLEM -->
+    <section class="section problem reveal" id="problem" aria-labelledby="problem-heading">
       <div class="wrap">
         <div class="section-head reveal">
           <span class="eyebrow">The problem</span>
-          <h2 id="problem-heading">Own the model. Keep the data. Prove the result.</h2>
+          <h2 id="problem-heading">Own the model. Keep the data. <br>Prove the <span class="pop">result</span>.</h2>
           <p>For a regulated team, the hard question is the third one. Banks, hospitals and defence cannot send their data out, and cannot ship a model they cannot explain.</p>
         </div>
         <div class="problem-grid">
@@ -195,51 +236,129 @@
       </div>
     </section>
 
-    <!-- SOLUTION / PLATFORM SECTION -->
-    <section class="section reveal" id="solution" aria-labelledby="solution-heading">
+    <!-- TAGLINE REVEAL (B11 mandatory) -->
+    <section class="tagline-reveal" id="tagline" aria-labelledby="tagline-heading">
+      <div class="wrap">
+        <h2 id="tagline-heading" class="tagline-text">
+          <span class="tagline-word" data-word-index="0">Own</span>
+          <span class="tagline-word" data-word-index="1">the</span>
+          <span class="tagline-word" data-word-index="2">model.</span>
+          <span class="tagline-word" data-word-index="3">Keep</span>
+          <span class="tagline-word" data-word-index="4">the</span>
+          <span class="tagline-word" data-word-index="5">data.</span>
+          <span class="tagline-word" data-word-index="6">Prove</span>
+          <span class="tagline-word" data-word-index="7">the</span>
+          <span class="tagline-word accent" data-word-index="8">result.</span>
+        </h2>
+      </div>
+    </section>
+
+    <!-- PLATFORM — bento -->
+    <section class="section section-alt reveal" id="solution" aria-labelledby="solution-heading">
       <div class="wrap">
         <div class="section-head reveal">
           <span class="eyebrow">Platform</span>
-          <h2 id="solution-heading">Everything between your data and a model you own.</h2>
+          <h2 id="solution-heading">Everything between your data <br>and a model you own.</h2>
           <p>One control plane, one data plane, and the training, evaluation and serving that surround them. Agents do the engineering work; people take every irreversible decision.</p>
         </div>
-        <div class="grid grid-3">
-          <article class="card">
-            <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.4"/><circle cx="5" cy="19" r="2.4"/><circle cx="19" cy="19" r="2.4"/><path d="M12 7.4v4.2M12 11.6 6.6 17M12 11.6 17.4 17"/></svg></span>
+        <div class="bento">
+          <article class="bento-card span-2 lead">
+            <div class="bento-head">
+              <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.4"/><circle cx="5" cy="19" r="2.4"/><circle cx="19" cy="19" r="2.4"/><path d="M12 7.4v4.2M12 11.6 6.6 17M12 11.6 17.4 17"/></svg></span>
+              <span class="bento-index mono">01</span>
+            </div>
             <h3>Control plane</h3>
             <p>A dependency-ordered task graph, ten role agents with declared capabilities, gates that need a named second person, budgets at five scopes, a kill switch, and an append-only hash-chained audit log.</p>
+            <div class="chips" aria-hidden="true">
+              <span class="mini-chip">dataset_release</span>
+              <span class="mini-chip">eval_set_freeze</span>
+              <span class="mini-chip">model_promotion</span>
+              <span class="mini-chip">policy_decision · P6</span>
+              <span class="mini-chip blush">requester ≠ approver</span>
+            </div>
           </article>
-          <article class="card">
-            <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span>
+
+          <article class="bento-card">
+            <div class="bento-head">
+              <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></span>
+              <span class="bento-index mono">02</span>
+            </div>
             <h3>Data plane</h3>
             <p>Ingestion, exact and near-duplicate removal, PII and secret scrubbing, quality and language filters, immutable dataset versions, a tokenizer trained from scratch, and leakage-safe splits.</p>
+            <div class="pipeline" aria-hidden="true">
+              <span class="pipe-bar"><i style="width:80%"></i></span>
+              <span class="pipe-foot mono">51,750 rows <span class="dot">·</span> 41,294 kept <span class="dot">·</span> 20,455 redactions</span>
+            </div>
           </article>
-          <article class="card">
-            <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M9 2.5v3M15 2.5v3M9 18.5v3M15 18.5v3M2.5 9h3M2.5 15h3M18.5 9h3M18.5 15h3"/></svg></span>
+
+          <article class="bento-card">
+            <div class="bento-head">
+              <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M9 2.5v3M15 2.5v3M9 18.5v3M15 18.5v3M2.5 9h3M2.5 15h3M18.5 9h3M18.5 15h3"/></svg></span>
+              <span class="bento-index mono">03</span>
+            </div>
             <h3>Training</h3>
             <p>A from-scratch transformer that records its commit, config, dataset hash and seed. It checkpoints, resumes, caps cost, streams metrics, and stops itself on divergence or a loss spike.</p>
+            <div class="spark" aria-hidden="true">
+              <svg viewBox="0 0 160 44" preserveAspectRatio="none">
+                <path class="spark-fill" d="M0 6 L18 14 L34 12 L50 22 L66 19 L82 27 L98 25 L114 33 L130 31 L146 38 L160 37 L160 44 L0 44 Z"/>
+                <path class="spark-line" d="M0 6 L18 14 L34 12 L50 22 L66 19 L82 27 L98 25 L114 33 L130 31 L146 38 L160 37"/>
+              </svg>
+              <span class="pipe-foot mono">140,176 tokens <span class="dot">·</span> 1,653 tok/s <span class="dot">·</span> divergence guard</span>
+            </div>
           </article>
-          <article class="card">
-            <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V5z"/><path d="M8 9h8M8 13h5"/><path d="M9 22l3-3 3 3"/></svg></span>
+
+          <article class="bento-card span-2">
+            <div class="bento-head">
+              <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V5z"/><path d="M8 9h8M8 13h5"/><path d="M9 22l3-3 3 3"/></svg></span>
+              <span class="bento-index mono">04</span>
+            </div>
             <h3>Evaluation</h3>
             <p>Frozen eval sets that only a person can approve, an independent evaluation agent, promotion gates, and model cards. A score is three numbers on the same frozen set, or it is not a score.</p>
+            <div class="scoreboard" aria-hidden="true">
+              <div><span class="mono">adapter</span><b>29/32</b></div>
+              <div><span class="mono">base</span><b>32/32</b></div>
+              <div><span class="mono">keyword</span><b>32/32</b></div>
+              <p class="mini-note">saturated set · no skill claim</p>
+            </div>
           </article>
-          <article class="card">
-            <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg></span>
-            <h3>Serving</h3>
-            <p>Authenticated inference and permission-aware retrieval, per-user rate limits, and rollback. Every answer carries the passages it was shown, so an answer can be checked against its own evidence.</p>
+
+          <article class="bento-card span-2">
+            <div class="bento-head">
+              <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg></span>
+              <span class="bento-index mono">05</span>
+            </div>
+            <div class="bento-split">
+              <div>
+                <h3>Serving</h3>
+                <p>Authenticated inference and permission-aware retrieval, per-user rate limits, and rollback. Every answer carries the passages it was shown, so an answer can be checked against its own evidence.</p>
+              </div>
+              <div class="cite" aria-hidden="true">
+                <div class="cite-q">Which game ended 118–113?</div>
+                <div class="cite-a"><b>NBA.csv:1204</b><span>“Los Angeles Lakers 118, Golden State Warriors 113”</span></div>
+                <div class="cite-meta mono">3 passages shown · trace scrubbed</div>
+              </div>
+            </div>
           </article>
-          <article class="card">
-            <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.4"/><circle cx="6" cy="19" r="2.4"/><circle cx="18" cy="12" r="2.4"/><path d="M6 7.4v9.2M8.2 5.6c5 .3 8 2.1 9.8 5.2"/></svg></span>
+
+          <article class="bento-card">
+            <div class="bento-head">
+              <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2.4"/><circle cx="6" cy="19" r="2.4"/><circle cx="18" cy="12" r="2.4"/><path d="M6 7.4v9.2M8.2 5.6c5 .3 8 2.1 9.8 5.2"/></svg></span>
+              <span class="bento-index mono">06</span>
+            </div>
             <h3>Adaptation</h3>
             <p>For an install that decides an existing open base is acceptable: a rank-8 adapter over one pinned base, streamed from disk, recorded on every model card by repo, revision and licence.</p>
+            <div class="pinrow" aria-hidden="true">
+              <div><span class="mono">repo</span><b>pinned</b></div>
+              <div><span class="mono">revision</span><b>hash-checked</b></div>
+              <div><span class="mono">licence</span><b>class allowlisted</b></div>
+            </div>
           </article>
         </div>
       </div>
     </section>
 
-    <!-- BENEFITS SECTION (outcome-driven) -->
-    <section class="section section-alt benefits reveal" id="benefits" aria-labelledby="benefits-heading">
+    <!-- BENEFITS -->
+    <section class="section benefits reveal" id="benefits" aria-labelledby="benefits-heading">
       <div class="wrap">
         <div class="section-head reveal">
           <span class="eyebrow">Why it matters</span>
@@ -250,12 +369,12 @@
           <article class="benefit-card">
             <div class="benefit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
             <h3>Your data never leaves</h3>
-            <p><strong>No raw record crosses the boundary.</strong> Ingestion, scrubbing, tokenization, training, and serving all run on your machines. Schemas, aggregates, and redacted samples may leave — the records do not.</p>
+            <p><strong>No raw record crosses the boundary.</strong> Ingestion, scrubbing, tokenization, training and serving all run on your machines. Schemas, aggregates and redacted samples may leave — the records do not.</p>
           </article>
           <article class="benefit-card">
             <div class="benefit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
             <h3>Governance that holds up</h3>
-            <p><strong>Every irreversible decision has a named approver.</strong> Gates require a second person. The audit log is append-only and hash-chained. A suppressed check is a lie with a green tick — the platform refuses to weaken one.</p>
+            <p><strong>Every irreversible decision has a named approver.</strong> Gates require a second person. The audit log is append-only and hash-chained. A suppressed check is a lie with a green tick.</p>
           </article>
           <article class="benefit-card">
             <div class="benefit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
@@ -265,19 +384,24 @@
           <article class="benefit-card">
             <div class="benefit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></div>
             <h3>Offline by default</h3>
-            <p><strong>No outbound call unless you switch one on.</strong> The alpha track loads a pinned base through a gate decided by program lead and legal. The from-scratch track has no code path that reads pretrained parameters, and none may be added.</p>
+            <p><strong>No outbound call unless you switch one on.</strong> The alpha track loads a pinned base through a gate decided by program lead and legal. The from-scratch track has no code path that reads pretrained parameters.</p>
           </article>
           <article class="benefit-card">
             <div class="benefit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5"/></svg></div>
             <h3>Improvement that compounds</h3>
-            <p><strong>Ownership is a loop.</strong> Workflow becomes eval, expertise becomes data, failure becomes improvement — and all of it carries forward to the next base model. Most teams build this by hand once and let it rot. internal-ai ships it.</p>
+            <p><strong>Ownership is a loop.</strong> Workflow becomes eval, expertise becomes data, failure becomes improvement — and all of it carries forward to the next base model. Most teams build this by hand once and let it rot.</p>
+          </article>
+          <article class="benefit-card">
+            <div class="benefit-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/><circle cx="19" cy="17" r="3"/></svg></div>
+            <h3>A boundary you can audit</h3>
+            <p><strong>One service, one boundary.</strong> Console, CLI and JSON API share the same governance, so the thing you review is the thing that runs — not a diagram of it.</p>
           </article>
         </div>
       </div>
     </section>
 
-    <!-- HOW IT WORKS SECTION -->
-    <section class="section how-it-works reveal" id="how-it-works" aria-labelledby="how-heading">
+    <!-- HOW IT WORKS -->
+    <section class="section section-alt how-it-works reveal" id="how-it-works" aria-labelledby="how-heading">
       <div class="wrap">
         <div class="section-head reveal">
           <span class="eyebrow">How it works</span>
@@ -286,9 +410,12 @@
         </div>
         <div class="steps-grid">
           <article class="step">
-            <div class="step-number">01</div>
+            <div class="step-top">
+              <span class="step-number">01</span>
+              <span class="step-line" aria-hidden="true"></span>
+            </div>
             <h3>Ingest and prepare</h3>
-            <p>Connect your sources — documents, tickets, resolved questions. The data plane handles exact and near-duplicate removal, PII and secret scrubbing, quality and language filters, and immutable dataset versioning. A tokenizer trained from scratch on your corpus.</p>
+            <p>Connect your sources — documents, tickets, resolved questions. The data plane handles exact and near-duplicate removal, PII and secret scrubbing, quality and language filters, and immutable dataset versioning.</p>
             <ul class="step-details">
               <li>Sources stay inside the boundary</li>
               <li>Redaction is measurable (20,455 in stress run)</li>
@@ -296,9 +423,12 @@
             </ul>
           </article>
           <article class="step">
-            <div class="step-number">02</div>
+            <div class="step-top">
+              <span class="step-number">02</span>
+              <span class="step-line" aria-hidden="true"></span>
+            </div>
             <h3>Train and evaluate</h3>
-            <p>Launch a from-scratch transformer or an alpha adapter over a pinned base. The trainer records commit, config, dataset hash, and seed. It checkpoints, resumes, caps cost, streams metrics, and stops itself on divergence or a loss spike.</p>
+            <p>Launch a from-scratch transformer or an alpha adapter over a pinned base. The trainer records commit, config, dataset hash and seed. It checkpoints, resumes, caps cost and stops itself on divergence.</p>
             <ul class="step-details">
               <li>Provenance mode: scratch_only or gated alpha</li>
               <li>Frozen eval sets, human-approved only</li>
@@ -306,9 +436,12 @@
             </ul>
           </article>
           <article class="step">
-            <div class="step-number">03</div>
+            <div class="step-top">
+              <span class="step-number">03</span>
+              <span class="step-line" aria-hidden="true"></span>
+            </div>
             <h3>Serve and improve</h3>
-            <p>Authenticated inference with permission-aware retrieval. Every answer carries the passages it was shown. Traces become triage cases — failure feeds the next training run. Gates, audit, and offline default govern every step.</p>
+            <p>Authenticated inference with permission-aware retrieval. Every answer carries the passages it was shown. Traces become triage cases — failure feeds the next training run.</p>
             <ul class="step-details">
               <li>Per-user rate limits and rollback</li>
               <li>Trace-to-triage pipeline built in</li>
@@ -319,8 +452,8 @@
       </div>
     </section>
 
-    <!-- TWO TRACKS SECTION -->
-    <section class="section section-alt reveal" id="tracks" aria-labelledby="tracks-heading">
+    <!-- TWO TRACKS -->
+    <section class="section reveal" id="tracks" aria-labelledby="tracks-heading">
       <div class="wrap">
         <div class="section-head reveal">
           <span class="eyebrow">Two tracks</span>
@@ -354,8 +487,8 @@
       </div>
     </section>
 
-    <!-- GOVERNANCE SECTION -->
-    <section class="section reveal" id="governance" aria-labelledby="governance-heading">
+    <!-- GOVERNANCE -->
+    <section class="section section-alt reveal" id="governance" aria-labelledby="governance-heading">
       <div class="wrap">
         <div class="section-head reveal">
           <span class="eyebrow">Governance</span>
@@ -401,6 +534,8 @@
 
     <!-- CONSOLE WALKTHROUGH -->
     <section class="section band-night reveal" id="console" aria-labelledby="console-heading">
+      <div class="dot-field" aria-hidden="true"></div>
+      <div class="glow glow-c" aria-hidden="true"></div>
       <div class="wrap">
         <div class="section-head reveal">
           <span class="kicker">The console</span>
@@ -408,6 +543,10 @@
           <p>A narrated walkthrough of a real console session — the same governance the CLI and the JSON API run on. One FastAPI process, htmx vendored, no CDN, no inline script or style.</p>
         </div>
         <figure class="video-frame">
+          <span class="frame-tick tl" aria-hidden="true"></span>
+          <span class="frame-tick tr" aria-hidden="true"></span>
+          <span class="frame-tick bl" aria-hidden="true"></span>
+          <span class="frame-tick br" aria-hidden="true"></span>
           <video controls preload="none" poster="assets/console-walk-poster.jpg" aria-label="A narrated walkthrough of the internal-ai console.">
             <source src="assets/console-walk-narrated.mp4" type="video/mp4">
             Your browser does not support embedded video. <a href="assets/console-walk-narrated.mp4">Download the walkthrough (MP4)</a>.
@@ -420,30 +559,34 @@
       </div>
     </section>
 
-    <!-- EVIDENCE SECTION -->
+    <!-- EVIDENCE -->
     <section class="section reveal" id="evidence" aria-labelledby="evidence-heading">
       <div class="wrap">
-        <div class="section-head reveal">
-          <span class="eyebrow">Evidence</span>
-          <h2 id="evidence-heading">Verified at scale — and honest when it falls short.</h2>
-          <p>One stress run on a 16 GB CPU-only workstation. Two things are quoted for: the audit chain held after two deliberate races, and the harness refused to promote a model that had not earned it.</p>
+        <div class="evidence-layout">
+          <div class="evidence-copy reveal">
+            <span class="eyebrow">Evidence</span>
+            <h2 id="evidence-heading">Verified at scale — and honest when it falls short.</h2>
+            <p>One stress run on a 16 GB CPU-only workstation. Two things are quoted for: the audit chain held after two deliberate races, and the harness refused to promote a model that had not earned it.</p>
+            <p class="scale-note"><b>Promotion was refused:</b> recall@10 0.000 against a 0.000 keyword baseline. A slim model on a synthetic corpus does not beat keyword search, and the right behaviour is to say so — that is the data-volume problem, not a bug in the pipeline.</p>
+            <a class="evidence-link" href="#console">Watch the run in the console <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15"/><path d="M13 6l6 6-6 6"/></svg></a>
+          </div>
+          <div class="stats">
+            <div class="stat"><div class="n" data-count="41294">41,294</div><div class="k">records ingested</div><div class="s">from 51,750 rows, with 20,455 redactions</div></div>
+            <div class="stat"><div class="n" data-count="140176">140,176</div><div class="k">training tokens</div><div class="s">at 1,653 tokens/s, stopped early by the divergence guard</div></div>
+            <div class="stat"><div class="n"><span data-count="36.4" data-decimals="1">36.4</span> min</div><div class="k">end to end</div><div class="s">16 GB CPU-only, exited clean</div></div>
+            <div class="stat"><div class="n" data-count="17">17</div><div class="k">audit events</div><div class="s">chain verified after two races</div></div>
+          </div>
         </div>
-        <div class="stats">
-          <div class="stat"><div class="n">41,294</div><div class="k">records ingested</div><div class="s">from 51,750 rows, with 20,455 redactions</div></div>
-          <div class="stat"><div class="n">140,176</div><div class="k">training tokens</div><div class="s">at 1,653 tokens/s, stopped early by the divergence guard</div></div>
-          <div class="stat"><div class="n">36.4 min</div><div class="k">end to end</div><div class="s">16 GB CPU-only, exited clean</div></div>
-          <div class="stat"><div class="n">17</div><div class="k">audit events</div><div class="s">chain verified after two races</div></div>
-        </div>
-        <p class="scale-note">Promotion was refused: recall@10 0.000 against a 0.000 keyword baseline. A slim model on a synthetic corpus does not beat keyword search, and the right behaviour is to say so — that is the data-volume problem, not a bug in the pipeline.</p>
       </div>
     </section>
 
-    <!-- FAQ SECTION -->
+    <!-- FAQ -->
     <section class="section section-alt faq reveal" id="faq" aria-labelledby="faq-heading">
-      <div class="wrap">
-        <div class="section-head reveal">
+      <div class="wrap faq-layout">
+        <div class="faq-head reveal">
           <span class="eyebrow">Questions</span>
           <h2 id="faq-heading">Answers to the questions we hear most.</h2>
+          <p class="muted">If yours is not here, ask it in the access form. A person reads it.</p>
         </div>
         <dl class="faq-list">
           <div class="faq-item">
@@ -456,7 +599,7 @@
           </div>
           <div class="faq-item">
             <dt><button class="faq-question" aria-expanded="false" aria-controls="faq-3">Can I use an existing open model as a base?</button></dt>
-            <dd id="faq-3" class="faq-answer" hidden><p>Yes, through the alpha track. One pinned base (hash-pinned, allowlisted, recorded by repo, revision, and licence) can be adapted into a rank-8 adapter. This requires a <code>policy_decision</code> gate approved by program lead and legal. Alpha output is never training data for the from-scratch track.</p></dd>
+            <dd id="faq-3" class="faq-answer" hidden><p>Yes, through the alpha track. One pinned base (hash-pinned, allowlisted, recorded by repo, revision and licence) can be adapted into a rank-8 adapter. This requires a <code>policy_decision</code> gate approved by program lead and legal. Alpha output is never training data for the from-scratch track.</p></dd>
           </div>
           <div class="faq-item">
             <dt><button class="faq-question" aria-expanded="false" aria-controls="faq-4">How does the evaluation work?</button></dt>
@@ -464,7 +607,7 @@
           </div>
           <div class="faq-item">
             <dt><button class="faq-question" aria-expanded="false" aria-controls="faq-5">What happens to my data?</button></dt>
-            <dd id="faq-5" class="faq-answer" hidden><p>It never leaves your boundary. Ingestion, scrubbing, tokenization, training, evaluation, and serving all run on your machines. Only schemas, aggregate statistics, redacted samples, code, and logs may leave — never raw records.</p></dd>
+            <dd id="faq-5" class="faq-answer" hidden><p>It never leaves your boundary. Ingestion, scrubbing, tokenization, training, evaluation and serving all run on your machines. Only schemas, aggregate statistics, redacted samples, code and logs may leave — never raw records.</p></dd>
           </div>
           <div class="faq-item">
             <dt><button class="faq-question" aria-expanded="false" aria-controls="faq-6">What licence does this use?</button></dt>
@@ -476,19 +619,24 @@
           </div>
           <div class="faq-item">
             <dt><button class="faq-question" aria-expanded="false" aria-controls="faq-8">Can I integrate with my existing CI/CD?</button></dt>
-            <dd id="faq-8" class="faq-answer" hidden><p>Yes. The control plane exposes a JSON API and CLI. The task graph is dependency-ordered and agents declare their capabilities. Gates, budgets, and the audit log are all programmable.</p></dd>
+            <dd id="faq-8" class="faq-answer" hidden><p>Yes. The control plane exposes a JSON API and CLI. The task graph is dependency-ordered and agents declare their capabilities. Gates, budgets and the audit log are all programmable.</p></dd>
           </div>
         </dl>
       </div>
     </section>
 
-    <!-- REQUEST ACCESS / FINAL CTA -->
+    <!-- REQUEST ACCESS -->
     <section class="section section-alt reveal" id="request" aria-labelledby="request-heading">
-      <div class="wrap">
-        <div class="section-head reveal">
+      <div class="wrap request-layout">
+        <div class="request-copy reveal">
           <span class="eyebrow">Request access</span>
           <h2 id="request-heading">Ask for a seat.</h2>
           <p>The repository is private, so the front door is this form. Leave the GitHub username that should receive the invitation, and a person reads it — to add you, or to say it is not a fit. No tracking pixel and no sequence.</p>
+          <ul class="request-facts">
+            <li><span class="mono">licence</span>PolyForm Noncommercial 1.0.0</li>
+            <li><span class="mono">install</span>self-hosted, offline by default</li>
+            <li><span class="mono">answer</span>from a person, not a sequence</li>
+          </ul>
         </div>
         <form class="request-form" method="post" action="/api/access">
           <div class="field">
@@ -513,15 +661,18 @@
       </div>
     </section>
 
-    <!-- FINAL CTA BAND -->
+    <!-- FINAL CTA -->
     <section class="cta band-night" id="get-started" aria-labelledby="cta-heading">
+      <div class="dot-field" aria-hidden="true"></div>
+      <div class="glow glow-d" aria-hidden="true"></div>
       <div class="wrap">
         <div class="cta-inner">
           <span class="kicker">Get started</span>
-          <h2 id="cta-heading">Own the model you already have the data for.</h2>
+          <h2 id="cta-heading">Own the model you already <br>have the data for.</h2>
           <p>internal-ai runs on your machines, under your own licence terms, with no outbound call unless you deliberately switch one on. Start on the from-scratch track, add an adapter only through a gate.</p>
           <div class="cta-actions">
             <a class="btn btn-primary" href="#request">Request access</a>
+            <a class="btn btn-ghost" href="#console">Watch the walkthrough</a>
           </div>
           <p class="muted cta-note">Licence: PolyForm Noncommercial 1.0.0 · Repository access by request · Runs fully offline.</p>
         </div>
@@ -566,6 +717,6 @@
     </div>
   </footer>
 
-  <script src="landing.js" defer></script>
+  <script src="landing.js?v=4" defer></script>
 </body>
 </html>
