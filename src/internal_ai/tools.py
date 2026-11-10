@@ -7,10 +7,12 @@ the audit log, so tool use is reviewable after the fact.
 from __future__ import annotations
 
 import json
+import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from internal_ai.audit import AuditLog
 from internal_ai.domain import AuditOutcome, Capability, RoleSpec
@@ -18,6 +20,28 @@ from internal_ai.domain import AuditOutcome, Capability, RoleSpec
 
 class ToolDenied(PermissionError):
     pass
+
+
+FETCH_TIMEOUT_S = 10.0
+FETCH_MAX_BYTES = 1_000_000
+
+
+def _fetch_url_bytes(url: str) -> bytes:
+    with urllib.request.urlopen(url, timeout=FETCH_TIMEOUT_S) as response:
+        body = response.read(FETCH_MAX_BYTES + 1)
+    if len(body) > FETCH_MAX_BYTES:
+        raise ToolDenied("response exceeds the fetch size cap")
+    return body
+
+
+def approved_web_allowlist(store: object, gate_id: str) -> list:
+    gate = store.get_gate(gate_id)  # type: ignore[union-attr]
+    if gate is None or str(gate.gate_type) != "web_access":
+        raise ToolDenied("no approved web-access gate covers this fetch")
+    if str(gate.status) != "approved":
+        raise ToolDenied("no approved web-access gate covers this fetch")
+    allowlist = gate.evidence.get("url_allowlist") or []
+    return [str(host).lower() for host in allowlist]
 
 
 @dataclass(slots=True)
@@ -34,6 +58,7 @@ class ToolRegistry:
         self.audit = audit
         self.workspace_dir = workspace_dir
         self.artifacts_dir = artifacts_dir
+        self._web_gate_check: Callable[[str], list[str]] | None = None
         self._tools: dict[str, Tool] = {}
         self._register_builtin()
 
@@ -57,6 +82,15 @@ class ToolRegistry:
         )
         self.register(
             Tool(
+                name="web_fetch",
+                capability=Capability.NET_EGRESS,
+                description="Fetch a URL covered by an approved web-access gate.",
+                handler=self._web_fetch,
+                side_effecting=True,
+            )
+        )
+        self.register(
+            Tool(
                 name="list_artifacts",
                 capability=Capability.TASK_READ,
                 description="List artifacts in the shared artifact store.",
@@ -66,6 +100,9 @@ class ToolRegistry:
 
     def register(self, tool: Tool) -> None:
         self._tools[tool.name] = tool
+
+    def set_web_gate_check(self, check: Callable[[str], list[str]]) -> None:
+        self._web_gate_check = check
 
     def names(self) -> list[str]:
         return sorted(self._tools)
@@ -129,3 +166,18 @@ class ToolRegistry:
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)
         entries = sorted(p.name for p in self.artifacts_dir.iterdir() if p.is_file())
         return json.dumps({"artifacts": entries}, indent=2)
+
+    def _web_fetch(self, url: str, gate_id: str) -> bytes:
+        from internal_ai.config import offline_mode
+
+        parts = urlsplit(url)
+        if parts.scheme != "https":
+            raise ToolDenied("web fetch allows https URLs only")
+        if self._web_gate_check is None:
+            raise ToolDenied("web fetch is not wired to a gate checker on this install")
+        allowlist = self._web_gate_check(gate_id)
+        if (parts.hostname or "").lower() not in allowlist:
+            raise ToolDenied("host is not on the approved allowlist")
+        if offline_mode():
+            raise ToolDenied("web fetch is disabled while the install is offline")
+        return _fetch_url_bytes(url)

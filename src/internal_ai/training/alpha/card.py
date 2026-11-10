@@ -14,11 +14,16 @@ def alpha_card(
     dataset_id: str,
     dataset_hash: str | None,
     adapter_sha256: str,
+    *,
+    knowledge_cutoff: str = "unknown",
+    web_access: str = "off",
 ) -> dict[str, Any]:
     return {
         "intended_use": "answer from cited internal documents",
         "dataset_id": dataset_id,
         "dataset_hash": dataset_hash,
+        "knowledge_cutoff": knowledge_cutoff,
+        "web_access": web_access,
         "training_config": {
             "rank": recipe.rank,
             "alpha": recipe.alpha,

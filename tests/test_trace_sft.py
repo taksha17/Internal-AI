@@ -30,9 +30,16 @@ def failed_trace(platform, user_id: str, question: str = QUESTION) -> str:
     return trace.id
 
 
+def cleared(platform, proposer, clearer, trace_id):
+    triage_service.quarantine_trace(platform, proposer, trace_id)
+    triage_service.clear_quarantined_trace(platform, clearer, trace_id)
+
+
 def test_a_correction_becomes_the_first_version(platform, enroll_person) -> None:
     lead = enroll_person(platform, "Ada Lead", ["ml_lead"], groups=["engineering"])
+    clearer = enroll_person(platform, "Bo Clearer", ["ml_lead"], groups=["engineering"])
     trace_id = failed_trace(platform, lead.id)
+    cleared(platform, lead, clearer, trace_id)
 
     dataset = triage_service.sft_example_from_trace(platform, lead, trace_id, GOOD)
 
@@ -54,8 +61,11 @@ def test_a_correction_becomes_the_first_version(platform, enroll_person) -> None
 
 def test_the_next_example_makes_version_two_that_carries_the_first(platform, enroll_person) -> None:
     lead = enroll_person(platform, "Ada Lead", ["ml_lead"], groups=["engineering"])
+    clearer = enroll_person(platform, "Bo Clearer", ["ml_lead"], groups=["engineering"])
     first = failed_trace(platform, lead.id, "why did the ledger fail?")
     second = failed_trace(platform, lead.id, "who owns the ledger?")
+    cleared(platform, lead, clearer, first)
+    cleared(platform, lead, clearer, second)
     one = triage_service.sft_example_from_trace(platform, lead, first, GOOD)
     two = triage_service.sft_example_from_trace(platform, lead, second, GOOD)
 
@@ -112,7 +122,9 @@ def test_an_answer_that_passed_is_not_a_correction(platform, enroll_person) -> N
 
 def test_the_same_trace_is_not_added_twice(platform, enroll_person) -> None:
     lead = enroll_person(platform, "Ada Lead", ["ml_lead"], groups=["engineering"])
+    clearer = enroll_person(platform, "Bo Clearer", ["ml_lead"], groups=["engineering"])
     trace_id = failed_trace(platform, lead.id)
+    cleared(platform, lead, clearer, trace_id)
     triage_service.sft_example_from_trace(platform, lead, trace_id, GOOD)
 
     with pytest.raises(ValueError, match="already has an example"):

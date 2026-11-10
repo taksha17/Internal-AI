@@ -62,6 +62,31 @@ def approved_base_model_exception(
     return None
 
 
+def _knowledge_cutoff(platform: Platform, dataset_id: str) -> str:
+    """When the training knowledge was fixed: the dataset's release moment.
+
+    The release path audits `dataset.released` with the dataset as subject, so
+    the card reads the cutoff off that event instead of guessing. A dataset that
+    predates the event stream says `unknown` rather than inventing a date.
+    """
+    releases = platform.store.list_audit(action="dataset.released", subject=dataset_id, limit=1)
+    if releases:
+        return releases[0].created_at
+    return "unknown"
+
+
+def _web_access() -> str:
+    """Whether the serving install lets this model reach the network.
+
+    The platform ships no fetch tool, so a served model has no web path; the
+    card records the install's posture, not a capability. The day a web tool
+    exists, this function must read it instead of the offline flag.
+    """
+    from internal_ai.config import offline_mode
+
+    return "off" if offline_mode() else "per_install"
+
+
 def register_alpha(
     platform: Platform,
     base: PinnedBase,
@@ -102,6 +127,8 @@ def register_alpha(
         dataset_id,
         dataset.content_hash,
         digest,
+        knowledge_cutoff=_knowledge_cutoff(platform, dataset_id),
+        web_access=_web_access(),
     )
     if exception is not None:
         card["base_model_exception"] = exception.id

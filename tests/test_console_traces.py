@@ -126,3 +126,66 @@ def test_the_rail_links_to_the_page(tmp_path: Path) -> None:
         assert sign_in(client, lead.name).status_code == 303
         page = client.get("/console/home").text
         assert 'href="/console/traces"' in page
+
+
+def test_proposing_quarantine_from_the_console_holds_the_trace(tmp_path: Path) -> None:
+    from conftest import session_csrf
+
+    from internal_ai.serving.trace import trace_quarantine_state
+
+    with console(tmp_path) as (client, platform, lead, _others):
+        trace_id = failed_citation(platform, lead.id, "why did the ledger fail?")
+        assert sign_in(client, lead.name).status_code == 303
+
+        response = client.post(
+            f"/console/traces/{trace_id}/quarantine",
+            data={"csrf_token": session_csrf(client)},
+        )
+        assert response.status_code == 200
+        assert trace_quarantine_state(platform.store, trace_id) == "proposed"
+
+        page = client.get("/console/traces").text
+        assert f"/console/traces/{trace_id}/quarantine/clear" in page
+
+
+def test_the_proposer_cannot_clear_their_own_quarantine(tmp_path: Path) -> None:
+    from conftest import session_csrf
+
+    from internal_ai.serving.trace import trace_quarantine_state
+
+    with console(tmp_path) as (client, platform, lead, _others):
+        trace_id = failed_citation(platform, lead.id, "why did the ledger fail?")
+        assert sign_in(client, lead.name).status_code == 303
+        csrf = session_csrf(client)
+        client.post(f"/console/traces/{trace_id}/quarantine", data={"csrf_token": csrf})
+
+        page = client.post(
+            f"/console/traces/{trace_id}/quarantine/clear",
+            data={"csrf_token": session_csrf(client)},
+        )
+        assert page.status_code == 200
+        assert "different person" in page.text
+        assert trace_quarantine_state(platform.store, trace_id) == "proposed"
+
+
+def test_a_different_person_clears_quarantine_from_the_console(tmp_path: Path) -> None:
+    from conftest import enroll, session_csrf
+
+    from internal_ai.serving.trace import trace_quarantine_state
+
+    with console(tmp_path) as (client, platform, lead, _others):
+        trace_id = failed_citation(platform, lead.id, "why did the ledger fail?")
+        assert sign_in(client, lead.name).status_code == 303
+        client.post(
+            f"/console/traces/{trace_id}/quarantine",
+            data={"csrf_token": session_csrf(client)},
+        )
+
+        second = enroll(platform, "Sam Second", ["ml_lead"], groups=["engineering"])
+        assert sign_in(client, second.name).status_code == 303
+        response = client.post(
+            f"/console/traces/{trace_id}/quarantine/clear",
+            data={"csrf_token": session_csrf(client)},
+        )
+        assert response.status_code == 200
+        assert trace_quarantine_state(platform.store, trace_id) == "cleared"

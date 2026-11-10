@@ -51,14 +51,17 @@ from internal_ai.services.identity import (
 from internal_ai.services.jobs import JobRunner
 from internal_ai.services.permissions import Action, PermissionDenied, allowed, deny, reason
 from internal_ai.services.triage import (
+    clear_quarantined_trace,
     eval_case_from_trace,
     preference_from_trace,
+    quarantine_trace,
     sft_draft,
     sft_example_from_trace,
     triage_view,
 )
 from internal_ai.serving.guardrails import INSTALL_POLICY_KEY, configured_install_policy
 from internal_ai.serving.service import out_of_service
+from internal_ai.serving.trace import trace_quarantine_state
 from internal_ai.store import ALLOWED_TRANSITIONS, TransitionError
 from internal_ai.training.provenance import OPEN_WEIGHT_ALLOWED, POLICY_ID, provenance_mode
 
@@ -679,7 +682,12 @@ def mount_console(
             buckets = triage_view(ctx.platform, ctx.actor)
         except PermissionDenied as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
-        return render(ctx, "traces.html", buckets=buckets)
+        states = {
+            trace.id: trace_quarantine_state(ctx.platform.store, trace.id)
+            for bucket in buckets.values()
+            for trace in bucket
+        }
+        return render(ctx, "traces.html", buckets=buckets, quarantine=states)
 
     @app.post("/console/traces/{trace_id}/eval-case", include_in_schema=False)
     async def trace_eval_case(request: Request, trace_id: str) -> Response:
@@ -722,6 +730,30 @@ def mount_console(
                 "it stays unreleased until a release gate approves it"
             ),
             to="/console/datasets",
+        )
+
+    @app.post("/console/traces/{trace_id}/quarantine", include_in_schema=False)
+    async def trace_quarantine_propose(request: Request, trace_id: str) -> Response:
+        ctx = context(request)
+        await posted(ctx)
+        return await act(
+            ctx,
+            "/console/traces",
+            lambda: quarantine_trace(ctx.platform, ctx.actor, trace_id),
+            f"{trace_id} is held out of training data until a different person clears it",
+            to="/console/traces",
+        )
+
+    @app.post("/console/traces/{trace_id}/quarantine/clear", include_in_schema=False)
+    async def trace_quarantine_clear(request: Request, trace_id: str) -> Response:
+        ctx = context(request)
+        await posted(ctx)
+        return await act(
+            ctx,
+            "/console/traces",
+            lambda: clear_quarantined_trace(ctx.platform, ctx.actor, trace_id),
+            f"{trace_id} cleared quarantine and may now become training data",
+            to="/console/traces",
         )
 
     @app.post("/console/traces/{trace_id}/preference", include_in_schema=False)

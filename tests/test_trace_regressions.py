@@ -27,9 +27,16 @@ def failed_trace(platform, user_id: str, question: str = "why did the ledger fai
     return trace.id
 
 
+def cleared(platform, proposer, clearer, trace_id):
+    triage_service.quarantine_trace(platform, proposer, trace_id)
+    triage_service.clear_quarantined_trace(platform, clearer, trace_id)
+
+
 def test_a_failed_trace_becomes_the_first_version(platform, enroll_person) -> None:
     lead = enroll_person(platform, "Ada Lead", ["ml_lead"], groups=["engineering"])
+    clearer = enroll_person(platform, "Bo Clearer", ["ml_lead"], groups=["engineering"])
     trace_id = failed_trace(platform, lead.id)
+    cleared(platform, lead, clearer, trace_id)
 
     eval_set = triage_service.eval_case_from_trace(platform, lead, trace_id)
 
@@ -51,8 +58,11 @@ def test_a_failed_trace_becomes_the_first_version(platform, enroll_person) -> No
 
 def test_the_next_trace_makes_version_two_that_carries_the_first(platform, enroll_person) -> None:
     lead = enroll_person(platform, "Ada Lead", ["ml_lead"], groups=["engineering"])
+    clearer = enroll_person(platform, "Bo Clearer", ["ml_lead"], groups=["engineering"])
     first = failed_trace(platform, lead.id, "why did the ledger fail?")
     second = failed_trace(platform, lead.id, "who owns the ledger?")
+    cleared(platform, lead, clearer, first)
+    cleared(platform, lead, clearer, second)
     one = triage_service.eval_case_from_trace(platform, lead, first)
     two = triage_service.eval_case_from_trace(platform, lead, second)
 
@@ -64,13 +74,16 @@ def test_the_next_trace_makes_version_two_that_carries_the_first(platform, enrol
 
 def test_a_frozen_set_is_copied_forward_not_edited(platform, enroll_person) -> None:
     lead = enroll_person(platform, "Ada Lead", ["ml_lead"], groups=["engineering"])
+    clearer = enroll_person(platform, "Bo Clearer", ["ml_lead"], groups=["engineering"])
     first = failed_trace(platform, lead.id, "why did the ledger fail?")
+    cleared(platform, lead, clearer, first)
     one = triage_service.eval_case_from_trace(platform, lead, first)
     harness = EvalHarness(platform.store, platform.audit)
     harness.freeze_eval_set(one.id, "ml_lead", gate_approved=True)
     before = platform.store.get_eval_set(one.id)
 
     second = failed_trace(platform, lead.id, "who owns the ledger?")
+    cleared(platform, lead, clearer, second)
     two = triage_service.eval_case_from_trace(platform, lead, second)
 
     after = platform.store.get_eval_set(one.id)
@@ -83,7 +96,9 @@ def test_a_frozen_set_is_copied_forward_not_edited(platform, enroll_person) -> N
 
 def test_the_same_trace_is_not_added_twice(platform, enroll_person) -> None:
     lead = enroll_person(platform, "Ada Lead", ["ml_lead"], groups=["engineering"])
+    clearer = enroll_person(platform, "Bo Clearer", ["ml_lead"], groups=["engineering"])
     trace_id = failed_trace(platform, lead.id)
+    cleared(platform, lead, clearer, trace_id)
     triage_service.eval_case_from_trace(platform, lead, trace_id)
     with pytest.raises(ValueError, match="already a case"):
         triage_service.eval_case_from_trace(platform, lead, trace_id)

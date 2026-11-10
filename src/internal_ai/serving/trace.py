@@ -250,6 +250,57 @@ def triage(store: Store, principal: Principal, *, limit: int = 50) -> dict[str, 
     return {name: items[:limit] for name, items in buckets.items()}
 
 
+def trace_quarantine_state(store: Store, trace_id: str) -> str | None:
+    row = store.conn.execute(
+        "SELECT cleared_by FROM trace_quarantine WHERE trace_id = ?", (trace_id,)
+    ).fetchone()
+    if row is None:
+        return None
+    return "cleared" if row["cleared_by"] else "proposed"
+
+
+def propose_trace_quarantine(store: Store, audit: AuditLog, actor_id: str, trace_id: str) -> None:
+    row = store.conn.execute("SELECT failure FROM traces WHERE id = ?", (trace_id,)).fetchone()
+    if row is None:
+        raise KeyError(f"unknown trace: {trace_id}")
+    if not row["failure"]:
+        raise ValueError("only a failed answer is quarantine material")
+    if trace_quarantine_state(store, trace_id) is not None:
+        raise ValueError(f"trace {trace_id} is already quarantined")
+    store.conn.execute(
+        "INSERT INTO trace_quarantine (trace_id, proposed_by, proposed_at) VALUES (?,?,?)",
+        (trace_id, actor_id, now_iso()),
+    )
+    audit.record(
+        actor=actor_id,
+        actor_kind="human",
+        action="trace.quarantined",
+        subject=trace_id,
+    )
+
+
+def clear_trace_quarantine(store: Store, audit: AuditLog, actor_id: str, trace_id: str) -> None:
+    row = store.conn.execute(
+        "SELECT proposed_by, cleared_by FROM trace_quarantine WHERE trace_id = ?", (trace_id,)
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"trace {trace_id} was never quarantined")
+    if row["cleared_by"]:
+        raise ValueError(f"trace {trace_id} is already cleared")
+    if row["proposed_by"] == actor_id:
+        raise PermissionError("quarantine is cleared by a different person than the proposer")
+    store.conn.execute(
+        "UPDATE trace_quarantine SET cleared_by = ?, cleared_at = ? WHERE trace_id = ?",
+        (actor_id, now_iso(), trace_id),
+    )
+    audit.record(
+        actor=actor_id,
+        actor_kind="human",
+        action="trace.quarantine_cleared",
+        subject=trace_id,
+    )
+
+
 def purge_expired(store: Store, now: datetime | None = None) -> int:
     """Delete traces past retention. Returns how many rows went."""
     moment = (now or datetime.now(UTC)).isoformat()
