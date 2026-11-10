@@ -61,6 +61,7 @@ class GateType(StrEnum):
     BUDGET_INCREASE = "budget_increase"
     POLICY_DECISION = "policy_decision"
     BASE_MODEL_EXCEPTION = "base_model_exception"
+    WEB_ACCESS = "web_access"
 
 
 class GateStatus(StrEnum):

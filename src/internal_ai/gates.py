@@ -23,6 +23,9 @@ HUMAN_APPROVER_ROLES: dict[GateType, tuple[str, ...]] = {
     # A base whose licence is not permissive is a legal risk carried by the
     # programme, so it needs the same pair that decides policy, on its own gate.
     GateType.BASE_MODEL_EXCEPTION: ("program_lead", "legal"),
+    # A fetch crosses the trust boundary the offline default protects, so it
+    # needs the programme owner and a security review, on its own gate.
+    GateType.WEB_ACCESS: ("program_lead", "security"),
 }
 
 EVIDENCE_REQUIREMENTS: dict[GateType, tuple[str, ...]] = {
@@ -47,6 +50,8 @@ EVIDENCE_REQUIREMENTS: dict[GateType, tuple[str, ...]] = {
         "usage_scope",
         "base_revision",
     ),
+    # The allowlist binds the approval to named hosts; anything off it is denied.
+    GateType.WEB_ACCESS: ("url_allowlist", "purpose", "redaction_plan"),
 }
 
 
