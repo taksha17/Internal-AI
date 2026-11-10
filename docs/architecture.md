@@ -214,10 +214,10 @@ id.
   environment, resource limits and a jailed working directory. It is not a
   container or a VM. Production needs container-level isolation with a
   network policy.
-- The compute plane submits locally and renders Slurm
-  (`compute/scheduler.py`), but `SlurmBackend` has not been run against a
-  live scheduler, and Kubernetes submission is still a remaining workstream,
-  matching the PRD's own separation between the platform and the compute
-  decision in section 10.
+- The compute plane submits locally and renders Slurm and Kubernetes
+  placements exactly (`compute/scheduler.py`), but neither backend has been
+  run against a live scheduler or cluster, so rented deployment is still
+  unproven. This matches the PRD's own separation between the platform and
+  the compute decision in section 10.
 - The experiment tracker is the SQLite store. The interface is narrow enough
   that MLflow or W&B can be added behind it, but that has not been done.
