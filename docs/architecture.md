@@ -4,6 +4,9 @@ Design notes for the platform. Where a product requirement states a principle,
 this document names the code that enforces it. The requirements themselves are
 internal and are not distributed with this repository.
 
+The picture version lives in `docs/system-diagram.md` (Mermaid) and is
+updated in the same pull request as any move it shows.
+
 ## Principles and enforcement
 
 | PRD principle | Enforcement |
@@ -211,9 +214,10 @@ id.
   environment, resource limits and a jailed working directory. It is not a
   container or a VM. Production needs container-level isolation with a
   network policy.
-- The compute plane is not implemented. `BudgetManager` models cost and the
-  trainer models runs, but job submission to Slurm or Kubernetes is a
-  remaining workstream, matching the PRD's own separation between the
-  platform and the compute decision in section 10.
+- The compute plane submits locally and renders Slurm
+  (`compute/scheduler.py`), but `SlurmBackend` has not been run against a
+  live scheduler, and Kubernetes submission is still a remaining workstream,
+  matching the PRD's own separation between the platform and the compute
+  decision in section 10.
 - The experiment tracker is the SQLite store. The interface is narrow enough
   that MLflow or W&B can be added behind it, but that has not been done.
