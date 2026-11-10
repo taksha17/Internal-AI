@@ -10,6 +10,7 @@ in behind the same interface.
 
 from __future__ import annotations
 
+import json
 import shlex
 import shutil
 import subprocess
@@ -319,7 +320,8 @@ def python_command(script: str) -> list[str]:
 class KubernetesBackend:
     """Submits jobs to Kubernetes via kubectl as a Job.
 
-    Integration point for containerized cluster execution.
+    Requires a reachable cluster. The class is the integration point for
+    containerised execution in PRD section 10; it is not exercised in local runs.
     """
 
     name = "kubernetes"
@@ -328,34 +330,48 @@ class KubernetesBackend:
         self.namespace = namespace
         self.image = image
 
-    def submit(self, job: Job, sandbox: Sandbox) -> dict[str, Any]:
-        import yaml
+    def object_name(self, job: Job) -> str:
+        return f"internal-ai-{job.id}".replace("_", "-").lower()
 
-        manifest = {
-            "apiVersion": "batch/v1",
-            "kind": "Job",
-            "metadata": {"name": f"internal_ai-{job.id}", "namespace": self.namespace},
-            "spec": {
-                "template": {
-                    "spec": {
-                        "restartPolicy": "Never",
-                        "containers": [
-                            {
-                                "name": "runner",
-                                "image": self.image,
-                                "command": job.spec.command,
-                                "env": [
-                                    {"name": k, "value": v} for k, v in job.spec.environment.items()
-                                ],
-                            }
-                        ],
-                    }
-                }
-            },
-        }
+    def render_manifest(self, job: Job) -> str:
+        lines = [
+            "apiVersion: batch/v1",
+            "kind: Job",
+            "metadata:",
+            f"  name: {self.object_name(job)}",
+            f"  namespace: {self.namespace}",
+            "spec:",
+            "  template:",
+            "    spec:",
+            "      restartPolicy: Never",
+            "      containers:",
+            "        - name: runner",
+            f"          image: {self.image}",
+            f"          command: {json.dumps(job.spec.command)}",
+        ]
+        if job.spec.environment:
+            lines.append("          env:")
+            for key in sorted(job.spec.environment):
+                lines.append(f"            - name: {key}")
+                lines.append(f"              value: {json.dumps(job.spec.environment[key])}")
+        if job.spec.device == "gpu":
+            lines.extend(
+                [
+                    "          resources:",
+                    "            requests:",
+                    '              nvidia.com/gpu: "1"',
+                    "            limits:",
+                    '              nvidia.com/gpu: "1"',
+                ]
+            )
+        return "\n".join(lines) + "\n"
+
+    def submit(self, job: Job, sandbox: Sandbox) -> dict[str, Any]:
+        if shutil.which("kubectl") is None:
+            raise RuntimeError("Kubernetes is not available: kubectl was not found on PATH")
         manifest_path = Path(job.spec.workdir or ".") / f"{job.id}.job.yaml"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        manifest_path.write_text(self.render_manifest(job), encoding="utf-8")
         proc = subprocess.run(
             ["kubectl", "apply", "-f", str(manifest_path)],
             capture_output=True,
@@ -363,10 +379,8 @@ class KubernetesBackend:
             check=False,
             timeout=60,
         )
-        if proc.returncode != 0:
-            return {"exit_code": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr}
         return {
-            "exit_code": 0,
+            "exit_code": proc.returncode,
             "stdout": proc.stdout,
             "stderr": proc.stderr,
             "manifest": str(manifest_path),
