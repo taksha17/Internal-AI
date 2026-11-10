@@ -2,7 +2,7 @@
 """Hold the landing site to its own rules.
 
 Colour is a token block, not a habit. Markup is a shape, not a suggestion.
-Run from anywhere: python3 site/tools/check-site.py
+Run from anywhere: python3 scripts/check_site.py
 """
 
 from __future__ import annotations
@@ -12,8 +12,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CSS = (ROOT / "styles.css").read_text(encoding="utf-8")
-HTML = (ROOT / "index.html").read_text(encoding="utf-8")
+SITE = ROOT / "site"
+CSS = (SITE / "styles.css").read_text(encoding="utf-8")
+HTML = (SITE / "index.html").read_text(encoding="utf-8")
 START = "/* tokens:start */"
 END = "/* tokens:end */"
 HEX = re.compile(r"#[0-9a-fA-F]{3,8}\b")

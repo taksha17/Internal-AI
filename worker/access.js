@@ -17,7 +17,14 @@ const HANDLE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
 const escape = (value) =>
   String(value).replace(
     /[&<>"']/g,
-    (c) => ({ "&": "&", "<": "<", ">": ">", '"': """, "'": "'" })[c],
+    (c) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[c],
   );
 
 /** Returns the normalised handle, or null when it is not a GitHub username. */
@@ -78,7 +85,7 @@ function page({ status, heading, message }) {
   );
 }
 
-export async function onRequestPost({ request, env }) {
+export async function handleAccess(request, env) {
   let form;
   try {
     form = await request.formData();
@@ -155,7 +162,7 @@ export async function onRequestPost({ request, env }) {
   });
 }
 
-export function onRequestGet() {
+export function accessGetOnly() {
   return page({
     status: 405,
     heading: "Use the form",
