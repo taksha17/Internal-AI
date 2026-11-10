@@ -114,3 +114,6 @@ tests/test_public_records.py
 src/internal_ai/training/alpha/catalog.py
 src/internal_ai/training/alpha/lanes.py
 src/internal_ai/console/templates/bases.html
+
+# wrangler local build state
+.wrangler/
