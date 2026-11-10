@@ -35,9 +35,16 @@ def failed_trace(platform, user_id: str) -> str:
     return trace.id
 
 
+def cleared(platform, proposer, trace_id):
+    second = expert(platform, "Bo Expert")
+    triage_service.quarantine_trace(platform, proposer, trace_id)
+    triage_service.clear_quarantined_trace(platform, second, trace_id)
+
+
 def test_an_expert_prefers_their_answer_to_the_failed_one(platform) -> None:
     elena = expert(platform)
     trace_id = failed_trace(platform, elena.id)
+    cleared(platform, elena, trace_id)
 
     row = triage_service.preference_from_trace(platform, elena, trace_id, GOOD)
 
@@ -52,6 +59,7 @@ def test_an_expert_prefers_their_answer_to_the_failed_one(platform) -> None:
 def test_the_export_carries_the_trace_id(platform) -> None:
     elena = expert(platform)
     trace_id = failed_trace(platform, elena.id)
+    cleared(platform, elena, trace_id)
     triage_service.preference_from_trace(platform, elena, trace_id, GOOD)
 
     dataset = export_preferences(platform, elena)
@@ -92,6 +100,7 @@ def test_reading_a_trace_does_not_let_a_lead_file_the_preference(platform) -> No
     elena = expert(platform)
     lead = enroll(platform, "Mo Lead", ["ml_lead"], ["engineering"])
     trace_id = failed_trace(platform, elena.id)
+    cleared(platform, elena, trace_id)
 
     with pytest.raises(PermissionError, match="domain_expert"):
         triage_service.preference_from_trace(platform, lead, trace_id, GOOD)

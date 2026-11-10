@@ -18,7 +18,14 @@ from internal_ai.evals.harness import EvalHarness
 from internal_ai.preferences import file_preference
 from internal_ai.services.actor import Actor
 from internal_ai.services.permissions import Action, require
-from internal_ai.serving.trace import Trace, get_trace, triage
+from internal_ai.serving.trace import (
+    Trace,
+    clear_trace_quarantine,
+    get_trace,
+    propose_trace_quarantine,
+    trace_quarantine_state,
+    triage,
+)
 from internal_ai.training.alpha.citations import AskHit, score_answer
 
 
@@ -26,6 +33,28 @@ def triage_view(platform: Platform, actor: Actor, limit: int = 25) -> dict[str, 
     """Failed traces this person may read, bucketed by why they failed."""
     require(platform.audit, actor, Action.VIEW_TRACES, "console/traces")
     return triage(platform.store, actor.principal(), limit=limit)
+
+
+def quarantine_trace(platform: Platform, actor: Actor, trace_id: str) -> None:
+    require(platform.audit, actor, Action.VIEW_TRACES, trace_id)
+    trace = get_trace(platform.store, actor.principal(), trace_id)
+    if not trace.failure:
+        raise ValueError("only a failed answer needs quarantine")
+    propose_trace_quarantine(platform.store, platform.audit, actor.id, trace_id)
+
+
+def clear_quarantined_trace(platform: Platform, actor: Actor, trace_id: str) -> None:
+    require(platform.audit, actor, Action.VIEW_TRACES, trace_id)
+    get_trace(platform.store, actor.principal(), trace_id)
+    clear_trace_quarantine(platform.store, platform.audit, actor.id, trace_id)
+
+
+def _require_cleared_quarantine(platform: Platform, trace_id: str) -> None:
+    if trace_quarantine_state(platform.store, trace_id) != "cleared":
+        raise ValueError(
+            f"trace {trace_id} has not cleared quarantine; propose it and have a "
+            "different person clear it before turning it into training data"
+        )
 
 
 def eval_case_from_trace(
@@ -53,6 +82,7 @@ def eval_case_from_trace(
     hits = [hit for hit in hits if hit["path"] and hit["line"] > 0]
     if not hits:
         raise ValueError("this trace cites no line, so there is nothing to assert against")
+    _require_cleared_quarantine(platform, trace_id)
     existing = [item for item in platform.store.list_eval_sets() if item.name == name]
     carried = list(existing[-1].items) if existing else []
     if any(trace_id in (item.get("trace_ids") or []) for item in carried):
@@ -154,6 +184,7 @@ def preference_from_trace(
     require(platform.audit, actor, Action.VIEW_TRACES, trace_id)
     trace = get_trace(platform.store, actor.principal(), trace_id)
     corrected = _corrected_answer(trace, answer)
+    _require_cleared_quarantine(platform, trace_id)
     row = file_preference(
         platform,
         actor,
@@ -192,6 +223,7 @@ def sft_example_from_trace(
     require(platform.audit, actor, Action.BUILD_DATASET, trace_id)
     trace = get_trace(platform.store, actor.principal(), trace_id)
     corrected = _corrected_answer(trace, answer)
+    _require_cleared_quarantine(platform, trace_id)
     existing = list(platform.store.list_datasets(name=name))
     previous = existing[-1] if existing else None
     carried = _supervision_rows(platform, previous)
