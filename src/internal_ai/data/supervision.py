@@ -40,6 +40,11 @@ def require_supervision_row(platform: Platform, row: dict[str, str]) -> None:
     source = row.get("source_id", "")
     if NOT_TRAINING in response or source.startswith("alpha"):
         raise ValueError("alpha output is not training data for the from-scratch track")
+    if source.startswith("trc_"):
+        from internal_ai.serving.trace import trace_quarantine_state
+
+        if trace_quarantine_state(platform.store, source) != "cleared":
+            raise ValueError("a failed answer enters training data only through cleared quarantine")
     if author not in {"internal_document"} and not author.startswith("ppl_"):
         raise ValueError("authored_by is a person id or internal_document")
 
