@@ -399,6 +399,14 @@ CREATE TABLE IF NOT EXISTS traces (
 CREATE INDEX IF NOT EXISTS idx_traces_created ON traces(created_at);
 CREATE INDEX IF NOT EXISTS idx_traces_failure ON traces(failure);
 
+CREATE TABLE IF NOT EXISTS trace_quarantine (
+    trace_id TEXT PRIMARY KEY,
+    proposed_by TEXT NOT NULL,
+    proposed_at TEXT NOT NULL,
+    cleared_by TEXT,
+    cleared_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS data_sources (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
