@@ -10,6 +10,8 @@ in behind the same interface.
 
 from __future__ import annotations
 
+import shlex
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -129,17 +131,26 @@ class SlurmBackend:
         self.partition = partition
         self.account = account
 
+    def render_sbatch(self, job: Job) -> str:
+        script = Path(job.spec.workdir or ".") / f"{job.id}.sbatch"
+        account = f"#SBATCH --account={self.account}\n" if self.account else ""
+        gres = "#SBATCH --gres=gpu:1\n" if job.spec.device == "gpu" else ""
+        return (
+            "#!/bin/bash\n"
+            f"#SBATCH --job-name={job.spec.name}\n"
+            f"#SBATCH --partition={self.partition}\n"
+            f"{account}"
+            f"{gres}"
+            f"#SBATCH --output={script.with_suffix('.out')}\n"
+            f"set -euo pipefail\n{shlex.join(job.spec.command)}\n"
+        )
+
     def submit(self, job: Job, sandbox: Sandbox) -> dict[str, Any]:
+        if shutil.which("sbatch") is None:
+            raise RuntimeError("Slurm is not available: sbatch was not found on PATH")
         script = Path(job.spec.workdir or ".") / f"{job.id}.sbatch"
         script.parent.mkdir(parents=True, exist_ok=True)
-        account = f"#SBATCH --account={self.account}\n" if self.account else ""
-        script.write_text(
-            f"#!/bin/bash\n#SBATCH --job-name={job.spec.name}\n"
-            f"#SBATCH --partition={self.partition}\n{account}"
-            f"#SBATCH --output={script.with_suffix('.out')}\n"
-            f"set -euo pipefail\n{' '.join(job.spec.command)}\n",
-            encoding="utf-8",
-        )
+        script.write_text(self.render_sbatch(job), encoding="utf-8")
         proc = subprocess.run(
             ["sbatch", str(script)],
             capture_output=True,
@@ -148,8 +159,18 @@ class SlurmBackend:
             timeout=60,
         )
         if proc.returncode != 0:
-            return {"exit_code": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr}
-        return {"exit_code": 0, "stdout": proc.stdout, "stderr": proc.stderr, "script": str(script)}
+            return {
+                "exit_code": proc.returncode,
+                "stdout": proc.stdout,
+                "stderr": proc.stderr,
+                "script": str(script),
+            }
+        return {
+            "exit_code": 0,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+            "script": str(script),
+        }
 
 
 class JobScheduler:
