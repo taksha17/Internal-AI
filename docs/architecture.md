@@ -210,10 +210,13 @@ id.
 
 ## Known gaps
 
-- The sandbox in `sandbox.py` uses process isolation with a scrubbed
-  environment, resource limits and a jailed working directory. It is not a
-  container or a VM. Production needs container-level isolation with a
-  network policy.
+- The sandbox in `sandbox.py` runs subprocesses with a scrubbed
+  environment, resource limits and a jailed working directory, and
+  `ContainerSandbox` runs the same command under Docker with `--network
+  none`, memory, cpu and pids limits and the workdir mounted at
+  `/workspace`. Production sets `INTERNAL_AI_SANDBOX=container` and gets the
+  strict container path, which refuses instead of downgrading when docker
+  is missing. It is still not a VM.
 - The compute plane submits locally and renders Slurm and Kubernetes
   placements exactly (`compute/scheduler.py`), but neither backend has been
   run against a live scheduler or cluster, so rented deployment is still

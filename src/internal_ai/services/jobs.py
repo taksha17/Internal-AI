@@ -21,7 +21,7 @@ from internal_ai.compute.scheduler import Job, JobScheduler, JobSpec, JobState
 from internal_ai.context import Platform
 from internal_ai.domain import BudgetScope
 from internal_ai.ids import new_id, now_iso
-from internal_ai.sandbox import Sandbox
+from internal_ai.sandbox import Sandbox, make_sandbox
 from internal_ai.services.actor import Actor
 from internal_ai.services.permissions import deny
 
@@ -90,7 +90,7 @@ class JobRunner:
         scheduler = JobScheduler(
             self.platform.audit,
             self.platform.budget,
-            Sandbox(self.platform.settings.sandbox_dir),
+            make_sandbox(self.platform.settings.sandbox_dir),
             backend=backend,
         )
         spec = JobSpec(

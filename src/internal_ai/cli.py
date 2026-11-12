@@ -618,9 +618,9 @@ def cmd_job_submit(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.compute.advise import make_backend
         from internal_ai.compute.scheduler import JobScheduler, JobSpec
-        from internal_ai.sandbox import Sandbox
+        from internal_ai.sandbox import make_sandbox
 
-        sandbox = Sandbox(platform.settings.sandbox_dir)
+        sandbox = make_sandbox(platform.settings.sandbox_dir)
         scheduler = JobScheduler(
             platform.audit, platform.budget, sandbox, backend=make_backend(platform, sandbox)
         )
@@ -644,9 +644,9 @@ def cmd_job_run(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.compute.advise import make_backend
         from internal_ai.compute.scheduler import JobScheduler, JobSpec
-        from internal_ai.sandbox import Sandbox
+        from internal_ai.sandbox import make_sandbox
 
-        sandbox = Sandbox(platform.settings.sandbox_dir)
+        sandbox = make_sandbox(platform.settings.sandbox_dir)
         scheduler = JobScheduler(
             platform.audit, platform.budget, sandbox, backend=make_backend(platform, sandbox)
         )
