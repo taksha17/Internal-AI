@@ -31,6 +31,10 @@ SANDBOX_ENV_ALLOWLIST = (
 )
 
 
+class SandboxDenied(Exception):
+    """The sandbox refused instead of running with weaker isolation."""
+
+
 @dataclass(slots=True)
 class SandboxResult:
     exit_code: int
@@ -112,6 +116,7 @@ class Sandbox:
                 stderr=proc.stderr,
                 duration_s=time.monotonic() - started,
                 timed_out=timed_out,
+                metadata={"backend": "subprocess"},
             )
         except subprocess.TimeoutExpired as exc:
             timed_out = True
@@ -123,6 +128,7 @@ class Sandbox:
                 stderr="timeout",
                 duration_s=time.monotonic() - started,
                 timed_out=timed_out,
+                metadata={"backend": "subprocess"},
             )
 
     def run_python(self, code: str, workdir: Path, timeout: float | None = None) -> SandboxResult:
@@ -143,10 +149,12 @@ class ContainerSandbox(Sandbox):
         timeout: float = 3600.0,
         image: str = "python:3.12-slim",
         network: str = "none",
+        strict: bool = True,
     ) -> None:
         super().__init__(base_dir, memory_mb, cpu_seconds, timeout)
         self.image = image
         self.network = network
+        self.strict = strict
 
     def run(
         self,
@@ -160,7 +168,11 @@ class ContainerSandbox(Sandbox):
 
         workdir.mkdir(parents=True, exist_ok=True)
         if not shutil.which("docker"):
-            # Fallback to subprocess sandbox
+            if self.strict:
+                raise SandboxDenied(
+                    "docker is not available and strict mode refuses "
+                    "to downgrade to a subprocess sandbox"
+                )
             return super().run(command, workdir, env, timeout)
 
         child_env = {
@@ -216,6 +228,7 @@ class ContainerSandbox(Sandbox):
                 stderr=proc.stderr,
                 duration_s=time.monotonic() - started,
                 timed_out=timed_out,
+                metadata={"backend": "docker"},
             )
         except subprocess.TimeoutExpired as exc:
             timed_out = True
@@ -227,4 +240,17 @@ class ContainerSandbox(Sandbox):
                 stderr="timeout",
                 duration_s=time.monotonic() - started,
                 timed_out=timed_out,
+                metadata={"backend": "docker"},
             )
+
+
+def make_sandbox(base_dir: Path) -> Sandbox:
+    """The sandbox the install asked for.
+
+    Production sets ``INTERNAL_AI_SANDBOX=container`` and gets the strict
+    container path with no network; anything else keeps the subprocess
+    sandbox exactly as before.
+    """
+    if os.environ.get("INTERNAL_AI_SANDBOX", "subprocess").lower() == "container":
+        return ContainerSandbox(base_dir, strict=True)
+    return Sandbox(base_dir)
