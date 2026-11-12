@@ -19,7 +19,7 @@ class LicenseClass(StrEnum):
 
 PERMISSIVE_LICENSES = frozenset({"Apache-2.0", "MIT"})
 RESTRICTED_LICENSES = frozenset(
-    {"Llama-3.1-Community", "Llama-3-Community", "Gemma", "CC-BY-NC-4.0"}
+    {"Llama-3.1-Community", "Llama-3-Community", "Gemma", "CC-BY-NC-4.0", "lfm1.0"}
 )
 DEFAULT_ALLOWED: frozenset[LicenseClass] = frozenset({LicenseClass.PERMISSIVE})
 
@@ -150,7 +150,21 @@ def verify_snapshot(base: PinnedBase, root: Path) -> Path:
     return directory
 
 
-PINNED: tuple[PinnedBase, ...] = (PRIMARY, FALLBACK, HEALTHCARE)
+LFM3 = PinnedBase(
+    repo_id="LiquidAI/LFM3-1.7B",
+    revision="1da06bec6a819da10b54c67e5c90972b46d81871",
+    license="lfm1.0",
+    shards=(
+        WeightShard(
+            "model.safetensors",
+            "135922caef64e81e52af88ede8b7c3ddaa9d6da220a9737fb3065275dbfb4330",
+            3457635448,
+        ),
+    ),
+)
+
+
+PINNED: tuple[PinnedBase, ...] = (PRIMARY, FALLBACK, HEALTHCARE, LFM3)
 
 
 def available_base(
