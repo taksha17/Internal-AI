@@ -43,7 +43,7 @@ flowchart TB
     CARD["model card<br/>base, licence, cutoff,<br/>web access &middot; have"]
     G7{{"gate: production_deployment"}}
     SHIP["8 self hosted model<br/>/v1/chat/completions &middot; have"]
-    WEB["web access, per install<br/>allowlist + fetch log<br/>off by default &middot; part"]
+    WEB["web access, per install<br/>allowlist + fetch log<br/>off by default &middot; have"]
 
     TR["9 trace.py<br/>scrubbed, grouped &middot; have"]
     TRI["triage<br/>candidate cases &middot; have"]
@@ -111,7 +111,7 @@ capability-checked in `roles.py`, written to `audit.py`, capped by
 | 7 | Test against available models | `evals/harness.py`, three columns | have |
 | 8 | Loop until benchmarks are optimal | budget-gated rounds on the dev split | have, capped |
 | 9 | Agents wrap the weights | `serving/app.py`, `guardrails.py`, `permissions.py` | have |
-| 10 | Cutoff date, optional internet | card states both; fetch gated per install | have / part |
+| 10 | Cutoff date, optional internet | card states both; gate, service and console fetch per install | have |
 | 11 | Store new knowledge, keep improving | quarantine hold, dual control, console; conversions refuse until cleared | have |
 | 12 | Self-host plus OpenAI-compatible API | `/v1/chat/completions` | have |
 
@@ -122,10 +122,13 @@ capability-checked in `roles.py`, written to `audit.py`, capped by
   the exact manifests, but neither has been run against a live scheduler or
   cluster, so the diagram does not claim rented deployment works.
 
-Two boxes this section used to list are built now. The model card states
+Three boxes this section used to list are built now. The model card states
 `knowledge_cutoff` and `web_access` (`training/alpha/card.py`,
 `training/alpha/promote.py`). Web access is a `WEB_ACCESS` gate plus a fetch
-tool that refuses unless the gate passed, off by default. The learning loop
+tool that refuses unless the gate passed, off by default — and since the
+service path (`services/webfetch.py`) and the console page landed, a person
+can use an approved gate without an agent run, including gates requested
+through the console with one host per line. The learning loop
 holds failed traces in `trace_quarantine` under dual control — the proposer
 cannot clear — and conversions refuse until the hold is cleared, from the
 console or the API.

@@ -21,6 +21,7 @@ class Action(StrEnum):
     ACKNOWLEDGE_ALERT = "acknowledge_alert"
     REQUEST_GATE = "request_gate"
     ASK = "ask"
+    USE_WEB_GATE = "use_web_gate"
     SUBMIT_PLAN = "submit_plan"
     APPROVE_PLAN = "approve_plan"
     RUN_PLAN = "run_plan"
@@ -52,6 +53,7 @@ ACTION_ROLES: dict[Action, frozenset[str]] = {
     Action.ACKNOWLEDGE_ALERT: ANYONE,
     Action.REQUEST_GATE: ANYONE,
     Action.ASK: ANYONE,
+    Action.USE_WEB_GATE: ANYONE,
     Action.SUBMIT_PLAN: frozenset({"program_lead", "engineering_manager"}),
     Action.APPROVE_PLAN: frozenset({"program_lead", "engineering_manager"}),
     Action.RUN_PLAN: frozenset({"program_lead", "engineering_manager"}),
