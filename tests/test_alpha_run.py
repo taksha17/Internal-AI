@@ -119,6 +119,25 @@ def test_the_default_backend_is_the_one_that_can_be_promoted(governed) -> None:
     assert job["result"]["adapter_backend"] in PROMOTABLE_ADAPTER_BACKENDS
 
 
+def test_quantised_loading_reaches_the_backend_and_the_record(governed, monkeypatch) -> None:
+    seen: dict[str, Any] = {}
+
+    def recording(base, root, texts, out, **kwargs):
+        seen.update(kwargs)
+        return stub_training(base, root, texts, out, **kwargs)
+
+    monkeypatch.setattr(alpha_service, "adapt_full_depth", recording)
+    platform, actor = governed
+    dataset_id = released_dataset(platform)
+    job = train_alpha(
+        platform, actor, JobRunner(platform, synchronous=True), dataset_id, load_in_4bit=True
+    )
+    assert job["state"] == "succeeded", job.get("error")
+    assert seen.get("load_in_4bit") is True
+    record = json.loads(Path(job["result"]["reproducibility"]).read_text(encoding="utf-8"))
+    assert record["recipe"]["quantization"] == "nf4"
+
+
 def test_an_unknown_backend_is_refused(governed) -> None:
     platform, actor = governed
     dataset_id = released_dataset(platform)

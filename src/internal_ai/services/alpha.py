@@ -148,6 +148,7 @@ def train_alpha(
     epochs: int = 1,
     backend: str = FULL_DEPTH_BACKEND,
     base: PinnedBase | None = None,
+    load_in_4bit: bool = False,
 ) -> dict[str, Any]:
     """Adapt the pinned base on a released dataset, as a job with a record."""
     require(platform.audit, actor, Action.TRAIN_MODEL, dataset_id)
@@ -189,6 +190,7 @@ def train_alpha(
                 max_seq_len=RECIPE.max_seq_len,
                 epochs=epochs,
                 seed=seed,
+                load_in_4bit=load_in_4bit,
             )
         else:
             result = train_prefix(
@@ -220,7 +222,9 @@ def train_alpha(
                 "rank": RECIPE.rank,
                 "alpha": RECIPE.alpha,
                 "max_seq_len": RECIPE.max_seq_len,
-                "quantization": RECIPE.quantization,
+                "quantization": (
+                    "nf4" if load_in_4bit and backend == FULL_DEPTH_BACKEND else RECIPE.quantization
+                ),
                 "layers": result.get("layers", layers),
                 "sequences": result.get("sequences", len(texts)),
             },
