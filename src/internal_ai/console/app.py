@@ -40,7 +40,7 @@ from internal_ai.evals import advice
 from internal_ai.gates import GATE_CATALOG, GateError
 from internal_ai.people import PeopleRegistry
 from internal_ai.roles import all_roles
-from internal_ai.services import build, governance
+from internal_ai.services import build, governance, webfetch
 from internal_ai.services.actor import Actor
 from internal_ai.services.identity import (
     MIN_PASSWORD_LENGTH,
@@ -49,7 +49,14 @@ from internal_ai.services.identity import (
     Session,
 )
 from internal_ai.services.jobs import JobRunner
-from internal_ai.services.permissions import Action, PermissionDenied, allowed, deny, reason
+from internal_ai.services.permissions import (
+    Action,
+    PermissionDenied,
+    allowed,
+    deny,
+    reason,
+    require,
+)
 from internal_ai.services.triage import (
     clear_quarantined_trace,
     eval_case_from_trace,
@@ -63,6 +70,7 @@ from internal_ai.serving.guardrails import INSTALL_POLICY_KEY, configured_instal
 from internal_ai.serving.service import out_of_service
 from internal_ai.serving.trace import trace_quarantine_state
 from internal_ai.store import ALLOWED_TRANSITIONS, TransitionError
+from internal_ai.tools import ToolDenied, approved_web_allowlist
 from internal_ai.training.provenance import OPEN_WEIGHT_ALLOWED, POLICY_ID, provenance_mode
 
 HERE = Path(__file__).resolve().parent
@@ -70,6 +78,9 @@ SESSION_COOKIE = "iai_session"
 SIGNIN_COOKIE = "iai_signin"
 SIGNIN_ATTEMPTS = 10
 SIGNIN_WINDOW_SECONDS = 300
+
+HARNESS_WINDOW_TOKENS = 8192
+"""What the console assumes a model carries, since no served model states one."""
 
 REFUSALS = (
     AuthenticationError,
@@ -88,6 +99,7 @@ NAV = [
     ("Training", "/console/jobs"),
     ("Evaluations", "/console/evals"),
     ("Approvals", "/console/approvals"),
+    ("Web fetch", "/console/web"),
     ("Audit log", "/console/audit"),
     ("Inbox", "/console/inbox"),
     ("Failed answers", "/console/traces"),
@@ -95,6 +107,7 @@ NAV = [
     ("Models", "/console/models"),
     ("Brief", "/console/brief"),
     ("Ask", "/console/ask"),
+    ("Harness", "/console/harness"),
     ("Admin", "/console/admin/people"),
 ]
 
@@ -859,6 +872,19 @@ def mount_console(
                 f"{gate.title}: you {'approved' if approved else 'rejected'} it; "
                 f"the gate is now {gate.status}"
             ),
+        )
+
+    @app.post("/console/approvals/{gate_id}/revoke", include_in_schema=False)
+    async def revoke(request: Request, gate_id: str) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        return await act(
+            ctx,
+            "/console/approvals?status=approved",
+            lambda: governance.revoke_gate(
+                ctx.platform, ctx.actor, gate_id, form.get("reason", "")
+            ),
+            lambda gate: f"{gate.title}: withdrawn; the gate is now {gate.status}",
         )
 
     @app.get("/console/gates/new", include_in_schema=False)
@@ -2175,6 +2201,165 @@ def mount_console(
             result=result,
             question=question,
             chosen=dataset_id,
+        )
+
+    # ------------------------------------------------------------ web fetch
+
+    @app.get("/console/web", include_in_schema=False)
+    def web_page(request: Request) -> Response:
+        ctx = context(request)
+        return render(ctx, "web_access.html", **web_view(ctx, None))
+
+    @app.post("/console/web/fetch", include_in_schema=False)
+    async def web_fetch_submit(request: Request) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        result = None
+        try:
+            result = await run_in_threadpool(
+                webfetch.fetch_url,
+                ctx.platform,
+                ctx.actor,
+                form.get("gate_id", ""),
+                form.get("url", ""),
+            )
+        except REFUSALS as exc:
+            flash(ctx, "error", message(exc))
+        return render(ctx, "web_access.html", **web_view(ctx, result))
+
+    def web_view(ctx: Ctx, result: Any) -> dict[str, Any]:
+        cards = []
+        for gate in webfetch.approved_web_gates(ctx.platform):
+            try:
+                hosts = approved_web_allowlist(ctx.platform.store, gate.id)
+            except ToolDenied:
+                hosts = []
+            cards.append(
+                {
+                    "id": gate.id,
+                    "title": gate.title,
+                    "subject": gate.subject,
+                    "hosts": hosts,
+                    "purpose": (gate.evidence or {}).get("purpose", ""),
+                }
+            )
+        preview = None
+        if result is not None:
+            preview = {
+                "gate_id": result.gate_id,
+                "host": result.host,
+                "size_bytes": result.size_bytes,
+                "sha256": result.sha256,
+                "text": result.body.decode("utf-8", errors="replace")[:4000],
+            }
+        return {"gates": cards, "result": preview}
+
+    # -------------------------------------------------------------- harness
+
+    def harness_events(ctx: Ctx) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for event in ctx.platform.store.list_audit(
+            action="harness.answer", limit=10, descending=True
+        ):
+            details = event.details if isinstance(event.details, dict) else {}
+            rows.append(
+                {
+                    "created_at": event.created_at,
+                    "actor": event.actor,
+                    "outcome": str(event.outcome),
+                    "model": details.get("model", ""),
+                    "digest": str(details.get("prompt_sha256", ""))[:12],
+                    "latency_ms": details.get("latency_ms", 0),
+                    "cost_usd": details.get("cost_usd", 0.0),
+                }
+            )
+        return rows
+
+    def harness_evidence(raw: str) -> tuple[list[Any], list[str]]:
+        """Read `path:line | excerpt` lines, refusing one that cannot be checked."""
+        from internal_ai.training.alpha.citations import hit_from_key
+
+        hits: list[Any] = []
+        excerpts: list[str] = []
+        for number, line in enumerate(raw.splitlines(), start=1):
+            if not line.strip():
+                continue
+            key, _, excerpt = line.partition("|")
+            hit = hit_from_key(key.strip())
+            if not hit.path or not excerpt.strip():
+                raise ValueError(
+                    f"evidence line {number} reads `path:line | excerpt`; a citation "
+                    "without its text cannot be checked"
+                )
+            hits.append(hit)
+            excerpts.append(excerpt.strip())
+        if not hits:
+            raise ValueError("the harness needs at least one evidence line to cite")
+        return hits, excerpts
+
+    def harness_answer(platform: Platform, actor: Any, question: str, raw: str) -> Any:
+        from internal_ai.harness import BackendChoice, Harness, HarnessRequest, ModelSignature
+        from internal_ai.harness.backends import is_external
+
+        require(platform.audit, actor, Action.ASK, "console.harness")
+        hits, excerpts = harness_evidence(raw)
+        adapter = platform.runtime.llm
+        harness = Harness(
+            BackendChoice(adapter.name, adapter, is_external(adapter)),
+            ModelSignature(adapter.name, HARNESS_WINDOW_TOKENS),
+            audit=platform.audit,
+            budget=platform.budget,
+            actor=actor.id,
+            actor_kind="human",
+        )
+        return harness.answer(
+            HarnessRequest(question=question, hits=tuple(hits), excerpts=tuple(excerpts))
+        )
+
+    @app.get("/console/harness", include_in_schema=False)
+    def harness_page(request: Request) -> Response:
+        from internal_ai.harness import HARNESS_VERSION
+
+        ctx = context(request)
+        return render(
+            ctx,
+            "harness.html",
+            question="",
+            evidence="",
+            answer=None,
+            events=harness_events(ctx),
+            window=HARNESS_WINDOW_TOKENS,
+            harness_version=HARNESS_VERSION,
+        )
+
+    @app.post("/console/harness", include_in_schema=False)
+    async def harness_submit(request: Request) -> Response:
+        from internal_ai.harness import HARNESS_VERSION, HarnessRefused
+
+        ctx = context(request)
+        form = await posted(ctx)
+        question = form.get("question", "").strip()
+        evidence = form.get("evidence", "")
+        answer = None
+        try:
+            if not question:
+                raise ValueError("a harness question cannot be empty")
+            answer = await run_in_threadpool(
+                harness_answer, ctx.platform, ctx.actor, question, evidence
+            )
+        except REFUSALS as exc:
+            flash(ctx, "error", message(exc))
+        except HarnessRefused as exc:
+            flash(ctx, "error", message(exc))
+        return render(
+            ctx,
+            "harness.html",
+            question=question,
+            evidence=evidence,
+            answer=answer,
+            events=harness_events(ctx),
+            window=HARNESS_WINDOW_TOKENS,
+            harness_version=HARNESS_VERSION,
         )
 
     # ---------------------------------------------------------------- admin

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Web fetch{% endblock %}
+{% block crumb %}Web fetch{% endblock %}
+{% block content %}
+{% call m.page_head("Web fetch", "Use an approved web-access gate. The fetch runs over https, only to a host on that gate's allowlist, and it leaves a fetch log.") %}
+  <a href="/console/gates/new?gate_type=web_access" class="button primary">Request a gate</a>
+{% endcall %}
+{% for gate in gates %}
+<div class="card">
+  <h3>{{ gate.title }}</h3>
+  <p class="muted small">{{ gate.id }} &middot; {{ gate.subject }}</p>
+  {% if gate.purpose %}<p>{{ gate.purpose }}</p>{% endif %}
+  <p>Allowlisted hosts: {{ gate.hosts | join(", ") if gate.hosts else "none readable" }}</p>
+  <form method="post" action="/console/web/fetch" class="inline-form">
+    {{ m.csrf_field() }}
+    <input type="hidden" name="gate_id" value="{{ gate.id }}">
+    <label class="grow">URL <input type="url" name="url" required placeholder="https://"></label>
+    <button type="submit" class="primary">Fetch</button>
+  </form>
+  {% if result and result.gate_id == gate.id %}
+  <h4>Fetched {{ result.host }} ({{ result.size_bytes }} bytes, sha256 {{ result.sha256[:12] }}&hellip;)</h4>
+  <pre>{{ result.text }}</pre>
+  {% endif %}
+</div>
+{% else %}
+{{ m.empty("No approved web-access gate", "Request one for the hosts you need, with a purpose and a redaction plan.", "/console/gates/new?gate_type=web_access", "Request a gate") }}
+{% endfor %}
+{% endblock %}

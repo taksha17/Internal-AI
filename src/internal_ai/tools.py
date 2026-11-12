@@ -34,6 +34,16 @@ def _fetch_url_bytes(url: str) -> bytes:
     return body
 
 
+def fetch_url_bytes(url: str) -> bytes:
+    """Fetch a URL outside the agent tool path.
+
+    The person's service path uses this after enforcing the same refusals
+    as ``ToolRegistry.web_fetch``; the name is public so callers do not
+    reach past it into the private fetcher.
+    """
+    return _fetch_url_bytes(url)
+
+
 def approved_web_allowlist(store: object, gate_id: str) -> list:
     gate = store.get_gate(gate_id)  # type: ignore[union-attr]
     if gate is None or str(gate.gate_type) != "web_access":
@@ -41,6 +51,8 @@ def approved_web_allowlist(store: object, gate_id: str) -> list:
     if str(gate.status) != "approved":
         raise ToolDenied("no approved web-access gate covers this fetch")
     allowlist = gate.evidence.get("url_allowlist") or []
+    if isinstance(allowlist, str):
+        allowlist = allowlist.replace(",", " ").split()
     return [str(host).lower() for host in allowlist]
 
 
