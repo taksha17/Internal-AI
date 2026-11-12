@@ -118,10 +118,11 @@ capability-checked in `roles.py`, written to `audit.py`, capped by
 ## Why one box is still half built
 
 - **`part` on deploy.** `JobScheduler` and `LocalBackend` submit locally.
-  `KubernetesBackend` renders the exact manifests and has run a real Job to
-  completion on a live single-node cluster. `SlurmBackend` renders the exact
-  `sbatch` but has never been run, and neither backend has touched rented
-  hardware, so the diagram does not claim rented deployment works.
+  Both cluster backends have now run a real job to completion: Kubernetes
+  against a live single-node cluster, and Slurm against a live single-node
+  controller, where `sbatch` accepted the job and the output file carried the
+  expected text. Neither has touched rented hardware, so the diagram does
+  not claim rented deployment works.
 
 Three boxes this section used to list are built now. The model card states
 `knowledge_cutoff` and `web_access` (`training/alpha/card.py`,
