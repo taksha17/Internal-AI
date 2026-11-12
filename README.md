@@ -48,6 +48,79 @@ python3 -m venv .venv
 base; the from-scratch track never needs it. After installing, `internal-ai` is
 the same program as `python -m internal_ai.cli`.
 
+## Healthcare / PMC lane (BioMistral-7B adapter)
+
+A second install at `var_med/` demonstrates the alpha track end to end on a
+healthcare corpus drawn from **PMC Open Access (CC BY / CC0 only)**, adapted onto
+**BioMistral-7B** (`BioMistral/BioMistral-7B@9a11e1ff`, Apache-2.0, 7.24B
+parameters, one 14.5 GB `pytorch_model.bin` shard).
+
+### Corpus status
+
+| version | dataset id | records | tokens (BioMistral tokenizer) | sensitivity | split | measured | released |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| v1 | `ds_3a51a1d44892` | 144,496 | 28,917,296 | `internal` | document holdout, seed `forge-v1` | yes | **rejected** (`gate_37d34dd62060`)
+| v2 | `ds_8dee8e7f58d1` | 144,496 | 28,917,296 | `public` | document holdout, seed `forge-v1` | yes | **approved** (`gate_6da8cf0b9a0e`)
+
+**v2 is the released corpus.** The collector (`scripts/pmc_fetch.py`) no longer
+stamps `"sensitivity": "internal"` on every row; a 4-line comment explains
+why — the public source declaration governs, and a row may only raise, never
+lower, the effective class. The v2 rebuild produced identical keys and text (0
+rows differ) with every record now `public`.
+
+### Gates
+
+| gate | type | subject | state | approvers |
+| --- | --- | --- | --- | --- |
+| `gate_6da8cf0b9a0e` | `dataset_release` | v2 (`ds_8dee8e7f58d1`) | **approved** | `ml_lead` + `compliance` |
+| `gate_37d34dd62060` | `dataset_release` | v1 (`ds_3a51a1d44892`) | **rejected** (superseded by v2) | — |
+| `gate_672393aac5cf` | `eval_set_freeze` | `evs_7b20797a7af9` (200 questions) | **pending** | `ml_lead` |
+
+The eval set `evs_7b20797a7af9` holds 200 cited questions drawn from 111 held-out
+records (content hash `f18a4409…`). It is frozen only when a person decides the
+gate — agents never decide gates.
+
+### Injection detector
+
+`src/internal_ai/data/injection.py` was tuned to reduce false positives on
+scientific papers (Bastard et al. citations, "system prompt" descriptions,
+"execute the function of a protein" passages) while still catching real prompt
+injection attacks. Patterns for persona adoption and tooling language were
+tightened.
+
+### Current staging
+
+`scripts/colab_stage.py` is running for Kaggle `kaggle-t4x2` lane (dual T4, 30 GiB
+total) with the released v2 corpus and the frozen eval set by id:
+
+```bash
+INTERNAL_AI_OFFLINE=0 .venv/bin/python scripts/colab_stage.py \
+  --root var_med/install --dataset ds_8dee8e7f58d1 \
+  --eval-set evs_7b20797a7af9 --base BioMistral/BioMistral-7B \
+  --out var_med/colab --rows 20000 --lane kaggle-t4x2
+```
+
+Staging writes the training text, questions by id, corpus index, and trainer
+modules into a private Kaggle dataset (`internal_ai.zip`). Raw prose and
+reference answers never leave the boundary. The kernel (`colab_kernel.py`) will
+train a LoRA adapter and return generated answers for scoring at home against
+the frozen set.
+
+### Arithmetic (from `lanes.py:footprint`)
+
+| Held as | Weights | Adapter | Activations | Total | Fits dual T4 (30 GiB) |
+| --- | --- | --- | --- | --- | --- |
+| fp16 sharded | 13.49 GiB | 0.22 GiB | 2.50 GiB | **16.21 GiB** | yes (both cards used) |
+| nf4 (4-bit) | 4.05 GiB | 0.22 GiB | 2.50 GiB | **6.76 GiB** | yes |
+
+Measured on the lane: **fp16 sharded 246 tok/s** vs **nf4 191 tok/s** — fp16
+across both cards is 29% faster and uses the exact arithmetic. Gradient
+checkpointing is on; turning it off is the next measured step.
+
+---
+
+## Quick start (continued)
+
 ### 2. Watch the governance loop
 
 The `--root` flag comes before the verb and names the directory holding the
@@ -217,6 +290,19 @@ gate, recorded in the audit chain, and only then does the adapter track load a
 base that is allowlisted and hash-pinned. Alpha output is never training data
 for the from-scratch track.
 
+### Concrete alpha installs
+
+| install | base | corpus | status |
+| --- | --- | --- | --- |
+| `var_alpha/` | Qwen3-4B | RFC (public) | staged, measured (A/B step benchmark), no frozen eval set |
+| `var_med/` | BioMistral-7B | PMC Open Access (CC BY/CC0) | **v2 released**, eval set drafted, staging for Kaggle T4x2 |
+| `var_nba/` | (from-scratch) | NBA play-by-play (73k rows) | worked example: corpus, adapter, frozen questions, scored run |
+
+The NBA install (`var_nba/`) is the reference implementation of every rule,
+including the refusals — its 865k tokens are 0.0865 tokens/parameter (floor: 20),
+so the from-scratch track correctly refuses all three roster sizes, and the
+alpha track is the answer.
+
 ## What stays inside
 
 - No training on third-party model output. Distillation is a non-goal.
@@ -299,6 +385,26 @@ races it exposed are closed, with tests:
 [`test_gate_decision_uniqueness.py`](tests/test_gate_decision_uniqueness.py),
 [`test_retrieval_cache.py`](tests/test_retrieval_cache.py).
 
+### Healthcare lane (Kaggle dual T4, measured on rented hardware)
+
+| Run | Base | Arrangement | Sequences | Tokens/s | Step p50 | Cards |
+| --- | --- | --- | --- | --- | --- | --- |
+| `alpha-y15-arrange-run` v1 arm `fp16-sharded` | BioMistral-7B | fp16 sharded | 128 | **246.42** | 2.08 s | 2 |
+| `alpha-y15-arrange-run` v1 arm `nf4` | BioMistral-7B | nf4 both cards | 128 | 191.25 | 2.75 s | 2 |
+
+`hf_device_map` confirmed: fp16 arm placed layers 0–15 on card 0, 16–31 + norm
++ rotary + lm_head on card 1 — both cards genuinely working. nf4 split 14/18
+layers and also used both cards. The 4-bit arm is 29% slower; quantising a base
+that already fits buys memory, not time. Gradient checkpointing is on; turning it
+off is the next measured step. Data parallelism (one nf4 replica per card) is
+unimplemented.
+
+The corpus `ds_8dee8e7f58d1` (v2) is released: 144,496 records, 28.9M tokens
+measured with BioMistral tokenizer, document holdout split (seed `forge-v1`),
+all `public`. Eval set `evs_7b20797a7af9` (200 cited questions) awaits
+`eval_set_freeze` gate (`gate_672393aac5cf`). Staging for `kaggle-t4x2` is in
+progress.
+
 ## Repository layout
 
 ```
@@ -325,6 +431,19 @@ Logo/                the marks, plus transparent lockups for this page
   [third-party notices](THIRD_PARTY_NOTICES.md).
 - [Promotion margin](docs/promotion.md) — the bar a candidate must clear before
   it may serve traffic.
+
+### Healthcare / PMC lane
+
+- [Healthcare corpus specification](docs/healthcare-corpus.md) — what to collect,
+  what to refuse, token targets for LoRA, reference scores, and the limit no
+  corpus removes (LoRA teaches behaviour, not a knowledge base).
+- [Alpha lane measured results](docs/alpha-lane-results.md) — every Kaggle run
+  with tokens/s, device placement, batching A/B, 7B fp16 vs nf4 (29% faster),
+  memory footprints, packaging facts, and open items.
+- [Healthcare release packet](docs/healthcare-release-packet.md) — the reviewer
+  packet for `gate_37d34dd62060` (v1, rejected) with full lineage, PII audit
+  (144,496 records, 0 critical findings), token count measured with BioMistral
+  tokenizer (28.9M, 0.7% below estimate), and what the packet cannot tell you.
 
 ## Not built yet
 
