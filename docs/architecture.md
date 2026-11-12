@@ -222,5 +222,9 @@ id.
   run against a live scheduler or cluster, so rented deployment is still
   unproven. This matches the PRD's own separation between the platform and
   the compute decision in section 10.
-- The experiment tracker is the SQLite store. The interface is narrow enough
-  that MLflow or W&B can be added behind it, but that has not been done.
+- The experiment tracker is the SQLite store, and `tracking.py` mirrors a
+  run's aggregates (cost, duration, status) to self-hosted MLflow when
+  `INTERNAL_AI_MLFLOW_URI` is set. Output text, artifacts and metadata never
+  leave, an offline install never calls out, and a missing package or an
+  unreachable server only changes the tracker's marker on the run, never
+  breaks it.

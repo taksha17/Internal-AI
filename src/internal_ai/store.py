@@ -7,6 +7,7 @@ skipped by any agent, human or CLI path.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 import sqlite3
 import threading
@@ -708,7 +709,10 @@ class Store:
                 _json(run.metadata),
             ),
         )
-        return run
+        from internal_ai import tracking
+
+        marker = tracking.mirror_run(run)
+        return dataclasses.replace(run, metadata={**run.metadata, "tracker": marker})
 
     def list_runs(self, task_id: str | None = None) -> list[RunSummary]:
         query = "SELECT * FROM runs"
