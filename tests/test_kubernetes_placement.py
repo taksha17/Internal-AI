@@ -1,15 +1,17 @@
-"""Kubernetes placement is rendered exactly and never pretends to run.
+"""Kubernetes placement is rendered exactly and runs where a cluster exists.
 
 The Job manifest is golden-tested so cluster placement does not drift. Object
 names are sanitised to RFC 1123, GPU jobs request a GPU, and a missing
-kubectl is a refusal before anything is written. The live submit runs only
-where a cluster exists.
+kubectl is a refusal before anything is written. The live tests run only
+where ``INTERNAL_AI_LIVE_K8S=1`` and a cluster answers.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import subprocess
 import sys
 
 import pytest
@@ -80,5 +82,63 @@ def test_a_missing_kubectl_is_a_refusal_before_anything_is_written(tmp_path, mon
 
 @pytest.mark.skipif(shutil.which("kubectl") is None, reason="needs a Kubernetes cluster")
 def test_live_submit_when_a_cluster_exists(tmp_path) -> None:
+    _kubectl("create", "namespace", "internal-ai")
     result = KubernetesBackend().submit(_job(tmp_path), sandbox=None)
     assert result["exit_code"] == 0
+
+
+def _kubectl(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["kubectl", *args],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+
+
+def _live_cluster_answers() -> bool:
+    if os.environ.get("INTERNAL_AI_LIVE_K8S") != "1":
+        return False
+    if shutil.which("kubectl") is None:
+        return False
+    return _kubectl("cluster-info").returncode == 0
+
+
+@pytest.mark.skipif(
+    not _live_cluster_answers(), reason="needs INTERNAL_AI_LIVE_K8S=1 and a cluster"
+)
+def test_live_job_runs_to_completion_and_logs_output(tmp_path) -> None:
+    backend = KubernetesBackend()
+    spec = JobSpec(
+        name="live-proof",
+        command=["python", "-c", "print('hello world')"],
+        agent="infra_engineer",
+        tokens=1,
+        parameters=1,
+        device="cpu",
+        environment={},
+        workdir=str(tmp_path),
+    )
+    job = Job(id="job_live_proof", spec=spec, created_at="now")
+    name = backend.object_name(job)
+    _kubectl("create", "namespace", backend.namespace)
+    _kubectl("delete", "job", name, "-n", backend.namespace)
+
+    applied = backend.submit(job, sandbox=None)
+    assert applied["exit_code"] == 0, applied["stderr"]
+
+    try:
+        waited = _kubectl(
+            "wait",
+            "--for=condition=complete",
+            f"job/{name}",
+            "-n",
+            backend.namespace,
+            "--timeout=300s",
+        )
+        assert waited.returncode == 0, waited.stderr
+        logs = _kubectl("logs", f"job/{name}", "-n", backend.namespace)
+        assert "hello world" in logs.stdout
+    finally:
+        _kubectl("delete", "job", name, "-n", backend.namespace)
