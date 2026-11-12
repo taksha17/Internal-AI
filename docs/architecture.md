@@ -218,11 +218,11 @@ id.
   strict container path, which refuses instead of downgrading when docker
   is missing. It is still not a VM.
 - The compute plane submits locally and renders Slurm and Kubernetes
-  placements exactly (`compute/scheduler.py`). The Kubernetes backend has
-  run a real Job to completion on a live single-node cluster; Slurm has
-  never been run and neither backend has touched rented hardware, so rented
-  deployment is still unproven. This matches the PRD's own separation
-  between the platform and the compute decision in section 10.
+  placements exactly (`compute/scheduler.py`). Both have run a real job to
+  completion on a live single-node scheduler; neither has touched rented
+  hardware, so rented deployment is still unproven. This matches the PRD's
+  own separation between the platform and the compute decision in section
+  10.
 - The experiment tracker is the SQLite store, and `tracking.py` mirrors a
   run's aggregates (cost, duration, status) to self-hosted MLflow when
   `INTERNAL_AI_MLFLOW_URI` is set. Output text, artifacts and metadata never
