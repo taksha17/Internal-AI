@@ -103,13 +103,13 @@ capability-checked in `roles.py`, written to `audit.py`, capped by
 | # | Your step | In the code | Status |
 | --- | --- | --- | --- |
 | 1 | Bring your own data after onboarding | `services/build.py`, `data/pipeline.py`, `G1` | have |
-| 2 | Pretrained data agents clean and optimise | `roles.py: data_engineer` | have, but not pretrained |
+| 2 | Pretrained data agents clean and optimise | `roles.py: data_engineer`, deterministic by rule — a model must never write training questions | have |
 | 3 | Pick scratch or a listed OSS base | `trainer.py` floor; `catalog.py`, `pin.py`, `G4` | have |
 | 4 | An agent computes the compute | `compute/advise.py: advise_dataset` | have |
 | 5 | Deploy trainers local or cloud | `compute/scheduler.py`, `LocalBackend`, `SlurmBackend` | part |
 | 6 | Finetune by data and model type | `alpha/train.py`, `alpha/pairs.py` | have |
 | 7 | Test against available models | `evals/harness.py`, three columns | have |
-| 8 | Loop until benchmarks are optimal | budget-gated rounds on the dev split | have, capped |
+| 8 | Loop until benchmarks are optimal | budget-gated rounds on the dev split; the cap is the spend control | have |
 | 9 | Agents wrap the weights | `serving/app.py`, `guardrails.py`, `permissions.py` | have |
 | 10 | Cutoff date, optional internet | card states both; gate, service and console fetch per install | have |
 | 11 | Store new knowledge, keep improving | quarantine hold, dual control, console; conversions refuse until cleared | have |
