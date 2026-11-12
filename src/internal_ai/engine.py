@@ -240,6 +240,8 @@ class Orchestrator:
             return True, ""
         if gate.status == GateStatus.REJECTED:
             return False, f"gate {gate.id} was rejected: {gate.decision_note}"
+        if gate.status == GateStatus.REVOKED:
+            return False, f"gate {gate.id} was revoked: {gate.decision_note}"
         return False, f"awaiting human approval on gate {gate.id} ({gate.gate_type})"
 
     def _block_for_kill_switch(self, task: Task) -> None:

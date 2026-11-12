@@ -323,6 +323,13 @@ def create_app(
         platform = get_platform()
         return platform.audit.verify().to_dict()
 
+    @app.get("/metrics")
+    def metrics(window_hours: int = 24, _: None = Depends(require_key)) -> dict[str, Any]:
+        """What this install did in the window: volume, refusals, cost, latency."""
+        from internal_ai.services.metrics import operational_metrics
+
+        return operational_metrics(get_platform(), window_hours=window_hours)
+
     @app.get("/budget")
     def budget(_: None = Depends(require_key)) -> dict[str, Any]:
         platform = get_platform()

@@ -226,6 +226,30 @@ class GateService:
         gate.decision_note = note or f"cancelled by {actor}"
         return self.store.update_gate(gate)
 
+    def revoke(self, gate_id: str, actor: str, reason: str) -> GateRequest:
+        """Withdraw an approval that was already given.
+
+        Approval is not a fact about the past that keeps working: every consumer
+        re-reads the gate, so flipping the status here is enough to stop a server
+        that is already running. A pending gate is cancelled, not revoked, and a
+        decided one cannot be revoked twice.
+        """
+        gate = self.store.get_gate(gate_id)
+        if gate is None:
+            raise GateError(f"unknown gate: {gate_id}")
+        if gate.status == GateStatus.PENDING:
+            raise GateError(
+                f"gate {gate_id} is pending; cancel it, there is no approval to withdraw"
+            )
+        if gate.status != GateStatus.APPROVED:
+            raise GateError(f"gate {gate_id} is {gate.status}; only an approval can be revoked")
+        if not reason.strip():
+            raise GateError("revoking an approval needs a typed reason")
+        gate.status = GateStatus.REVOKED
+        gate.decided_at = now_iso()
+        gate.decision_note = f"revoked by {actor}: {reason}"
+        return self.store.update_gate(gate)
+
     def is_approved(self, gate_id: str) -> bool:
         gate = self.store.get_gate(gate_id)
         return bool(gate and gate.status == GateStatus.APPROVED)

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Harness{% endblock %}
+{% block crumb %}Harness{% endblock %}
+{% block content %}
+{{ m.page_head("Harness", "One question, one engine, and the record the harness keeps: the prompt's digest, the checks the answer applied to itself, what it cost and how long it took. Serving turns the same layer on with INTERNAL_AI_HARNESS=1; this page is the console's own client, using this install's engine.") }}
+<form method="post" action="/console/harness" class="stack card">
+  {{ m.csrf_field() }}
+  <label>Question <input type="text" name="question" value="{{ question }}" required maxlength="4000" placeholder="What does the queue do at night?"></label>
+  <label>Evidence, one per line as <code>path:line | excerpt</code>
+    <textarea name="evidence" rows="6" spellcheck="false" placeholder="notes/tickets.txt:3 | Ticket 42 was closed on Monday.">{{ evidence }}</textarea>
+  </label>
+  <p class="muted small">The answer may cite only these lines. A line cited where it does not belong fails the check, and that check is the point. Nothing here is stored beyond the audit event: the prompt is kept as its digest.</p>
+  <button type="submit" class="primary">Ask the harness</button>
+</form>
+{% if answer %}
+<section class="card">
+  <h2>Answer</h2>
+  <pre>{{ answer.text }}</pre>
+  <p>
+    {% if answer.passed %}{{ m.status_badge("passed") }} Every citation names a line you supplied.
+    {% else %}{{ m.status_badge("failed") }} {{ answer.problems | join("; ") }}{% endif %}
+  </p>
+  <ul class="plain">
+    <li>Model {{ answer.model }}, variant {{ answer.variant }}, backend {{ answer.backend }}, harness {{ harness_version }}.</li>
+    <li>Prompt <code>{{ answer.prompt_sha256 }}</code> ({{ answer.prompt_tokens }} tokens, window {{ window }}).</li>
+    <li>{{ answer.attempts }} attempt{{ "" if answer.attempts == 1 else "s" }}, {{ answer.tool_calls }} tool call{{ "" if answer.tool_calls == 1 else "s" }}, {{ answer.latency_ms }} ms, {{ "$%.6f" % answer.cost_usd }}.</li>
+    {% if answer.exhausted %}<li>The repair allowance was spent: this is the last text, not a better one.</li>{% endif %}
+  </ul>
+</section>
+{% endif %}
+<h2>Recent harness answers</h2>
+{% call m.data_table([("When",), ("Who",), ("Model",), ("Outcome",), ("Prompt",), ("ms", true), ("Cost", true)]) %}
+  {% for event in events %}
+  <tr><td>{{ event.created_at | when }}</td><td>{{ event.actor }}</td><td>{{ event.model }}</td><td>{{ m.status_badge(event.outcome) }}</td><td><code>{{ event.digest }}</code></td><td class="num">{{ event.latency_ms }}</td><td class="num">{{ "$%.6f" % event.cost_usd }}</td></tr>
+  {% else %}
+  {{ m.empty_row(7, "No harness answer yet", "Ask one above; it is written to the audit log with the digest of the prompt that was sent.", "/console/audit", "Open the audit log") }}
+  {% endfor %}
+{% endcall %}
+{% endblock %}
