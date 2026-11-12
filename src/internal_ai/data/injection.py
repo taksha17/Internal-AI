@@ -17,17 +17,21 @@ INSTRUCTION_PATTERNS: dict[str, re.Pattern[str]] = {
     ),
     # "act as a client" is how a protocol describes a program, so only a role
     # aimed at a model counts here; otherwise every specification is an injection.
+    # Match imperative/directive forms, not descriptions of experiments.
     "persona": re.compile(
-        r"(?i)\byou\s+are\s+now\s+(?:a|an|the)\b"
+        r"(?i)^\s*(?:you\s+are\s+now\s+(?:a|an|the)\b"
         r"|\bact\s+as\s+(?:a|an|the)\s+(?:ai|assistant|chatbot|model|language\s+model|dan)\b"
-        r"|\bsystem\s+prompt\b"
+        r"|system\s+prompt\s*[:=])"
     ),
     "exfiltration": re.compile(
         r"(?i)\b(?:send|post|upload|email|exfiltrate)\b[^.\n]{0,40}\b(?:to|at)\b"
         r"\s*(?:https?://|[\w.-]+@[\w.-]+)"
     ),
+    # Match shell/programming commands, not "execute the function of a protein"
+    # Negative lookahead for biological "function of a" pattern
     "tooling": re.compile(
-        r"(?i)\b(?:run|execute|call|invoke)\s+(?:the\s+)?(?:command|shell|tool|script|function)\b"
+        r"(?i)\b(?:run|execute|call|invoke)\s+(?:the\s+)?"
+        r"(?:command|shell|tool|script|function)\b(?!\s+of\s+a)"
     ),
 }
 

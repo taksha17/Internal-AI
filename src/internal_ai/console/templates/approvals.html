@@ -28,6 +28,16 @@
     </dl>
   </details>
   {% endif %}
+  {% if gate.status == "approved" %}
+  <details class="evidence">
+    <summary>Withdraw this approval</summary>
+    <form method="post" action="/console/approvals/{{ gate.id }}/revoke" class="toolbar">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <label class="grow">Reason <input name="reason" required maxlength="500" placeholder="Why this approval no longer holds"></label>
+      <button type="submit">Withdraw</button>
+    </form>
+  </details>
+  {% endif %}
 </div>
 {% else %}
 {% if q %}

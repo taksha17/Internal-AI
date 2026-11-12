@@ -26,6 +26,7 @@ from internal_ai.serving.guardrails import (
     guardrail_policy,
     validate_output_guardrails,
 )
+from internal_ai.serving.harnessed import harness_enabled, harnessed_answer
 from internal_ai.serving.service import (
     SUPERUSER_GROUP,
     ModelRouter,
@@ -643,17 +644,37 @@ def create_serving_app(
             except (PermissionError, ValueError) as exc:
                 raise HTTPException(status_code=503, detail=str(exc)) from exc
             try:
-                result = cited_answer(
-                    generator,
-                    question,
-                    citations,
-                    excerpts,
-                    training_texts=memorisation_sources(platform),
-                    system=system_prompt,
-                    history=history,
-                    max_tokens=request.max_tokens or 400,
-                    temperature=request.temperature if request.temperature is not None else 0.0,
-                )
+                if harness_enabled():
+                    result = harnessed_answer(
+                        platform,
+                        generator,
+                        model,
+                        question,
+                        citations,
+                        excerpts,
+                        training_texts=memorisation_sources(platform),
+                        system=system_prompt,
+                        history=tuple(history),
+                        max_tokens=request.max_tokens or 400,
+                        temperature=(
+                            request.temperature if request.temperature is not None else 0.0
+                        ),
+                        actor=principal.user_id,
+                    )
+                else:
+                    result = cited_answer(
+                        generator,
+                        question,
+                        citations,
+                        excerpts,
+                        training_texts=memorisation_sources(platform),
+                        system=system_prompt,
+                        history=history,
+                        max_tokens=request.max_tokens or 400,
+                        temperature=(
+                            request.temperature if request.temperature is not None else 0.0
+                        ),
+                    )
             except FileNotFoundError as exc:
                 raise HTTPException(
                     status_code=503, detail=f"the local model is not on disk: {exc}"
@@ -730,6 +751,7 @@ def create_serving_app(
                 latency,
                 event_details("completed"),
                 question=question,
+                cost_usd=getattr(result, "cost_usd", 0.0),
             )
             record_trace(
                 platform.store,
@@ -744,7 +766,9 @@ def create_serving_app(
                 failure="" if result.passed else FAILURE_CITATION,
             )
             counter = token_counter(model)
-            prompt_words = count_tokens(counter, result.prompt)
+            prompt_words = getattr(result, "prompt_tokens", None)
+            if prompt_words is None:
+                prompt_words = count_tokens(counter, result.prompt)
             answer_words = count_tokens(counter, result.text)
             return {
                 **completion,
@@ -816,6 +840,7 @@ def create_serving_app(
                     elapsed,
                     event_details(outcome),
                     question=question,
+                    cost_usd=getattr(result, "cost_usd", 0.0),
                 )
                 record_trace(
                     platform.store,

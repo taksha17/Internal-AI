@@ -171,6 +171,41 @@ def decide_gate(
     return decided
 
 
+def revoke_gate(platform: Platform, actor: Actor, gate_id: str, reason: str) -> GateRequest:
+    """Withdraw an approval. Starting needs two roles; stopping needs one person.
+
+    Approval needs every required role from distinct people because it grants
+    authority. Revoking only removes it, so one person is enough: someone who
+    asked for the gate, or someone whose role could have decided it. An agent
+    holds no role at all here, whatever roles its spec names.
+    """
+    gate = platform.store.get_gate(gate_id)
+    if gate is None:
+        raise GateError(f"unknown gate: {gate_id}")
+    if actor.kind != "human":
+        raise deny(
+            platform.audit, actor, "revoke_gate", gate_id, "gates are revoked by people, not agents"
+        )
+    if actor.id != gate.requested_by and not actor.holds(*gate.required_approvers):
+        raise deny(
+            platform.audit,
+            actor,
+            "revoke_gate",
+            gate_id,
+            "revoking needs the requester or " + " or ".join(gate.required_approvers),
+        )
+    _note_required(actor, reason, "revoking an approval")
+    revoked = platform.gates.revoke(gate_id, actor.id, reason)
+    platform.audit.record(
+        actor=actor.id,
+        actor_kind=actor.kind,
+        action="gate.revoked",
+        subject=revoked.id,
+        details={"gate_type": str(revoked.gate_type), "reason": reason},
+    )
+    return revoked
+
+
 def set_budget_limit(
     platform: Platform,
     actor: Actor,

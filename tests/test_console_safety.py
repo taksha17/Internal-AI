@@ -357,6 +357,48 @@ def test_console_refuses_anonymous_wrong_role_and_missing_csrf(tmp_path: Path) -
         assert platform.budget.kill_switch_engaged()
 
 
+def test_an_approved_gate_is_withdrawn_in_the_console_by_one_person(tmp_path: Path) -> None:
+    app = create_app(root=tmp_path, llm_kind="scripted")
+    with TestClient(app) as client:
+        platform = app.state.platform
+        lead = enroll(platform, "Lena Lead", ["program_lead"])
+        gate = platform.gates.request(
+            GateType.BUDGET_INCREASE,
+            "Raise the cap",
+            "global:global",
+            requested_by=lead.id,
+            requested_by_kind="human",
+            evidence={"spend_report": "at the cap", "justification": "the next run"},
+        )
+        for role in gate.required_approvers:
+            platform.gates.decide(gate.id, role, approved=True, note="checked")
+        assert str(platform.store.get_gate(gate.id).status) == "approved"
+
+        sign_in(client, lead.name)
+        page = client.get("/console/approvals", params={"status": "approved"}).text
+        assert f'action="/console/approvals/{gate.id}/revoke"' in page
+
+        viewer = enroll(platform, "Vic Viewer", ["security_compliance"])
+        outsider = TestClient(app)
+        sign_in(outsider, viewer.name)
+        outsider_csrf = csrf_from(outsider.get("/console/home").text)
+        refused = outsider.post(
+            f"/console/approvals/{gate.id}/revoke",
+            data={"csrf_token": outsider_csrf, "reason": "I would rather not"},
+        )
+        assert "revoking needs" in refused.text
+        assert str(platform.store.get_gate(gate.id).status) == "approved"
+
+        posted = client.post(
+            f"/console/approvals/{gate.id}/revoke",
+            data={"csrf_token": csrf_from(page), "reason": "the spend report was wrong"},
+            follow_redirects=False,
+        )
+        assert posted.status_code == 303
+        assert str(platform.store.get_gate(gate.id).status) == "revoked"
+        assert platform.store.list_audit(action="gate.revoked", subject=gate.id)
+
+
 def test_api_rejects_asserted_identity_writes(tmp_path: Path) -> None:
     app = create_app(root=tmp_path, llm_kind="scripted")
     with TestClient(app) as client:

@@ -69,6 +69,9 @@ class GateStatus(StrEnum):
     APPROVED = "approved"
     REJECTED = "rejected"
     CANCELLED = "cancelled"
+    # An approval that was given and then withdrawn. It is not the same fact as
+    # a gate that never passed: the record says people admitted the thing once.
+    REVOKED = "revoked"
 
 
 class AuditOutcome(StrEnum):

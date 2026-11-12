@@ -1,0 +1,116 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Internal AI - architecture</title>
+<style>
+ body{background:#111318;color:#c9d1d9;font:13px/1.5 system-ui,sans-serif;margin:0;padding:24px}
+ h1{font-size:14px;font-weight:600;color:#e6edf3;margin:0 0 3px}
+ p.note{color:#8b949e;margin:0 0 18px;font-size:11px}
+ #wrap svg{max-width:none;height:auto}
+ #fail{display:none;color:#f0a6a6;font-family:ui-monospace,monospace;font-size:12px;white-space:pre-wrap}
+</style></head>
+<body>
+<h1>Internal AI - system diagram</h1>
+<p class="note">have = a module does this today &middot; part = the mechanism exists and the last mile does not &middot; gap = no code, and it needs a design and a gate<br/>
+the harness band is one layer in front of the model: one prompt, one tool interface, one state map, one backend choice. A harness change is a new measurement, not a free win.</p>
+<div id="wrap"></div>
+<pre id="fail"></pre>
+<script type="text/plain" id="src">
+%%{init: {"flowchart": {"curve": "basis", "nodeSpacing": 30, "rankSpacing": 46}, "themeVariables": {"fontSize": "14px"}}}%%
+flowchart TB
+    U["user + own data<br/>after onboarding"]
+
+    SRC["1 register source<br/>licence + legal status<br/>set by a person &middot; have"]
+    G1{{"gate: new_data_source_access"}}
+    DE["2 data agents<br/>clean, dedupe, scrub, split<br/>deterministic, offline &middot; have"]
+    DS["dataset version<br/>immutable, hashed,<br/>lineage &middot; have"]
+    G3{{"gate: dataset_release"}}
+    MET["use case + success<br/>metric chosen &middot; have"]
+    G2{{"gate: eval_set_freeze"}}
+    FRZ["frozen eval set<br/>write protected &middot; have"]
+
+    PATH{"20 tokens<br/>per parameter?"}
+    SCR["3 from scratch<br/>trainer.py &middot; have"]
+    ALP["3 alpha adapter<br/>training/alpha only &middot; have"]
+    CAT["catalog.admit + pin.verify<br/>a list is a request,<br/>not a permit &middot; have"]
+    G4{{"gate: P6 open weights<br/>+ licence exception"}}
+
+    ADV["4 compute advice<br/>feasible per size,<br/>or why not &middot; have"]
+    G5{{"gate: training_run_above_threshold"}}
+    DEP["5 deploy trainer<br/>scheduler.py &middot; part"]
+    LOC["on premises<br/>LocalBackend &middot; have"]
+    RENT["rented GPU<br/>text + question ids only<br/>never records &middot; have"]
+
+    RUN["6 train<br/>stops at the cap &middot; have"]
+    EV["evaluate<br/>adapter, its base, keyword &middot; have"]
+    G6{{"gate: model_promotion<br/>human, not the requester"}}
+    DEV["rework on dev split<br/>have"]
+
+    WRP["7 wrap the weights<br/>guardrails, groups, limits &middot; have"]
+    CARD["model card<br/>base, licence, cutoff,<br/>web access &middot; have"]
+    G7{{"gate: production_deployment"}}
+    SHIP["8 self hosted model<br/>/v1/chat/completions &middot; have"]
+    WEB["web access, per install<br/>allowlist + fetch log<br/>off by default &middot; part"]
+
+    APP["app or agent client<br/>OpenAI-shaped request &middot; have"]
+
+    subgraph HARN["harness, our own &middot; between the client and the model"]
+        direction LR
+        HC["prompt conditioning<br/>one prompt shared by training,<br/>eval and serving &middot; part"]
+        HT["tool surface<br/>MCP client, stdio only<br/>gate per server &middot; part"]
+        HR["state routing<br/>transition map + bounded repair<br/>no state graph &middot; part"]
+        HB["inference backend<br/>OpenAI-shaped, private hosts<br/>no gateway routing &middot; part"]
+        HC --- HT --- HR --- HB
+    end
+
+    TR["9 trace.py<br/>scrubbed, grouped &middot; have"]
+    TRI["triage<br/>candidate cases &middot; have"]
+    QUAR["10 quarantined source<br/>hold, dual control,<br/>console &middot; have"]
+
+    subgraph FOUND["foundation, always on"]
+        direction LR
+        AUD["audit.py<br/>append only, chained"] --- BUD["budget.py<br/>caps, kill switch"] --- ROL["roles.py<br/>capability per action"] --- ST["store.py<br/>transition map"] --- OFF["config.py<br/>offline by default"]
+    end
+
+    U --> SRC --> G1 --> DE --> DS --> G3 --> PATH
+    DE --> MET --> G2 --> FRZ
+    PATH -->|yes| SCR
+    PATH -->|no| ALP --> CAT --> G4
+    SCR --> ADV
+    G4 --> ADV
+    ADV --> G5 --> DEP
+    DEP -->|capacity ok| LOC
+    DEP -->|no local capacity| RENT
+    LOC --> RUN
+    RENT --> RUN
+    FRZ -.->|"same items every round"| EV
+    RUN --> EV --> G6
+    G6 -->|rejected| DEV --> RUN
+    G6 -->|approved| WRP --> CARD --> G7 --> SHIP --> TR --> TRI --> QUAR
+    WEB -.->|"only where it is switched on"| WRP
+    QUAR -.->|"new source, new version,<br/>never new weights"| G1
+    APP --> HC
+    HB --> SHIP
+    HARN -.->|"harness and model are scored together"| EV
+    QUAR ~~~ AUD
+
+</script>
+<script type="module">
+const src = document.getElementById("src").textContent;
+const wrap = document.getElementById("wrap");
+const fail = document.getElementById("fail");
+try {
+  const mermaid = (await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs")).default;
+  mermaid.initialize({startOnLoad:false,theme:"dark",themeVariables:{
+    background:"#111318",primaryColor:"#161b22",primaryTextColor:"#e6edf3",
+    primaryBorderColor:"#30363d",lineColor:"#6e7681",secondaryColor:"#1b2430",
+    tertiaryColor:"#0d1117",fontSize:"14px",edgeLabelBackground:"#111318"},
+    flowchart:{curve:"basis",nodeSpacing:30,rankSpacing:46,htmlLabels:true}});
+  const { svg } = await mermaid.render("master", src);
+  wrap.innerHTML = svg;
+  document.title = "Internal AI - architecture (rendered)";
+} catch (e) {
+  fail.style.display = "block";
+  fail.textContent = "Mermaid could not load or render:\n" + e.message +
+    "\n\noffline copy: docs/diagrams/architecture.png";
+}
+</script>
+</body></html>
