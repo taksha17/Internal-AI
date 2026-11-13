@@ -10,6 +10,7 @@ import pytest
 from internal_ai.data.kyc import (
     DEFAULT_FORMS,
     DOC_FAMILIES,
+    DOC_TEMPLATES,
     EMPLOYERS,
     FIRST_NAMES,
     GENERATOR_VERSION,
@@ -265,6 +266,18 @@ def test_bare_model_completions_read_as_values() -> None:
     )
     assert extract_completion("full_name", "") == ""
     assert extract_completion("occupation", "The person this form is for is") == ""
+
+
+def test_bank_lines_name_their_holder() -> None:
+    """E-mail is otherwise unlinkable: no line ties an address to a person."""
+    form = generate_forms(count=4, seed=7)[0]
+    bank = [t for t in DOC_TEMPLATES if "BANK" in t or "ACCOUNT SUMMARY" in t]
+    assert len(bank) == 3
+    for template in bank:
+        assert "{full_name}" in template
+        line = template.format(**form.values)
+        assert form.values["full_name"] in line
+        assert form.values["email"] in line
 
 
 def test_ranking_prefers_the_cued_line() -> None:

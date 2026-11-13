@@ -166,10 +166,12 @@ DOC_FAMILIES: tuple[tuple[str, ...], ...] = (
         "{annual_income_band} income band",
     ),
     (
-        "BANK STATEMENT {email} source of funds {source_of_funds} account {account_type}",
-        "BANK STATEMENT for the {account_type} account held by {email}, where the source "
-        "of funds is stated as {source_of_funds}",
-        "ACCOUNT SUMMARY {account_type} in the name of {email}, funded from {source_of_funds}",
+        "BANK STATEMENT for {full_name} ({email}) source of funds {source_of_funds} "
+        "account {account_type}",
+        "BANK STATEMENT for the {account_type} account held by {full_name}, contactable "
+        "at {email}, where the source of funds is stated as {source_of_funds}",
+        "ACCOUNT SUMMARY {account_type} in the name of {full_name} ({email}), funded from "
+        "{source_of_funds}",
     ),
     (
         "DECLARATION {full_name} declares {pep_declaration}",
