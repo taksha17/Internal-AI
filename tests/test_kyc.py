@@ -22,7 +22,13 @@ from internal_ai.data.kyc import (
     generate_forms,
 )
 from internal_ai.domain import Capability, RoleSpec
-from internal_ai.services.kyc_agent import KycAgent, agent_role, extract, rank_lines
+from internal_ai.services.kyc_agent import (
+    KycAgent,
+    agent_role,
+    extract,
+    extract_completion,
+    rank_lines,
+)
 from internal_ai.tools import ToolDenied, ToolRegistry
 from internal_ai.training.alpha.pairs import kyc_fill_text, kyc_prompt
 
@@ -229,6 +235,36 @@ def test_every_pool_value_is_marked_fake() -> None:
         assert len(pool) >= 4
         for value in pool:
             assert value.lower().startswith(stems), value
+
+
+def test_bare_model_completions_read_as_values() -> None:
+    """The model answers values first; the reader must not need cue words."""
+    assert (
+        extract_completion("full_name", "Fictoria Samplington\nThe person this form is for")
+        == "Fictoria Samplington"
+    )
+    assert (
+        extract_completion("occupation", "Sample Analyst\nThe person this form is for")
+        == "Sample Analyst"
+    )
+    assert (
+        extract_completion("employer", "Sample Ledger Ltd\nThe person this form is for")
+        == "Sample Ledger Ltd"
+    )
+    assert (
+        extract_completion("account_type", "TEST-CURRENT\nThe person this form is for")
+        == "TEST-CURRENT"
+    )
+    assert (
+        extract_completion("email", "test.user0078@example.test\nThe person this email")
+        == "test.user0078@example.test"
+    )
+    assert extract_completion("phone", "+1-555-0175\nThe person") == "+1-555-0175"
+    assert (
+        extract_completion("pep_declaration", "not a PEP (test)\nThe person") == "not a PEP (test)"
+    )
+    assert extract_completion("full_name", "") == ""
+    assert extract_completion("occupation", "The person this form is for is") == ""
 
 
 def test_ranking_prefers_the_cued_line() -> None:

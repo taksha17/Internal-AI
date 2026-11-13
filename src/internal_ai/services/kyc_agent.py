@@ -136,6 +136,39 @@ def rank_lines(field_name: str, lines: list[str], limit: int = KYC_CANDIDATE_LIM
     return [line for _, _, line in scored[:limit]]
 
 
+VALUE_PATTERNS: dict[str, tuple[str, ...]] = {
+    "full_name": (r"[A-Z][a-z]+\s+[A-Z][a-z]+",),
+    "date_of_birth": (r"\d{2}/\d{2}/\d{4}",),
+    "nationality": (r"[A-Z][a-z]+",),
+    "id_type": (r"SAMPLE-(?:PASSPORT|DRIVING-LICENCE|NATIONAL-ID)",),
+    "id_number": (r"SAMPLE-ID-\d{6}",),
+    "address": (r"\d+\s+Test Street,\s*Sampleton\s+ST\d{2}",),
+    "phone": (r"\+1-555-01\d{2}",),
+    "email": (r"\S+@example\.test",),
+    "occupation": (r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}",),
+    "employer": (r"[A-Z][A-Za-z ]*(?:Bank|Ltd|Inc)",),
+    "annual_income_band": (r"\d+(?:-\d+)?k\+? TEST",),
+    "account_type": (r"TEST-(?:CURRENT|SAVINGS|BUSINESS)",),
+    "source_of_funds": (r"[a-z ]+",),
+    "pep_declaration": (r".+?\(test\)",),
+}
+
+
+def extract_completion(field_name: str, completion: str) -> str:
+    found = extract(field_name, completion.splitlines())
+    if found:
+        return found
+    for line in completion.splitlines():
+        first = line.strip()
+        if not first or len(first) > 64 or first[-1] in ".?!":
+            continue
+        for pattern in VALUE_PATTERNS[field_name]:
+            match = re.fullmatch(pattern, first)
+            if match:
+                return match.group(0)
+    return ""
+
+
 def extract(field_name: str, lines: list[str]) -> str:
     """The first value any of the field's patterns finds in the ranked lines."""
     patterns = [re.compile(pattern) for pattern in FIELD_PATTERNS[field_name]]
@@ -243,8 +276,8 @@ class KycAgent:
                     customer = None
                     if name != "full_name":
                         customer = known.get("full_name") or None
-                    value = extract(
-                        name, [self.reader(kyc_prompt(evidence, name, customer=customer))]
+                    value = extract_completion(
+                        name, self.reader(kyc_prompt(evidence, name, customer=customer))
                     )
                     self.model_calls += 1
                 else:
