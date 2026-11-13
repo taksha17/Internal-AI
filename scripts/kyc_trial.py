@@ -92,6 +92,12 @@ def main() -> None:
     parser.add_argument("--decoys", type=int, default=10)
     parser.add_argument("--report", type=Path, default=Path("var_kyc/trial_report.json"))
     parser.add_argument("--quantised", action="store_true", help="hold the merged model in nf4")
+    parser.add_argument(
+        "--detail",
+        type=Path,
+        default=None,
+        help="write per-field accuracy plus every wrong answer here",
+    )
     args = parser.parse_args()
 
     forms = load_forms(args.corpus)
@@ -147,6 +153,18 @@ def main() -> None:
         "seconds": round(base_elapsed, 1),
     }
     print(json.dumps({"keyword_baseline": results["keyword_baseline"]}, indent=2))
+
+    if args.detail is not None:
+        triples = zip(report.fields, report.predictions, report.references, strict=True)
+        wrong = [
+            {"field": name, "predicted": predicted, "reference": reference}
+            for name, predicted, reference in triples
+            if predicted != reference
+        ]
+        detail = {"by_field": report.by_field, "wrong": wrong}
+        args.detail.parent.mkdir(parents=True, exist_ok=True)
+        args.detail.write_text(json.dumps(detail, indent=2, sort_keys=True) + "\n")
+        print(json.dumps({"detail": str(args.detail)}, indent=2))
 
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(results, indent=2, sort_keys=True) + "\n")

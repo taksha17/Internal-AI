@@ -201,6 +201,16 @@ def test_every_document_wording_is_extractable() -> None:
                 assert extract(name, [line]) == form.values[name], (template, name)
 
 
+def test_report_names_each_scored_field(platform, tmp_path: Path) -> None:
+    forms = generate_forms(count=8, seed=11)
+    agent = KycAgent(wired(platform, tmp_path), agent_role())
+    evidence = {form.form_id: evidence_lines(form, random.Random(11)) for form in forms}
+    report = agent.run(forms, evidence)
+    assert report.fields == [name for _ in forms for name in KYC_FIELDS]
+    assert report.by_field["full_name"] == 1.0
+    assert set(report.by_field) == set(KYC_FIELDS)
+
+
 def test_ranking_prefers_the_cued_line() -> None:
     form = generate_forms(count=4, seed=7)[0]
     lines = evidence_lines(form, random.Random(7))

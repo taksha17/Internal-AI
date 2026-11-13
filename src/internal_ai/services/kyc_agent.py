@@ -145,6 +145,20 @@ class FillReport:
     model_calls: int = 0
     predictions: list[str] = field(default_factory=list)
     references: list[str] = field(default_factory=list)
+    fields: list[str] = field(default_factory=list)
+
+    @property
+    def by_field(self) -> dict[str, float]:
+        """Exact-match rate per field, in first-seen field order."""
+        correct: dict[str, int] = {}
+        total: dict[str, int] = {}
+        for name, prediction, reference in zip(
+            self.fields, self.predictions, self.references, strict=True
+        ):
+            total[name] = total.get(name, 0) + 1
+            if prediction == reference:
+                correct[name] = correct.get(name, 0) + 1
+        return {name: correct.get(name, 0) / total[name] for name in total}
 
 
 class KycAgent:
@@ -234,6 +248,7 @@ class KycAgent:
         """Fill every form in order; later forms reuse earlier memory."""
         predictions: list[str] = []
         references: list[str] = []
+        scored_fields: list[str] = []
         first_fill: dict[str, dict[str, str]] = {}
         consistent = 0
         compared = 0
@@ -248,6 +263,7 @@ class KycAgent:
             for name in KYC_FIELDS:
                 predictions.append(filled[name])
                 references.append(form.values[name])
+                scored_fields.append(name)
         return FillReport(
             forms=len(forms),
             fields_scored=len(predictions),
@@ -258,6 +274,7 @@ class KycAgent:
             model_calls=self.model_calls,
             predictions=predictions,
             references=references,
+            fields=scored_fields,
         )
 
 
