@@ -332,6 +332,56 @@ def retrieval_pairs(
     return pairs
 
 
+def kyc_narrative(values: dict[str, str]) -> str:
+    """The filled form retold in sentences, which is what makes the corpus text.
+
+    A record that is only ``field: value`` lines has almost no English function
+    words, so the ingest's language filter drops it, and the same record repeated
+    per form is a near-duplicate of itself. The retelling keeps the facts, adds
+    the stopwords the filter looks for, and varies with every value it carries.
+    """
+    return (
+        f"The customer is {values['full_name']}, who was born on {values['date_of_birth']} "
+        f"and is of {values['nationality']} nationality. The document presented is a "
+        f"{values['id_type']} that carries the number {values['id_number']}. The customer "
+        f"lives at {values['address']} and can be reached on {values['phone']} or by email "
+        f"at {values['email']}. They work as a {values['occupation']} for "
+        f"{values['employer']}, and their income falls in the {values['annual_income_band']} "
+        f"band. They asked for a {values['account_type']} account and said the source of "
+        f"the funds is {values['source_of_funds']}. The declaration recorded is that they "
+        f"are {values['pep_declaration']}."
+    )
+
+
+def kyc_fill_text(values: dict[str, str], lines: list[str]) -> str:
+    """One training text per filled form: the papers, the retelling, the answers.
+
+    Training and trial share this, for the same reason they share
+    ``prompt_for_candidates``: text the adapter learned from in one layout and is
+    tested against in another measures the difference between two layouts. The
+    answer block is the trial's own question shape, so the last thing the model
+    reads before it is asked is an example of being asked.
+    """
+    from internal_ai.data.kyc import KYC_FIELDS
+
+    documents = "\n".join(f"- {line}" for line in lines)
+    answers = "\n".join(f"Question: What is {name}?\nAnswer: {values[name]}" for name in KYC_FIELDS)
+    return (
+        f"The customer's papers are below.\n\n{documents}\n\n"
+        f"A clerk read those papers and completed the form. {kyc_narrative(values)}\n\n"
+        f"{answers}"
+    )
+
+
+def kyc_prompt(lines: list[str], field_name: str) -> str:
+    """The exact text the model is asked at trial time: papers, one question."""
+    documents = "\n".join(f"- {line}" for line in lines)
+    return (
+        f"The customer's papers are below.\n\n{documents}\n\n"
+        f"Question: What is {field_name}?\nAnswer:"
+    )
+
+
 def citation_pairs(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
     """One training text per answerable passage: keywords in, cited sentence out.
 

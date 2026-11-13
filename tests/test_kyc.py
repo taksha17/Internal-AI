@@ -9,6 +9,7 @@ import pytest
 
 from internal_ai.data.kyc import (
     DEFAULT_FORMS,
+    DOC_FAMILIES,
     KYC_FIELDS,
     build_corpus,
     evidence_lines,
@@ -17,6 +18,7 @@ from internal_ai.data.kyc import (
 from internal_ai.domain import Capability, RoleSpec
 from internal_ai.services.kyc_agent import KycAgent, agent_role, extract, rank_lines
 from internal_ai.tools import ToolDenied, ToolRegistry
+from internal_ai.training.alpha.pairs import kyc_fill_text, kyc_prompt
 
 
 def wired(platform, tmp_path: Path) -> ToolRegistry:
@@ -89,6 +91,42 @@ def test_a_role_without_write_may_not_fill(platform, tmp_path: Path) -> None:
     form = generate_forms(count=4, seed=7)[0]
     with pytest.raises(ToolDenied):
         agent.fill(form, evidence_lines(form, random.Random(7)))
+
+
+def test_training_text_and_trial_prompt_share_the_layout() -> None:
+    form = generate_forms(count=4, seed=7)[0]
+    lines = evidence_lines(form, random.Random(7))
+    text = kyc_fill_text(form.values, lines)
+    assert all(value in text for value in form.values.values())
+    prompt = kyc_prompt(lines, "phone")
+    assert "phone" in prompt
+    assert form.values["phone"] in prompt
+    assert prompt != text
+
+
+def test_an_agent_with_a_reader_asks_the_model_not_the_patterns(platform, tmp_path: Path) -> None:
+    forms = generate_forms(count=8, seed=11)
+    truth = {form.form_id: evidence_lines(form, random.Random(11)) for form in forms}
+    agent = KycAgent(wired(platform, tmp_path), agent_role(), reader=lambda prompt: prompt)
+    evidence = {form.form_id: truth[form.form_id] for form in forms}
+    report = agent.run(forms, evidence)
+    # This test is about the wiring, not about accuracy: the reader echoes the
+    # prompt back, which is not a model answer, so most fields come back but
+    # nothing here claims how well a real model would do.
+    assert report.model_calls == 2 * len(KYC_FIELDS)
+    assert report.field_accuracy >= 0.9
+
+
+def test_every_document_wording_is_extractable() -> None:
+    """A new phrasing without its pattern fails here, not in the trial score."""
+    form = generate_forms(count=4, seed=7)[0]
+    for family in DOC_FAMILIES:
+        for template in family:
+            line = template.format(**form.values)
+            carried = [name for name in KYC_FIELDS if "{" + name + "}" in template]
+            assert carried, template
+            for name in carried:
+                assert extract(name, [line]) == form.values[name], (template, name)
 
 
 def test_ranking_prefers_the_cued_line() -> None:
