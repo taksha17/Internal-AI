@@ -333,7 +333,10 @@ def main() -> None:
     parser.add_argument(
         "--seq-len",
         type=int,
-        default=768,
+        # Measured on the released corpus: a rendered record is 853 tokens at the
+        # median and 887 at the maximum, so 768 cut the last answers off every
+        # single record and those fields were never trained at all.
+        default=1024,
         help="tokens per training sequence; a KYC record needs more than the lane's 64",
     )
     parser.add_argument("--cost-cap", type=float, default=2.0)
