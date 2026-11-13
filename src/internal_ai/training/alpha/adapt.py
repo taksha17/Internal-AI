@@ -211,17 +211,19 @@ def _quantised_budget(torch: Any) -> dict[int | str, str] | None:
 
 
 def _lora_targets(model: Any) -> list[str] | str:
-    """The projections to wrap, or every linear layer when the base names none of them.
+    """The projections to wrap, or every linear layer when those names are not linears.
 
     A base may wrap each projection in a module of its own: Gemma 4 puts every one
-    inside a clippable block, so the leaves are named ``linear`` and no ``q_proj``
-    exists. peft then refuses the run rather than skipping the layer. ``all-linear``
-    reaches the quantised linear inside the wrapper, which is the layer the adapter
-    was meant for.
+    inside a clippable block, so ``q_proj`` names the wrapper and the layer sits at
+    ``q_proj.linear``. peft refuses such a target rather than skipping it, and
+    ``all-linear`` selects by type instead, reaching the quantised linear inside.
+    The name alone is not enough to tell the two apart, so the module is checked.
     """
-    leaves = {name.rsplit(".", 1)[-1] for name, _ in model.named_modules()}
-    if leaves & set(TARGET_MODULES):
-        return list(TARGET_MODULES)
+    import torch
+
+    for name, module in model.named_modules():
+        if name.rsplit(".", 1)[-1] in TARGET_MODULES and isinstance(module, torch.nn.Linear):
+            return list(TARGET_MODULES)
     return "all-linear"
 
 

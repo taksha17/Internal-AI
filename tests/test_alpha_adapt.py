@@ -420,21 +420,32 @@ def test_a_wrapped_projection_is_reached_through_all_linear() -> None:
     """Gemma 4 names every projection ``linear`` inside its own clippable block, so
     peft finds no ``q_proj`` to wrap and refuses the run instead of skipping it."""
 
+    class _Clippable:
+        def __init__(self) -> None:
+            self.linear = torch.nn.Linear(2, 2)
+
     class _Wrapped:
+        def __init__(self) -> None:
+            self.q_proj = _Clippable()
+
         def named_modules(self):
             yield "", object()
-            yield "model.language_model.layers.0.self_attn.q_proj.linear", object()
-            yield "model.language_model.layers.0.mlp.down_proj.linear", object()
+            yield "model.language_model.layers.0.self_attn.q_proj", self.q_proj
+            yield "model.language_model.layers.0.self_attn.q_proj.linear", self.q_proj.linear
 
     assert _lora_targets(_Wrapped()) == "all-linear"
 
 
 def test_a_base_that_names_its_projections_keeps_the_pinned_targets() -> None:
     class _Plain:
+        def __init__(self) -> None:
+            self.q_proj = torch.nn.Linear(2, 2)
+            self.down_proj = torch.nn.Linear(2, 2)
+
         def named_modules(self):
             yield "", object()
-            yield "model.layers.0.self_attn.q_proj", object()
-            yield "model.layers.0.mlp.down_proj", object()
+            yield "model.layers.0.self_attn.q_proj", self.q_proj
+            yield "model.layers.0.mlp.down_proj", self.down_proj
 
     assert _lora_targets(_Plain()) == list(TARGET_MODULES)
 
