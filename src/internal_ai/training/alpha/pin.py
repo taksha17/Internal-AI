@@ -164,7 +164,21 @@ LFM3 = PinnedBase(
 )
 
 
-PINNED: tuple[PinnedBase, ...] = (PRIMARY, FALLBACK, HEALTHCARE, LFM3)
+GEMMA4 = PinnedBase(
+    repo_id="google/gemma-4-E2B-it",
+    revision="4adf15748de9e1a0097b6274cee9c15836c41c37",
+    license="Apache-2.0",
+    shards=(
+        WeightShard(
+            "model.safetensors",
+            "2db5482b20d746879bb3ef79b5203e9075a2e2b98f54ec7c2f281c1477ddc550",
+            10246621918,
+        ),
+    ),
+)
+
+
+PINNED: tuple[PinnedBase, ...] = (PRIMARY, FALLBACK, HEALTHCARE, LFM3, GEMMA4)
 
 
 def available_base(

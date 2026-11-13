@@ -16,6 +16,7 @@ from internal_ai.training.alpha import fetch as fetch_module
 from internal_ai.training.alpha.pin import (
     DEFAULT_ALLOWED,
     FALLBACK,
+    GEMMA4,
     LFM3,
     PRIMARY,
     BaseRefused,
@@ -50,6 +51,14 @@ def test_the_pinned_bases_carry_their_licence_class() -> None:
     assert LFM3.license_class not in DEFAULT_ALLOWED
     assert LFM3.repo_id == "LiquidAI/LFM3-1.7B"
     assert LFM3.revision == "1da06bec6a819da10b54c67e5c90972b46d81871"
+
+
+def test_the_gemma_pin_is_permissive_so_it_needs_no_exception() -> None:
+    assert GEMMA4.repo_id == "google/gemma-4-E2B-it"
+    assert GEMMA4.revision == "4adf15748de9e1a0097b6274cee9c15836c41c37"
+    assert GEMMA4.license == "Apache-2.0"
+    assert GEMMA4.license_class == LicenseClass.PERMISSIVE
+    assert GEMMA4.license_class in DEFAULT_ALLOWED
 
 
 def test_an_unreviewed_licence_is_the_strictest_class() -> None:
