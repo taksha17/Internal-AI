@@ -30,6 +30,36 @@ def test_a_bare_adapter_is_not_a_model(tmp_path: Path) -> None:
         serve_module.load_for_serving(adapter)
 
 
+def test_quantised_serving_asks_for_a_budget_not_an_auto_map(tmp_path: Path, monkeypatch) -> None:
+    """A merged 5.1B is 10 GB in bf16 and the card is 8 GB, so the tables spill."""
+    import transformers
+
+    seen: dict[str, object] = {}
+    model_dir = tmp_path / "merged"
+    model_dir.mkdir()
+
+    class _Loader:
+        @staticmethod
+        def from_pretrained(directory: object, **kwargs: object) -> str:
+            seen.update(kwargs)
+            return "model"
+
+    monkeypatch.setattr(transformers, "AutoModelForCausalLM", _Loader)
+    monkeypatch.setattr(transformers, "AutoTokenizer", _Loader)
+    monkeypatch.setattr(
+        serve_module,
+        "quantised_budget",
+        lambda: {0: "5.7GiB", "cpu": "12.0GiB"},
+        raising=False,
+    )
+
+    serve_module.load_for_serving(model_dir, load_in_4bit=True)
+
+    assert seen["max_memory"] == {0: "5.7GiB", "cpu": "12.0GiB"}
+    assert "device_map" not in seen
+    assert seen["quantization_config"].llm_int8_enable_fp32_cpu_offload is True
+
+
 def test_merge_refuses_a_missing_adapter(tmp_path: Path) -> None:
     base = tiny_snapshot(tmp_path)
     with pytest.raises(ValueError, match="no adapter directory"):

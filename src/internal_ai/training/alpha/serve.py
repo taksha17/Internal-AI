@@ -14,6 +14,20 @@ from pathlib import Path
 from typing import Any
 
 
+def quantised_budget() -> dict[int | str, str] | None:
+    """What a quantised load may claim, as the training loader works it out.
+
+    Serving and training face the same card: quantisation reaches the linear
+    layers, the embedding tables stay in the compute dtype, and the merged model
+    is a gigabyte larger than the base it came from.
+    """
+    import torch
+
+    from internal_ai.training.alpha.adapt import _quantised_budget
+
+    return _quantised_budget(torch)
+
+
 def load_for_serving(model_dir: Path, load_in_4bit: bool = False) -> tuple[Any, Any]:
     """Load a merged model directory for completion. Refuses a bare adapter."""
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -28,18 +42,24 @@ def load_for_serving(model_dir: Path, load_in_4bit: bool = False) -> tuple[Any, 
     kwargs: dict[str, Any] = {"local_files_only": True}
     if load_in_4bit:
         import torch
-
-        if not torch.cuda.is_available():
-            raise ValueError("quantised serving needs a CUDA card")
         from transformers import BitsAndBytesConfig
 
+        budget = quantised_budget()
+        if budget is None:
+            raise ValueError("quantised serving needs a CUDA card")
         kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
             bnb_4bit_compute_dtype=torch.bfloat16,
             bnb_4bit_use_double_quant=True,
+            llm_int8_enable_fp32_cpu_offload=budget is not None,
         )
-        kwargs["device_map"] = "auto"
+        # A budget replaces the auto map: given both, the load is planned on meta
+        # and bitsandbytes reads a quantisation offset that was left there.
+        if budget is None:
+            kwargs["device_map"] = "auto"
+        else:
+            kwargs["max_memory"] = budget
     model = AutoModelForCausalLM.from_pretrained(model_dir, **kwargs)
     tokenizer = AutoTokenizer.from_pretrained(model_dir, local_files_only=True)
     return model, tokenizer
