@@ -18,6 +18,7 @@ model that wrote the questions would be third-party output in the training set.
 
 from __future__ import annotations
 
+import random
 import re
 from typing import Any
 
@@ -370,6 +371,12 @@ def kyc_fill_text(values: dict[str, str], lines: list[str]) -> str:
 
     documents = "\n".join(f"- {line}" for line in lines)
     asked = [name for name in KYC_FIELDS if name != "full_name"]
+    # The order is shuffled per record and seeded from the record's own values,
+    # because a block that always asks the same fields in the same order can be
+    # answered by position: the trial asks for one field with no such sequence
+    # to read, and a model trained on a fixed order drops the fields it cannot
+    # place in the run.
+    random.Random(values["full_name"] + values["id_number"]).shuffle(asked)
     answers = "\n".join(
         [
             f"Question: What is full_name?\nAnswer: {values['full_name']}",

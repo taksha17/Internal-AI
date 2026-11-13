@@ -154,6 +154,28 @@ def test_the_agent_anchors_each_field_on_the_name_it_filled(platform, tmp_path: 
     assert all(f"The person this form is for is {name}." in prompt for prompt in rest)
 
 
+def test_the_field_order_is_not_the_same_for_every_record() -> None:
+    """A fixed order lets a model answer by position instead of by question,
+    and at trial time it is asked for one field at a time."""
+    orders = set()
+    for form in generate_forms(count=12, seed=7):
+        lines = evidence_lines(form, random.Random(7))
+        text = kyc_fill_text(form.values, lines)
+        asked = [
+            line.split("What is ")[1].split("?")[0]
+            for line in text.splitlines()
+            if line.startswith("Question: ")
+        ]
+        orders.add(tuple(asked))
+    assert len(orders) > 1
+
+
+def test_the_same_record_renders_the_same_text_twice() -> None:
+    form = generate_forms(count=4, seed=7)[0]
+    lines = evidence_lines(form, random.Random(7))
+    assert kyc_fill_text(form.values, lines) == kyc_fill_text(form.values, lines)
+
+
 def test_an_agent_with_a_reader_asks_the_model_not_the_patterns(platform, tmp_path: Path) -> None:
     forms = generate_forms(count=8, seed=11)
     truth = {form.form_id: evidence_lines(form, random.Random(11)) for form in forms}
