@@ -173,10 +173,15 @@ def write_training_jsonl(corpus, path: Path, seed: int, decoys: int = 6) -> int:
     return len(forms)
 
 
-def existing_source(platform: Platform) -> dict[str, Any] | None:
-    return next(
-        (item for item in build.list_sources(platform) if item["name"] == SOURCE_NAME), None
-    )
+def existing_source(platform: Platform, train_path: Path) -> dict[str, Any] | None:
+    """The source for these exact bytes, if this run has been here before.
+
+    The name carries the file's hash, so a corpus rendered differently is a new
+    source and a new dataset behind its own gate rather than a silent reuse of
+    the text the last run trained on.
+    """
+    wanted = build.versioned_source_name(SOURCE_NAME, train_path)
+    return next((item for item in build.list_sources(platform) if item["name"] == wanted), None)
 
 
 def released_dataset(platform: Platform, dataset_id: str) -> None:
@@ -243,7 +248,7 @@ def run(platform: Platform, args: argparse.Namespace) -> dict[str, Any]:
     records = write_training_jsonl(corpus, train_path, args.seed)
     say("corpus", {"forms": len(corpus.forms), "hash": corpus.manifest["content_hash"]})
 
-    source = existing_source(platform)
+    source = existing_source(platform, train_path)
     if source is not None:
         say("source", {"reused": source["id"]})
     else:
@@ -251,7 +256,7 @@ def run(platform: Platform, args: argparse.Namespace) -> dict[str, Any]:
             platform,
             actor(platform, "ml_lead"),
             str(train_path.resolve()),
-            SOURCE_NAME,
+            build.versioned_source_name(SOURCE_NAME, train_path),
             "training text for the KYC form-filling agent",
             ["engineering"],
             legal_status="internal",
