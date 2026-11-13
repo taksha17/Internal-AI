@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 
 from internal_ai.ids import content_hash
 
-GENERATOR_VERSION = 1
+GENERATOR_VERSION = 2
 DEFAULT_FORMS = 1200
 FORMS_PER_CUSTOMER = 4
 
@@ -36,12 +36,43 @@ KYC_FIELDS: tuple[str, ...] = (
     "pep_declaration",
 )
 
-FIRST_NAMES = ("Testara", "Sampta", "Dumella", "Exampla", "Fictoria", "Mockesha")
-LAST_NAMES = ("Testerson", "Samplington", "Dummond", "Exampler", "Fictman", "Mockley")
-NATIONALITIES = ("Testlandian", "Samplian", "Examplese")
+FIRST_NAMES = (
+    "Testara",
+    "Sampta",
+    "Dummya",
+    "Exampla",
+    "Fictoria",
+    "Mockesha",
+    "Testwin",
+    "Sampleen",
+)
+LAST_NAMES = (
+    "Testerson",
+    "Samplington",
+    "Mockford",
+    "Exampler",
+    "Fictman",
+    "Mockley",
+    "Testworthy",
+    "Samplefield",
+)
+NATIONALITIES = ("Testlandian", "Samplian", "Examplese", "Mocklandian")
 ID_TYPES = ("SAMPLE-PASSPORT", "SAMPLE-DRIVING-LICENCE", "SAMPLE-NATIONAL-ID")
-OCCUPATIONS = ("Test Engineer", "Sample Analyst", "Mock Auditor", "Dummy Clerk")
-EMPLOYERS = ("Test Street Bank", "Sample Ledger Ltd", "Mock Vault Inc")
+OCCUPATIONS = (
+    "Test Engineer",
+    "Sample Analyst",
+    "Mock Auditor",
+    "Dummy Clerk",
+    "Mock Underwriter",
+    "Sample Compliance Clerk",
+)
+EMPLOYERS = (
+    "Test Street Bank",
+    "Sample Ledger Ltd",
+    "Mock Vault Inc",
+    "Mock Trust Ltd",
+    "Dummy Savings Ltd",
+)
 INCOME_BANDS = ("0-25k TEST", "25-50k TEST", "50-100k TEST", "100k+ TEST")
 ACCOUNT_TYPES = ("TEST-CURRENT", "TEST-SAVINGS", "TEST-BUSINESS")
 SOURCES_OF_FUNDS = ("test salary", "sample savings", "mock pension")
@@ -144,6 +175,12 @@ DOC_FAMILIES: tuple[tuple[str, ...], ...] = (
         "DECLARATION {full_name} declares {pep_declaration}",
         "SIGNED DECLARATION: {full_name} states that they are {pep_declaration}",
         "COMPLIANCE DECLARATION signed by {full_name}, recording {pep_declaration}",
+    ),
+    (
+        "TAX RESIDENCY CERTIFICATE {full_name} of {nationality} residing at {address}",
+        "TAX CERTIFICATE: {full_name}, a {nationality} national of {address}, "
+        "id {id_type} {id_number}",
+        "RESIDENCY RECORD {id_number} ({id_type}) certifies {full_name} resides at {address}",
     ),
 )
 

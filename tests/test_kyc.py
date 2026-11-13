@@ -10,7 +10,13 @@ import pytest
 from internal_ai.data.kyc import (
     DEFAULT_FORMS,
     DOC_FAMILIES,
+    EMPLOYERS,
+    FIRST_NAMES,
+    GENERATOR_VERSION,
     KYC_FIELDS,
+    LAST_NAMES,
+    NATIONALITIES,
+    OCCUPATIONS,
     build_corpus,
     evidence_lines,
     generate_forms,
@@ -52,10 +58,11 @@ def test_every_value_is_marked_fake() -> None:
 def test_evidence_carries_truth_plus_decoys() -> None:
     form = generate_forms(count=4, seed=7)[0]
     lines = evidence_lines(form, random.Random(7), ("DECOY LINE",))
-    assert len(lines) == 6
+    assert len(lines) == len(DOC_FAMILIES) + 1
     assert "DECOY LINE" in lines
     assert any(form.values["phone"] in line for line in lines)
     assert any(form.values["id_number"] in line for line in lines)
+    assert any("TAX RESIDENCY" in line for line in lines)
 
 
 def test_clean_evidence_fills_perfectly(platform, tmp_path: Path) -> None:
@@ -209,6 +216,19 @@ def test_report_names_each_scored_field(platform, tmp_path: Path) -> None:
     assert report.fields == [name for _ in forms for name in KYC_FIELDS]
     assert report.by_field["full_name"] == 1.0
     assert set(report.by_field) == set(KYC_FIELDS)
+
+
+def test_generator_version_marks_the_knowledge_delta() -> None:
+    assert GENERATOR_VERSION == 2
+    assert build_corpus(count=8, seed=21).manifest["generator"] == 2
+
+
+def test_every_pool_value_is_marked_fake() -> None:
+    stems = ("test", "samp", "mock", "dumm", "examp", "fict")
+    for pool in (FIRST_NAMES, LAST_NAMES, NATIONALITIES, OCCUPATIONS, EMPLOYERS):
+        assert len(pool) >= 4
+        for value in pool:
+            assert value.lower().startswith(stems), value
 
 
 def test_ranking_prefers_the_cued_line() -> None:
