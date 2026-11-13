@@ -36,6 +36,7 @@ DIVERGENCE_WINDOW = 5
 # value only has to be a real row of the embedding.
 PAD_ID = 0
 IGNORE_INDEX = -100
+HOST_MEMINFO = Path("/proc/meminfo")
 
 
 def _batches(sequences: list[list[int]], batch_size: int) -> list[list[list[int]]]:
@@ -164,7 +165,19 @@ def _loss_scaling(torch: Any, dtype: Any) -> Any:
 
 
 def _host_ram_gib() -> float | None:
-    """The host memory a spilled load may claim, or nothing where it cannot be read."""
+    """The host memory a spilled load may claim, or nothing where it cannot be read.
+
+    ``MemTotal`` is read before ``sysconf`` because a container can report the
+    memory it is limited to rather than the memory the machine has: on the
+    workstation that ran this, sysconf said 7.3 GiB where the host holds 15, and
+    a budget that small sends the embedding tables to disk as meta tensors.
+    """
+    try:
+        for line in HOST_MEMINFO.read_text(encoding="utf-8").splitlines():
+            if line.startswith("MemTotal:"):
+                return int(line.split()[1]) / 1024**2
+    except (OSError, IndexError, ValueError):
+        pass
     try:
         pages = os.sysconf("SC_PHYS_PAGES")
         size = os.sysconf("SC_PAGE_SIZE")
@@ -193,7 +206,7 @@ def _quantised_budget(torch: Any) -> dict[int | str, str] | None:
         return None
     host = _host_ram_gib()
     if host:
-        budget["cpu"] = f"{host * 0.6:.1f}GiB"
+        budget["cpu"] = f"{host * 0.8:.1f}GiB"
     return budget
 
 

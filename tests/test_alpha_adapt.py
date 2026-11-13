@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from internal_ai.training.alpha import adapt as alpha_adapt
 from internal_ai.training.alpha.adapt import (
     BACKEND,
     DIVERGENCE_WINDOW,
@@ -400,6 +401,17 @@ def test_a_quantised_load_without_a_card_asks_for_no_budget(monkeypatch) -> None
 
     assert "max_memory" not in seen
     assert seen["quantization_config"].llm_int8_enable_fp32_cpu_offload is False
+
+
+def test_the_host_budget_is_read_from_the_machine_not_a_container_limit(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """sysconf said 7.3 GiB on a 15 GiB box, and that budget spilled the tables to disk."""
+    meminfo = tmp_path / "meminfo"
+    meminfo.write_text("MemTotal:       15728640 kB\nMemFree:  1024 kB\n", encoding="utf-8")
+    monkeypatch.setattr(alpha_adapt, "HOST_MEMINFO", meminfo)
+
+    assert alpha_adapt._host_ram_gib() == pytest.approx(15.0, abs=1e-6)
 
 
 def test_a_wrapped_projection_is_reached_through_all_linear() -> None:
