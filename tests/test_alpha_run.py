@@ -138,6 +138,36 @@ def test_quantised_loading_reaches_the_backend_and_the_record(governed, monkeypa
     assert record["recipe"]["quantization"] == "nf4"
 
 
+def test_a_run_can_ask_for_a_sequence_the_corpus_can_use(governed, monkeypatch) -> None:
+    """The pinned recipe truncates at 64 tokens, which cannot hold a KYC answer."""
+    seen: dict[str, Any] = {}
+
+    def recording(base, root, texts, out, **kwargs):
+        seen.update(kwargs)
+        return stub_training(base, root, texts, out, **kwargs)
+
+    monkeypatch.setattr(alpha_service, "adapt_full_depth", recording)
+    platform, actor = governed
+    dataset_id = released_dataset(platform)
+    job = train_alpha(
+        platform, actor, JobRunner(platform, synchronous=True), dataset_id, max_seq_len=512
+    )
+    assert job["state"] == "succeeded", job.get("error")
+    assert seen.get("max_seq_len") == 512
+    record = json.loads(Path(job["result"]["reproducibility"]).read_text(encoding="utf-8"))
+    assert record["recipe"]["max_seq_len"] == 512
+
+
+def test_an_unusably_short_sequence_is_refused(governed) -> None:
+    platform, actor = governed
+    dataset_id = released_dataset(platform)
+
+    with pytest.raises(ValueError, match="at least eight tokens"):
+        train_alpha(
+            platform, actor, JobRunner(platform, synchronous=True), dataset_id, max_seq_len=4
+        )
+
+
 def test_an_unknown_backend_is_refused(governed) -> None:
     platform, actor = governed
     dataset_id = released_dataset(platform)

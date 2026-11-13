@@ -293,6 +293,7 @@ def run(platform: Platform, args: argparse.Namespace) -> dict[str, Any]:
         seed=args.seed,
         cost_cap_usd=args.cost_cap,
         load_in_4bit=not args.no_quantise,
+        max_seq_len=args.seq_len,
     )
     if job.get("state") != "succeeded":
         raise SystemExit(f"the adaptation run failed: {job.get('error')}")
@@ -324,6 +325,12 @@ def main() -> None:
     parser.add_argument("--forms", type=int, default=1200)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument(
+        "--seq-len",
+        type=int,
+        default=768,
+        help="tokens per training sequence; a KYC record needs more than the lane's 64",
+    )
     parser.add_argument("--cost-cap", type=float, default=2.0)
     parser.add_argument("--merged", type=Path, default=Path("var_kyc/model/kyc-gemma4-e2b"))
     parser.add_argument(

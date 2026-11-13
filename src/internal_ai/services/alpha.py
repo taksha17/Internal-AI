@@ -149,6 +149,7 @@ def train_alpha(
     backend: str = FULL_DEPTH_BACKEND,
     base: PinnedBase | None = None,
     load_in_4bit: bool = False,
+    max_seq_len: int | None = None,
 ) -> dict[str, Any]:
     """Adapt the pinned base on a released dataset, as a job with a record."""
     require(platform.audit, actor, Action.TRAIN_MODEL, dataset_id)
@@ -168,6 +169,12 @@ def train_alpha(
         raise ValueError("an adaptation run needs a positive cost cap")
     if seed < 0:
         raise ValueError("the seed is a non-negative integer")
+    # The pinned recipe truncates at 64 tokens, which is a lane default rather than
+    # a property of the data: a corpus whose answers carry a full record needs to
+    # say so, and it may not ask for a sequence that cannot hold an instruction.
+    limit = RECIPE.max_seq_len if max_seq_len is None else int(max_seq_len)
+    if limit < 8:
+        raise ValueError("a sequence needs at least eight tokens")
     chosen = base or available_base(platform.settings.root)
     subject = f"{dataset_id}:{chosen.repo_id}"
     _require_cost_gate(platform, actor, subject, cost_cap_usd)
@@ -187,7 +194,7 @@ def train_alpha(
                 adapter,
                 rank=RECIPE.rank,
                 alpha=RECIPE.alpha,
-                max_seq_len=RECIPE.max_seq_len,
+                max_seq_len=limit,
                 epochs=epochs,
                 seed=seed,
                 load_in_4bit=load_in_4bit,
@@ -221,7 +228,7 @@ def train_alpha(
                 "epochs": epochs if backend == FULL_DEPTH_BACKEND else None,
                 "rank": RECIPE.rank,
                 "alpha": RECIPE.alpha,
-                "max_seq_len": RECIPE.max_seq_len,
+                "max_seq_len": limit,
                 "quantization": (
                     "nf4" if load_in_4bit and backend == FULL_DEPTH_BACKEND else RECIPE.quantization
                 ),
