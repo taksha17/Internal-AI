@@ -436,6 +436,26 @@ def test_a_wrapped_projection_is_reached_through_all_linear() -> None:
     assert _lora_targets(_Wrapped()) == "all-linear"
 
 
+def test_one_wrapped_projection_condemns_the_set_a_plain_tower_does_not_rescue() -> None:
+    """Gemma 4's tower keeps plain projections, so a single plain match proves nothing."""
+
+    class _Clippable(torch.nn.Linear):
+        def __init__(self) -> None:
+            super().__init__(2, 2)
+
+    class _Mixed:
+        def __init__(self) -> None:
+            self.tower = torch.nn.Linear(2, 2)
+            self.wrapped = _Clippable()
+
+        def named_modules(self):
+            yield "", object()
+            yield "model.vision_tower.layers.0.q_proj", self.tower
+            yield "model.language_model.layers.0.q_proj", self.wrapped
+
+    assert _lora_targets(_Mixed()) == "all-linear"
+
+
 def test_a_base_that_names_its_projections_keeps_the_pinned_targets() -> None:
     class _Plain:
         def __init__(self) -> None:

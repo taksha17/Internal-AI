@@ -37,6 +37,10 @@ DIVERGENCE_WINDOW = 5
 PAD_ID = 0
 IGNORE_INDEX = -100
 HOST_MEMINFO = Path("/proc/meminfo")
+# The module types peft can wrap, by name: a quantised linear is a ``Linear4bit``
+# that inherits from ``Linear``, and anything else at a projection name is a
+# wrapper the base put there.
+SUPPORTED = frozenset({"Linear", "Linear4bit"})
 
 
 def _batches(sequences: list[list[int]], batch_size: int) -> list[list[list[int]]]:
@@ -217,14 +221,15 @@ def _lora_targets(model: Any) -> list[str] | str:
     inside a clippable block, so ``q_proj`` names the wrapper and the layer sits at
     ``q_proj.linear``. peft refuses such a target rather than skipping it, and
     ``all-linear`` selects by type instead, reaching the quantised linear inside.
-    The name alone is not enough to tell the two apart, so the module is checked.
+    The name alone is not enough to tell the two apart, so the module is checked,
+    and one wrapped projection is enough to condemn the whole set: a multimodal
+    base still has plain projections in its tower, so asking whether *some* target
+    is a linear answers yes for a language stack that is entirely wrapped.
     """
-    import torch
-
     for name, module in model.named_modules():
-        if name.rsplit(".", 1)[-1] in TARGET_MODULES and isinstance(module, torch.nn.Linear):
-            return list(TARGET_MODULES)
-    return "all-linear"
+        if name.rsplit(".", 1)[-1] in TARGET_MODULES and type(module).__name__ not in SUPPORTED:
+            return "all-linear"
+    return list(TARGET_MODULES)
 
 
 def _load_model(
