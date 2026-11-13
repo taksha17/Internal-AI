@@ -80,13 +80,6 @@ def test_a_missing_kubectl_is_a_refusal_before_anything_is_written(tmp_path, mon
     assert list(tmp_path.glob("*.job.yaml")) == []
 
 
-@pytest.mark.skipif(shutil.which("kubectl") is None, reason="needs a Kubernetes cluster")
-def test_live_submit_when_a_cluster_exists(tmp_path) -> None:
-    _kubectl("create", "namespace", "internal-ai")
-    result = KubernetesBackend().submit(_job(tmp_path), sandbox=None)
-    assert result["exit_code"] == 0
-
-
 def _kubectl(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["kubectl", *args],
@@ -103,6 +96,31 @@ def _live_cluster_answers() -> bool:
     if shutil.which("kubectl") is None:
         return False
     return _kubectl("cluster-info").returncode == 0
+
+
+def test_every_live_test_is_gated_on_the_switch_not_on_kubectl_alone() -> None:
+    """kubectl is on every hosted runner, so a cluster probe may not stand in for the switch.
+
+    Without this, a live test runs on a machine that has the client and no
+    cluster, fails, and blocks every pull request behind a red check.
+    """
+    module = sys.modules[__name__]
+    live = [getattr(module, name) for name in dir(module) if name.startswith("test_live_")]
+    assert live
+    for test in live:
+        reasons = [
+            mark.kwargs.get("reason", "") for mark in test.pytestmark if mark.name == "skipif"
+        ]
+        assert any("INTERNAL_AI_LIVE_K8S" in reason for reason in reasons), test.__name__
+
+
+@pytest.mark.skipif(
+    not _live_cluster_answers(), reason="needs INTERNAL_AI_LIVE_K8S=1 and a cluster"
+)
+def test_live_submit_when_a_cluster_exists(tmp_path) -> None:
+    _kubectl("create", "namespace", "internal-ai")
+    result = KubernetesBackend().submit(_job(tmp_path), sandbox=None)
+    assert result["exit_code"] == 0
 
 
 @pytest.mark.skipif(
