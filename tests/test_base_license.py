@@ -16,6 +16,7 @@ from internal_ai.training.alpha import fetch as fetch_module
 from internal_ai.training.alpha.pin import (
     DEFAULT_ALLOWED,
     FALLBACK,
+    LFM3,
     PRIMARY,
     BaseRefused,
     LicenseClass,
@@ -41,22 +42,38 @@ def absent(base: PinnedBase, repo_id: str) -> PinnedBase:
     return replace(base, repo_id=repo_id)
 
 
-def test_the_two_pinned_bases_carry_their_licence_class() -> None:
+def test_the_pinned_bases_carry_their_licence_class() -> None:
     assert PRIMARY.license_class == LicenseClass.PERMISSIVE
     assert FALLBACK.license_class == LicenseClass.RESEARCH_ONLY
     assert FALLBACK.license_class not in DEFAULT_ALLOWED
+    assert LFM3.license_class == LicenseClass.RESTRICTED
+    assert LFM3.license_class not in DEFAULT_ALLOWED
+    assert LFM3.repo_id == "LiquidAI/LFM3-1.7B"
+    assert LFM3.revision == "1da06bec6a819da10b54c67e5c90972b46d81871"
 
 
 def test_an_unreviewed_licence_is_the_strictest_class() -> None:
     assert license_class_of("Apache-2.0") == LicenseClass.PERMISSIVE
     assert license_class_of("MIT") == LicenseClass.PERMISSIVE
     assert license_class_of("CC-BY-NC-4.0") == LicenseClass.RESTRICTED
+    assert license_class_of("lfm1.0") == LicenseClass.RESTRICTED
     assert license_class_of("some-new-licence") == LicenseClass.RESEARCH_ONLY
 
 
 def test_the_permissive_base_is_returned_when_it_verifies(tmp_path: Path) -> None:
     allowed = pin("Example/Allowed", "Apache-2.0", tmp_path)
     assert available_base(tmp_path, bases=(allowed,)) is allowed
+
+
+def test_a_restricted_licence_is_refused_rather_than_swapped_in(tmp_path: Path) -> None:
+    restricted = pin("Example/Restricted", "lfm1.0", tmp_path)
+    missing = absent(restricted, "Example/Missing")
+    with pytest.raises(BaseRefused) as refused:
+        available_base(tmp_path, bases=(missing, restricted))
+    message = str(refused.value)
+    assert "Example/Restricted" in message
+    assert "restricted" in message
+    assert "permissive" in message
 
 
 def test_a_research_licence_is_refused_rather_than_swapped_in(tmp_path: Path) -> None:
