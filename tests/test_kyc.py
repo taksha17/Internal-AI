@@ -9,14 +9,29 @@ import pytest
 
 from internal_ai.data.kyc import (
     DEFAULT_FORMS,
+    DOC_FAMILIES,
+    DOC_TEMPLATES,
+    EMPLOYERS,
+    FIRST_NAMES,
+    GENERATOR_VERSION,
     KYC_FIELDS,
+    LAST_NAMES,
+    NATIONALITIES,
+    OCCUPATIONS,
     build_corpus,
     evidence_lines,
     generate_forms,
 )
 from internal_ai.domain import Capability, RoleSpec
-from internal_ai.services.kyc_agent import KycAgent, agent_role, extract, rank_lines
+from internal_ai.services.kyc_agent import (
+    KycAgent,
+    agent_role,
+    extract,
+    extract_completion,
+    rank_lines,
+)
 from internal_ai.tools import ToolDenied, ToolRegistry
+from internal_ai.training.alpha.pairs import kyc_fill_text, kyc_prompt
 
 
 def wired(platform, tmp_path: Path) -> ToolRegistry:
@@ -50,10 +65,11 @@ def test_every_value_is_marked_fake() -> None:
 def test_evidence_carries_truth_plus_decoys() -> None:
     form = generate_forms(count=4, seed=7)[0]
     lines = evidence_lines(form, random.Random(7), ("DECOY LINE",))
-    assert len(lines) == 6
+    assert len(lines) == len(DOC_FAMILIES) + 1
     assert "DECOY LINE" in lines
     assert any(form.values["phone"] in line for line in lines)
     assert any(form.values["id_number"] in line for line in lines)
+    assert any("TAX RESIDENCY" in line for line in lines)
 
 
 def test_clean_evidence_fills_perfectly(platform, tmp_path: Path) -> None:
@@ -89,6 +105,179 @@ def test_a_role_without_write_may_not_fill(platform, tmp_path: Path) -> None:
     form = generate_forms(count=4, seed=7)[0]
     with pytest.raises(ToolDenied):
         agent.fill(form, evidence_lines(form, random.Random(7)))
+
+
+def test_training_text_and_trial_prompt_share_the_layout() -> None:
+    form = generate_forms(count=4, seed=7)[0]
+    lines = evidence_lines(form, random.Random(7))
+    text = kyc_fill_text(form.values, lines)
+    assert all(value in text for value in form.values.values())
+    prompt = kyc_prompt(lines, "phone")
+    assert "phone" in prompt
+    assert form.values["phone"] in prompt
+    assert prompt != text
+
+
+def test_the_prompt_can_name_the_person_the_form_is_for() -> None:
+    form = generate_forms(count=4, seed=7)[0]
+    lines = evidence_lines(form, random.Random(7))
+    anchored = kyc_prompt(lines, "phone", customer=form.values["full_name"])
+    assert f"The person this form is for is {form.values['full_name']}." in anchored
+    assert anchored.endswith("Question: What is phone?\nAnswer:")
+    unanchored = kyc_prompt(lines, "phone")
+    assert "The person this form is for" not in unanchored
+
+
+def test_training_text_answers_before_it_retells() -> None:
+    """The retelling used to sit before the answers and name every value,
+    so the answers could be copied from it instead of from the papers."""
+    form = generate_forms(count=4, seed=7)[0]
+    lines = evidence_lines(form, random.Random(7))
+    text = kyc_fill_text(form.values, lines)
+    assert all(value in text for value in form.values.values())
+    assert text.rindex("Question:") < text.index("A clerk read those papers")
+
+
+def test_every_question_after_the_name_carries_it() -> None:
+    form = generate_forms(count=4, seed=7)[0]
+    lines = evidence_lines(form, random.Random(7))
+    text = kyc_fill_text(form.values, lines)
+    anchor = f"The person this form is for is {form.values['full_name']}."
+    assert anchor in text
+    assert text.index("Question: What is full_name?") < text.index(anchor)
+    assert text.index(anchor) < text.index("Question: What is phone?")
+
+
+def test_the_agent_anchors_each_field_on_the_name_it_filled(platform, tmp_path: Path) -> None:
+    seen: list[str] = []
+    form = generate_forms(count=4, seed=7)[0]
+
+    def reader(prompt: str) -> str:
+        seen.append(prompt)
+        if "What is full_name?" in prompt:
+            return f"account holder is {form.values['full_name']}"
+        return ""
+
+    agent = KycAgent(wired(platform, tmp_path), agent_role(), reader=reader)
+    agent.fill(form, evidence_lines(form, random.Random(7)))
+    assert seen, "the reader was never asked"
+    first, rest = seen[0], seen[1:]
+    assert "The person this form is for" not in first
+    name = form.values["full_name"]
+    assert rest, "only one field was asked"
+    assert all(f"The person this form is for is {name}." in prompt for prompt in rest)
+
+
+def test_the_field_order_is_not_the_same_for_every_record() -> None:
+    """A fixed order lets a model answer by position instead of by question,
+    and at trial time it is asked for one field at a time."""
+    orders = set()
+    for form in generate_forms(count=12, seed=7):
+        lines = evidence_lines(form, random.Random(7))
+        text = kyc_fill_text(form.values, lines)
+        asked = [
+            line.split("What is ")[1].split("?")[0]
+            for line in text.splitlines()
+            if line.startswith("Question: ")
+        ]
+        orders.add(tuple(asked))
+    assert len(orders) > 1
+
+
+def test_the_same_record_renders_the_same_text_twice() -> None:
+    form = generate_forms(count=4, seed=7)[0]
+    lines = evidence_lines(form, random.Random(7))
+    assert kyc_fill_text(form.values, lines) == kyc_fill_text(form.values, lines)
+
+
+def test_an_agent_with_a_reader_asks_the_model_not_the_patterns(platform, tmp_path: Path) -> None:
+    forms = generate_forms(count=8, seed=11)
+    truth = {form.form_id: evidence_lines(form, random.Random(11)) for form in forms}
+    agent = KycAgent(wired(platform, tmp_path), agent_role(), reader=lambda prompt: prompt)
+    evidence = {form.form_id: truth[form.form_id] for form in forms}
+    report = agent.run(forms, evidence)
+    # This test is about the wiring, not about accuracy: the reader echoes the
+    # prompt back, which is not a model answer, so most fields come back but
+    # nothing here claims how well a real model would do.
+    assert report.model_calls == 2 * len(KYC_FIELDS)
+    assert report.field_accuracy >= 0.9
+
+
+def test_every_document_wording_is_extractable() -> None:
+    """A new phrasing without its pattern fails here, not in the trial score."""
+    form = generate_forms(count=4, seed=7)[0]
+    for family in DOC_FAMILIES:
+        for template in family:
+            line = template.format(**form.values)
+            carried = [name for name in KYC_FIELDS if "{" + name + "}" in template]
+            assert carried, template
+            for name in carried:
+                assert extract(name, [line]) == form.values[name], (template, name)
+
+
+def test_report_names_each_scored_field(platform, tmp_path: Path) -> None:
+    forms = generate_forms(count=8, seed=11)
+    agent = KycAgent(wired(platform, tmp_path), agent_role())
+    evidence = {form.form_id: evidence_lines(form, random.Random(11)) for form in forms}
+    report = agent.run(forms, evidence)
+    assert report.fields == [name for _ in forms for name in KYC_FIELDS]
+    assert report.by_field["full_name"] == 1.0
+    assert set(report.by_field) == set(KYC_FIELDS)
+
+
+def test_generator_version_marks_the_knowledge_delta() -> None:
+    assert GENERATOR_VERSION == 2
+    assert build_corpus(count=8, seed=21).manifest["generator"] == 2
+
+
+def test_every_pool_value_is_marked_fake() -> None:
+    stems = ("test", "samp", "mock", "dumm", "examp", "fict")
+    for pool in (FIRST_NAMES, LAST_NAMES, NATIONALITIES, OCCUPATIONS, EMPLOYERS):
+        assert len(pool) >= 4
+        for value in pool:
+            assert value.lower().startswith(stems), value
+
+
+def test_bare_model_completions_read_as_values() -> None:
+    """The model answers values first; the reader must not need cue words."""
+    assert (
+        extract_completion("full_name", "Fictoria Samplington\nThe person this form is for")
+        == "Fictoria Samplington"
+    )
+    assert (
+        extract_completion("occupation", "Sample Analyst\nThe person this form is for")
+        == "Sample Analyst"
+    )
+    assert (
+        extract_completion("employer", "Sample Ledger Ltd\nThe person this form is for")
+        == "Sample Ledger Ltd"
+    )
+    assert (
+        extract_completion("account_type", "TEST-CURRENT\nThe person this form is for")
+        == "TEST-CURRENT"
+    )
+    assert (
+        extract_completion("email", "test.user0078@example.test\nThe person this email")
+        == "test.user0078@example.test"
+    )
+    assert extract_completion("phone", "+1-555-0175\nThe person") == "+1-555-0175"
+    assert (
+        extract_completion("pep_declaration", "not a PEP (test)\nThe person") == "not a PEP (test)"
+    )
+    assert extract_completion("full_name", "") == ""
+    assert extract_completion("occupation", "The person this form is for is") == ""
+
+
+def test_bank_lines_name_their_holder() -> None:
+    """E-mail is otherwise unlinkable: no line ties an address to a person."""
+    form = generate_forms(count=4, seed=7)[0]
+    bank = [t for t in DOC_TEMPLATES if "BANK" in t or "ACCOUNT SUMMARY" in t]
+    assert len(bank) == 3
+    for template in bank:
+        assert "{full_name}" in template
+        line = template.format(**form.values)
+        assert form.values["full_name"] in line
+        assert form.values["email"] in line
 
 
 def test_ranking_prefers_the_cued_line() -> None:

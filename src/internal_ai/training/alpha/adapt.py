@@ -19,6 +19,7 @@ It refuses to run without the `alpha` extra rather than pretending.
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,11 @@ DIVERGENCE_WINDOW = 5
 # value only has to be a real row of the embedding.
 PAD_ID = 0
 IGNORE_INDEX = -100
+HOST_MEMINFO = Path("/proc/meminfo")
+# The module types peft can wrap, by name: a quantised linear is a ``Linear4bit``
+# that inherits from ``Linear``, and anything else at a projection name is a
+# wrapper the base put there.
+SUPPORTED = frozenset({"Linear", "Linear4bit"})
 
 
 def _batches(sequences: list[list[int]], batch_size: int) -> list[list[list[int]]]:
@@ -162,12 +168,77 @@ def _loss_scaling(torch: Any, dtype: Any) -> Any:
         return torch.cuda.amp.GradScaler()
 
 
+def _host_ram_gib() -> float | None:
+    """The host memory a spilled load may claim, or nothing where it cannot be read.
+
+    ``MemTotal`` is read before ``sysconf`` because a container can report the
+    memory it is limited to rather than the memory the machine has: on the
+    workstation that ran this, sysconf said 7.3 GiB where the host holds 15, and
+    a budget that small sends the embedding tables to disk as meta tensors.
+    """
+    try:
+        for line in HOST_MEMINFO.read_text(encoding="utf-8").splitlines():
+            if line.startswith("MemTotal:"):
+                return int(line.split()[1]) / 1024**2
+    except (OSError, IndexError, ValueError):
+        pass
+    try:
+        pages = os.sysconf("SC_PHYS_PAGES")
+        size = os.sysconf("SC_PAGE_SIZE")
+    except (AttributeError, ValueError, OSError):
+        return None
+    return pages * size / 1024**3
+
+
+def _quantised_budget(torch: Any) -> dict[int | str, str] | None:
+    """How much memory each card may claim before a quantised load spills to the host.
+
+    Quantisation only reaches the linear layers. A multimodal base keeps its
+    embedding tables in the compute dtype: Gemma 4 E2B holds 2.77B parameters
+        there, about 5.5 GB in bf16, which does not sit beside the four-bit body on an
+    8 GB card. Given a budget, accelerate spills those tables to the host and the
+    run starts; without one it refuses the load outright.
+    """
+    try:
+        if not torch.cuda.is_available():
+            return None
+        budget: dict[int | str, str] = {}
+        for index in range(torch.cuda.device_count()):
+            free, _total = torch.cuda.mem_get_info(index)
+            budget[index] = f"{free * 0.85 / 1024**3:.1f}GiB"
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        return None
+    host = _host_ram_gib()
+    if host:
+        budget["cpu"] = f"{host * 0.8:.1f}GiB"
+    return budget
+
+
+def _lora_targets(model: Any) -> list[str] | str:
+    """The projections to wrap, or every linear layer when those names are not linears.
+
+    A base may wrap each projection in a module of its own: Gemma 4 puts every one
+    inside a clippable block, so ``q_proj`` names the wrapper and the layer sits at
+    ``q_proj.linear``. peft refuses such a target rather than skipping it, and
+    ``all-linear`` selects by type instead, reaching the quantised linear inside.
+    The name alone is not enough to tell the two apart, so the module is checked,
+    and one wrapped projection is enough to condemn the whole set: a multimodal
+    base still has plain projections in its tower, so asking whether *some* target
+    is a linear answers yes for a language stack that is entirely wrapped.
+    """
+    for name, module in model.named_modules():
+        if name.rsplit(".", 1)[-1] in TARGET_MODULES and type(module).__name__ not in SUPPORTED:
+            return "all-linear"
+    return list(TARGET_MODULES)
+
+
 def _load_model(
     directory: Path,
     dtype: Any,
     device: str,
     load_in_4bit: bool = False,
     sharded: bool = False,
+    torch_module: Any | None = None,
 ) -> Any:
     from transformers import AutoModelForCausalLM
 
@@ -180,6 +251,16 @@ def _load_model(
         # T4s in one session and a 30B at nf4 needs both of them.
         from transformers import BitsAndBytesConfig
 
+        if torch_module is None:
+            import torch as torch_module
+
+        budget = _quantised_budget(torch_module)
+        # A budget replaces the auto map rather than joining it: given both,
+        # accelerate plans the load on meta and bitsandbytes then reads a
+        # quantisation offset that was left there, which fails on the first step.
+        placement: dict[str, Any] = (
+            {"max_memory": budget} if budget is not None else {"device_map": "auto"}
+        )
         return AutoModelForCausalLM.from_pretrained(
             directory,
             local_files_only=True,
@@ -188,8 +269,11 @@ def _load_model(
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_compute_dtype=dtype,
                 bnb_4bit_use_double_quant=True,
+                # Bitsandbytes refuses any module that is dispatched away from a
+                # card unless this is set, whatever the quantisation it applied.
+                llm_int8_enable_fp32_cpu_offload=budget is not None,
             ),
-            device_map="auto",
+            **placement,
         )
 
     if sharded:
@@ -316,6 +400,7 @@ def adapt(
         from peft import prepare_model_for_kbit_training
 
         model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    targets = _lora_targets(model)
     model = get_peft_model(
         model,
         LoraConfig(
@@ -324,7 +409,7 @@ def adapt(
             lora_alpha=alpha,
             lora_dropout=0.0,
             bias="none",
-            target_modules=list(TARGET_MODULES),
+            target_modules=targets,
         ),
     )
     if device == "cuda":
@@ -336,6 +421,7 @@ def adapt(
     trainable = sum(
         parameter.numel() for parameter in model.parameters() if parameter.requires_grad
     )
+    wrapped = targets if isinstance(targets, str) else list(targets)
     optimizer = torch.optim.AdamW(
         [parameter for parameter in model.parameters() if parameter.requires_grad],
         lr=learning_rate,
@@ -420,6 +506,9 @@ def adapt(
         "layers": int(getattr(model.config, "num_hidden_layers", 0) or 0),
         "epochs": max(1, int(epochs)),
         "trainable_parameters": trainable,
+        # Which layers the adapter actually reached, because a base that wraps its
+        # projections trains a different set than the pinned names describe.
+        "lora_targets": wrapped,
         "quantisation": "nf4-4bit" if load_in_4bit else "none",
         "device_map": "auto" if (load_in_4bit or sharded) else device,
         "device_map_landed": landed,

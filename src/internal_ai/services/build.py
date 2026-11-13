@@ -8,6 +8,7 @@ must not be able to skip.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from collections.abc import Callable
@@ -38,6 +39,21 @@ WEIGHT_SUFFIXES = frozenset(
     {".pt", ".pth", ".bin", ".safetensors", ".gguf", ".onnx", ".ckpt", ".h5", ".pb", ".tflite"}
 )
 SOURCE_FILE_SUFFIXES = frozenset({".jsonl", ".ndjson", ".csv", ".txt", ".md"}) | DOCUMENT_SUFFIXES
+
+
+def versioned_source_name(name: str, path: Path) -> str:
+    """A source name that changes when the file's bytes do.
+
+    A pipeline that finds its source by name alone reuses the dataset built from
+    an older rendering of the same rows: the corpus generator's hash covers the
+    forms, not the text written from them, so a change to how a record is
+    rendered moves no hash anywhere and the run retrains on the text it already
+    had. Naming the source after its content makes the reuse honest — the same
+    bytes converge on the same source, different bytes open a new one and a new
+    dataset version behind its own approved gate.
+    """
+    digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()[:10]
+    return f"{name}-{digest}"
 
 
 def _secret_hits(text: str) -> dict[str, int]:

@@ -16,6 +16,7 @@ thousand independent guesses.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -25,41 +26,104 @@ from internal_ai.domain import Capability, RoleSpec
 from internal_ai.evals.metrics import exact_match
 from internal_ai.store import Store
 from internal_ai.tools import Tool, ToolRegistry
+from internal_ai.training.alpha.pairs import kyc_prompt
 
 KYC_CANDIDATE_LIMIT = 5
 
 FIELD_CUES: dict[str, tuple[str, ...]] = {
-    "full_name": ("holder", "resides", "works", "declares"),
+    "full_name": (
+        "holder",
+        "resides",
+        "works",
+        "declares",
+        "certificate",
+        "certifies",
+        "addressed",
+        "lists",
+    ),
     "date_of_birth": ("born", "birth"),
-    "nationality": ("nationality",),
-    "id_type": ("passport", "licence", "national-id"),
-    "id_number": ("passport", "licence", "national-id", "sample-id"),
-    "address": ("resides", "utility", "bill"),
-    "phone": ("phone",),
-    "email": ("statement", "email"),
-    "occupation": ("works", "payslip"),
-    "employer": ("payslip", "employer"),
+    "nationality": ("nationality", "residency", "certificate"),
+    "id_type": ("passport", "licence", "national-id", "sample-id", "identity", "record", "id"),
+    "id_number": ("passport", "licence", "national-id", "sample-id", "identity", "record", "id"),
+    "address": ("resides", "residing", "utility", "bill", "certificate", "notice"),
+    "phone": ("phone", "called", "contact"),
+    "email": ("statement", "email", "summary"),
+    "occupation": ("works", "payslip", "lists"),
+    "employer": ("payslip", "employer", "employment"),
     "annual_income_band": ("income", "payslip"),
     "account_type": ("account", "statement"),
-    "source_of_funds": ("funds", "source"),
+    "source_of_funds": ("funds", "source", "funded"),
     "pep_declaration": ("declares", "declaration", "pep"),
 }
 
-FIELD_PATTERNS: dict[str, str] = {
-    "full_name": r"holder\s+([A-Z][a-z]+\s+[A-Z][a-z]+)\s+born",
-    "date_of_birth": r"(\d{2}/\d{2}/\d{4})",
-    "nationality": r"nationality\s+([A-Z][a-z]+)",
-    "id_type": r"(SAMPLE-(?:PASSPORT|DRIVING-LICENCE|NATIONAL-ID))",
-    "id_number": r"(SAMPLE-ID-\d{6})",
-    "address": r"(\d+\s+Test Street,\s+Sampleton\s+ST\d{2})",
-    "phone": r"(\+1-555-01\d{2})",
-    "email": r"(\S+@example\.test)",
-    "occupation": r"works as ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*) for",
-    "employer": r"for ([A-Z][A-Za-z ]+?(?:Bank|Ltd|Inc))",
-    "annual_income_band": r"income band (\d+(?:-\d+)?k\+? TEST)",
-    "account_type": r"account (TEST-(?:CURRENT|SAVINGS|BUSINESS))",
-    "source_of_funds": r"source of funds ([a-z ]+?) account",
-    "pep_declaration": r"declares\s+(.+?\(test\))",
+# One regex per wording the generator ships, tried in order. A document type has
+# more than one phrasing so the corpus is not the same sentence repeated, and
+# tests/test_kyc.py proves every phrasing is still extractable: adding a wording
+# without a pattern here fails the suite rather than quietly lowering the score.
+FIELD_PATTERNS: dict[str, tuple[str, ...]] = {
+    "full_name": (
+        r"holder\s+([A-Z][a-z]+\s+[A-Z][a-z]+)",
+        r"belongs to\s+([A-Z][a-z]+\s+[A-Z][a-z]+)",
+        r"account holder is\s+([A-Z][a-z]+\s+[A-Z][a-z]+)",
+        r"addressed to\s+([A-Z][a-z]+\s+[A-Z][a-z]+)",
+        r"signed by\s+([A-Z][a-z]+\s+[A-Z][a-z]+)",
+        r"DECLARATION\s+([A-Z][a-z]+\s+[A-Z][a-z]+)\s+declares",
+        r"BILL\s+([A-Z][a-z]+\s+[A-Z][a-z]+)\s+resides",
+        r"PAYSLIP\s+([A-Z][a-z]+\s+[A-Z][a-z]+)\s+works",
+        r"PAYSLIP from .+?:\s+([A-Z][a-z]+\s+[A-Z][a-z]+)\s+is employed",
+        r"EMPLOYMENT RECORD .+? lists\s+([A-Z][a-z]+\s+[A-Z][a-z]+)\s+as",
+        r"DECLARATION:\s+([A-Z][a-z]+\s+[A-Z][a-z]+)\s+states",
+        r"DECLARATION signed by\s+([A-Z][a-z]+\s+[A-Z][a-z]+)",
+        r"CERTIFICATE\s+([A-Z][a-z]+\s+[A-Z][a-z]+)\s+of",
+        r"CERTIFICATE:\s+([A-Z][a-z]+\s+[A-Z][a-z]+),",
+        r"STATEMENT for\s+([A-Z][a-z]+\s+[A-Z][a-z]+)\s+\(",
+        r"held by\s+([A-Z][a-z]+\s+[A-Z][a-z]+),",
+        r"in the name of\s+([A-Z][a-z]+\s+[A-Z][a-z]+)\s+\(",
+        r"certifies\s+([A-Z][a-z]+\s+[A-Z][a-z]+)\s+resides",
+    ),
+    "date_of_birth": (r"(\d{2}/\d{2}/\d{4})",),
+    "nationality": (
+        r"nationality\s+([A-Z][a-z]+)",
+        r"PASSPORT of\s+([A-Z][a-z]+)\s+issue",
+        r"of\s+([A-Z][a-z]+)\s+nationality",
+        r"a\s+([A-Z][a-z]+)\s+national",
+        r"of\s+([A-Z][a-z]+)\s+residing",
+    ),
+    "id_type": (r"(SAMPLE-(?:PASSPORT|DRIVING-LICENCE|NATIONAL-ID))",),
+    "id_number": (r"(SAMPLE-ID-\d{6})",),
+    "address": (r"(\d+\s+Test Street,\s*Sampleton\s+ST\d{2})",),
+    "phone": (r"(\+1-555-01\d{2})",),
+    "email": (r"([^\s(@]+@example\.test)",),
+    "occupation": (
+        r"works as\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+for",
+        r"employed there as a\s+(.+?),",
+        r"as a\s+(.+?)\s+on the",
+    ),
+    "employer": (
+        r"for\s+([A-Z][A-Za-z ]+?(?:Bank|Ltd|Inc))",
+        r"PAYSLIP from\s+([A-Z][A-Za-z ]+?(?:Bank|Ltd|Inc)):",
+        r"EMPLOYMENT RECORD\s+([A-Z][A-Za-z ]+?(?:Bank|Ltd|Inc))",
+    ),
+    "annual_income_band": (
+        r"income band\s+(\d+(?:-\d+)?k\+? TEST)",
+        r"in the\s+(\d+(?:-\d+)?k\+? TEST)\s+band",
+        r"(\d+(?:-\d+)?k\+? TEST)\s+income band",
+    ),
+    "account_type": (
+        r"account\s+(TEST-(?:CURRENT|SAVINGS|BUSINESS))",
+        r"the\s+(TEST-(?:CURRENT|SAVINGS|BUSINESS))\s+account",
+        r"(TEST-(?:CURRENT|SAVINGS|BUSINESS))\s+in the name",
+    ),
+    "source_of_funds": (
+        r"source of funds\s+([a-z ]+?)\s+account",
+        r"stated as\s+([a-z ]+?)$",
+        r"funded from\s+([a-z ]+?)$",
+    ),
+    "pep_declaration": (
+        r"declares\s+(.+?\(test\))",
+        r"they are\s+(.+?\(test\))",
+        r"recording\s+(.+?\(test\))",
+    ),
 }
 
 
@@ -75,13 +139,47 @@ def rank_lines(field_name: str, lines: list[str], limit: int = KYC_CANDIDATE_LIM
     return [line for _, _, line in scored[:limit]]
 
 
+VALUE_PATTERNS: dict[str, tuple[str, ...]] = {
+    "full_name": (r"[A-Z][a-z]+\s+[A-Z][a-z]+",),
+    "date_of_birth": (r"\d{2}/\d{2}/\d{4}",),
+    "nationality": (r"[A-Z][a-z]+",),
+    "id_type": (r"SAMPLE-(?:PASSPORT|DRIVING-LICENCE|NATIONAL-ID)",),
+    "id_number": (r"SAMPLE-ID-\d{6}",),
+    "address": (r"\d+\s+Test Street,\s*Sampleton\s+ST\d{2}",),
+    "phone": (r"\+1-555-01\d{2}",),
+    "email": (r"[^\s(@]+@example\.test",),
+    "occupation": (r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}",),
+    "employer": (r"[A-Z][A-Za-z ]*(?:Bank|Ltd|Inc)",),
+    "annual_income_band": (r"\d+(?:-\d+)?k\+? TEST",),
+    "account_type": (r"TEST-(?:CURRENT|SAVINGS|BUSINESS)",),
+    "source_of_funds": (r"[a-z ]+",),
+    "pep_declaration": (r".+?\(test\)",),
+}
+
+
+def extract_completion(field_name: str, completion: str) -> str:
+    found = extract(field_name, completion.splitlines())
+    if found:
+        return found
+    for line in completion.splitlines():
+        first = line.strip()
+        if not first or len(first) > 64 or first[-1] in ".?!":
+            continue
+        for pattern in VALUE_PATTERNS[field_name]:
+            match = re.fullmatch(pattern, first)
+            if match:
+                return match.group(0)
+    return ""
+
+
 def extract(field_name: str, lines: list[str]) -> str:
-    """The first value the field's own pattern finds in the ranked lines."""
-    pattern = re.compile(FIELD_PATTERNS[field_name])
+    """The first value any of the field's patterns finds in the ranked lines."""
+    patterns = [re.compile(pattern) for pattern in FIELD_PATTERNS[field_name]]
     for line in lines:
-        match = pattern.search(line)
-        if match:
-            return match.group(1)
+        for pattern in patterns:
+            match = pattern.search(line)
+            if match:
+                return match.group(1).strip()
     return ""
 
 
@@ -93,20 +191,43 @@ class FillReport:
     consistency: float
     memory_hits: int
     tool_calls: int
+    model_calls: int = 0
     predictions: list[str] = field(default_factory=list)
     references: list[str] = field(default_factory=list)
+    fields: list[str] = field(default_factory=list)
+
+    @property
+    def by_field(self) -> dict[str, float]:
+        """Exact-match rate per field, in first-seen field order."""
+        correct: dict[str, int] = {}
+        total: dict[str, int] = {}
+        for name, prediction, reference in zip(
+            self.fields, self.predictions, self.references, strict=True
+        ):
+            total[name] = total.get(name, 0) + 1
+            if prediction == reference:
+                correct[name] = correct.get(name, 0) + 1
+        return {name: correct.get(name, 0) / total[name] for name in total}
 
 
 class KycAgent:
     """Fills forms through harness tools, remembering each customer."""
 
-    def __init__(self, registry: ToolRegistry, role: RoleSpec, actor: str = "kyc-agent") -> None:
+    def __init__(
+        self,
+        registry: ToolRegistry,
+        role: RoleSpec,
+        actor: str = "kyc-agent",
+        reader: Callable[[str], str] | None = None,
+    ) -> None:
         self.registry = registry
         self.role = role
         self.actor = actor
+        self.reader = reader
         self.memory: dict[str, dict[str, str]] = {}
         self.tool_calls = 0
         self.memory_hits = 0
+        self.model_calls = 0
         self.conflicts = 0
         registry.register(
             Tool(
@@ -151,7 +272,19 @@ class KycAgent:
             else:
                 evidence = self._invoke("read_evidence", {"form_id": form.form_id})
                 assert isinstance(evidence, list)
-                value = extract(name, rank_lines(name, evidence))
+                if self.reader is not None:
+                    # The name anchors every later question on the person the
+                    # form is for, once the agent has filled it. An empty guess
+                    # names nobody, so the question stays unanchored instead.
+                    customer = None
+                    if name != "full_name":
+                        customer = known.get("full_name") or None
+                    value = extract_completion(
+                        name, self.reader(kyc_prompt(evidence, name, customer=customer))
+                    )
+                    self.model_calls += 1
+                else:
+                    value = extract(name, rank_lines(name, evidence))
                 known[name] = value
             filled[name] = value
             self._invoke(
@@ -164,6 +297,7 @@ class KycAgent:
         """Fill every form in order; later forms reuse earlier memory."""
         predictions: list[str] = []
         references: list[str] = []
+        scored_fields: list[str] = []
         first_fill: dict[str, dict[str, str]] = {}
         consistent = 0
         compared = 0
@@ -178,6 +312,7 @@ class KycAgent:
             for name in KYC_FIELDS:
                 predictions.append(filled[name])
                 references.append(form.values[name])
+                scored_fields.append(name)
         return FillReport(
             forms=len(forms),
             fields_scored=len(predictions),
@@ -185,8 +320,10 @@ class KycAgent:
             consistency=round(consistent / compared, 6) if compared else 1.0,
             memory_hits=self.memory_hits,
             tool_calls=self.tool_calls,
+            model_calls=self.model_calls,
             predictions=predictions,
             references=references,
+            fields=scored_fields,
         )
 
 
