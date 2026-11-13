@@ -384,6 +384,7 @@ def test_a_card_too_small_for_the_bf16_embedding_tables_spills_instead_of_refusi
     _load_model(Path("base"), "bfloat16", "cuda", load_in_4bit=True, torch_module=_card())
 
     budget = seen["max_memory"]
+    assert "device_map" not in seen
     assert budget[0] == "5.7GiB"
     assert float(budget["cpu"].removesuffix("GiB")) > 0
     assert seen["quantization_config"].llm_int8_enable_fp32_cpu_offload is True
@@ -400,6 +401,7 @@ def test_a_quantised_load_without_a_card_asks_for_no_budget(monkeypatch) -> None
     )
 
     assert "max_memory" not in seen
+    assert seen["device_map"] == "auto"
     assert seen["quantization_config"].llm_int8_enable_fp32_cpu_offload is False
 
 

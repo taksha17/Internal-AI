@@ -248,6 +248,12 @@ def _load_model(
             import torch as torch_module
 
         budget = _quantised_budget(torch_module)
+        # A budget replaces the auto map rather than joining it: given both,
+        # accelerate plans the load on meta and bitsandbytes then reads a
+        # quantisation offset that was left there, which fails on the first step.
+        placement: dict[str, Any] = (
+            {"max_memory": budget} if budget is not None else {"device_map": "auto"}
+        )
         return AutoModelForCausalLM.from_pretrained(
             directory,
             local_files_only=True,
@@ -260,8 +266,7 @@ def _load_model(
                 # card unless this is set, whatever the quantisation it applied.
                 llm_int8_enable_fp32_cpu_offload=budget is not None,
             ),
-            device_map="auto",
-            **({} if budget is None else {"max_memory": budget}),
+            **placement,
         )
 
     if sharded:
