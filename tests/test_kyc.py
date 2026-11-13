@@ -104,6 +104,56 @@ def test_training_text_and_trial_prompt_share_the_layout() -> None:
     assert prompt != text
 
 
+def test_the_prompt_can_name_the_person_the_form_is_for() -> None:
+    form = generate_forms(count=4, seed=7)[0]
+    lines = evidence_lines(form, random.Random(7))
+    anchored = kyc_prompt(lines, "phone", customer=form.values["full_name"])
+    assert f"The person this form is for is {form.values['full_name']}." in anchored
+    assert anchored.endswith("Question: What is phone?\nAnswer:")
+    unanchored = kyc_prompt(lines, "phone")
+    assert "The person this form is for" not in unanchored
+
+
+def test_training_text_answers_before_it_retells() -> None:
+    """The retelling used to sit before the answers and name every value,
+    so the answers could be copied from it instead of from the papers."""
+    form = generate_forms(count=4, seed=7)[0]
+    lines = evidence_lines(form, random.Random(7))
+    text = kyc_fill_text(form.values, lines)
+    assert all(value in text for value in form.values.values())
+    assert text.rindex("Question:") < text.index("A clerk read those papers")
+
+
+def test_every_question_after_the_name_carries_it() -> None:
+    form = generate_forms(count=4, seed=7)[0]
+    lines = evidence_lines(form, random.Random(7))
+    text = kyc_fill_text(form.values, lines)
+    anchor = f"The person this form is for is {form.values['full_name']}."
+    assert anchor in text
+    assert text.index("Question: What is full_name?") < text.index(anchor)
+    assert text.index(anchor) < text.index("Question: What is phone?")
+
+
+def test_the_agent_anchors_each_field_on_the_name_it_filled(platform, tmp_path: Path) -> None:
+    seen: list[str] = []
+    form = generate_forms(count=4, seed=7)[0]
+
+    def reader(prompt: str) -> str:
+        seen.append(prompt)
+        if "What is full_name?" in prompt:
+            return f"account holder is {form.values['full_name']}"
+        return ""
+
+    agent = KycAgent(wired(platform, tmp_path), agent_role(), reader=reader)
+    agent.fill(form, evidence_lines(form, random.Random(7)))
+    assert seen, "the reader was never asked"
+    first, rest = seen[0], seen[1:]
+    assert "The person this form is for" not in first
+    name = form.values["full_name"]
+    assert rest, "only one field was asked"
+    assert all(f"The person this form is for is {name}." in prompt for prompt in rest)
+
+
 def test_an_agent_with_a_reader_asks_the_model_not_the_patterns(platform, tmp_path: Path) -> None:
     forms = generate_forms(count=8, seed=11)
     truth = {form.form_id: evidence_lines(form, random.Random(11)) for form in forms}

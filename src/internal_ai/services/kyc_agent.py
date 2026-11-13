@@ -210,7 +210,15 @@ class KycAgent:
                 evidence = self._invoke("read_evidence", {"form_id": form.form_id})
                 assert isinstance(evidence, list)
                 if self.reader is not None:
-                    value = extract(name, [self.reader(kyc_prompt(evidence, name))])
+                    # The name anchors every later question on the person the
+                    # form is for, once the agent has filled it. An empty guess
+                    # names nobody, so the question stays unanchored instead.
+                    customer = None
+                    if name != "full_name":
+                        customer = known.get("full_name") or None
+                    value = extract(
+                        name, [self.reader(kyc_prompt(evidence, name, customer=customer))]
+                    )
                     self.model_calls += 1
                 else:
                     value = extract(name, rank_lines(name, evidence))

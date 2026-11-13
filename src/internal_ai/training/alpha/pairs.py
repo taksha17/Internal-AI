@@ -360,25 +360,42 @@ def kyc_fill_text(values: dict[str, str], lines: list[str]) -> str:
     ``prompt_for_candidates``: text the adapter learned from in one layout and is
     tested against in another measures the difference between two layouts. The
     answer block is the trial's own question shape, so the last thing the model
-    reads before it is asked is an example of being asked.
+    reads before it is asked is an example of being asked. The answers come
+    before the retelling, not after: the retelling names every value, so answers
+    that follow it can be copied from it instead of attributed to a person in
+    the papers. The name is asked first and every later question carries it,
+    because the trial does the same once the agent has filled the name.
     """
     from internal_ai.data.kyc import KYC_FIELDS
 
     documents = "\n".join(f"- {line}" for line in lines)
-    answers = "\n".join(f"Question: What is {name}?\nAnswer: {values[name]}" for name in KYC_FIELDS)
+    asked = [name for name in KYC_FIELDS if name != "full_name"]
+    answers = "\n".join(
+        [
+            f"Question: What is full_name?\nAnswer: {values['full_name']}",
+            f"The person this form is for is {values['full_name']}.",
+        ]
+        + [f"Question: What is {name}?\nAnswer: {values[name]}" for name in asked]
+    )
     return (
         f"The customer's papers are below.\n\n{documents}\n\n"
-        f"A clerk read those papers and completed the form. {kyc_narrative(values)}\n\n"
-        f"{answers}"
+        f"{answers}\n\n"
+        f"A clerk read those papers and completed the form. {kyc_narrative(values)}"
     )
 
 
-def kyc_prompt(lines: list[str], field_name: str) -> str:
-    """The exact text the model is asked at trial time: papers, one question."""
+def kyc_prompt(lines: list[str], field_name: str, customer: str | None = None) -> str:
+    """The exact text the model is asked at trial time: papers, one question.
+
+    The agent names the person once it has filled the name, from its own fill
+    or from memory, so the question is about someone rather than a guess at
+    which of the papers' people the form is for.
+    """
     documents = "\n".join(f"- {line}" for line in lines)
+    anchor = f"The person this form is for is {customer}.\n\n" if customer else ""
     return (
         f"The customer's papers are below.\n\n{documents}\n\n"
-        f"Question: What is {field_name}?\nAnswer:"
+        f"{anchor}Question: What is {field_name}?\nAnswer:"
     )
 
 
