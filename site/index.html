@@ -169,7 +169,7 @@
           <span class="ticker-item"><i class="dot"></i>gates human-only</span>
           <span class="ticker-item"><i class="dot"></i>requester cannot approve</span>
           <span class="ticker-item"><i class="dot"></i>frozen eval sets</span>
-          <span class="ticker-item"><i class="dot"></i>one pinned base, decided by gate</span>
+          <span class="ticker-item"><i class="dot"></i>every base pinned and licence-classed</span>
           <span class="ticker-item"><i class="dot"></i>raw records stay inside</span>
         </div>
         <div class="ticker-group" aria-hidden="true">
@@ -178,7 +178,7 @@
           <span class="ticker-item"><i class="dot"></i>gates human-only</span>
           <span class="ticker-item"><i class="dot"></i>requester cannot approve</span>
           <span class="ticker-item"><i class="dot"></i>frozen eval sets</span>
-          <span class="ticker-item"><i class="dot"></i>one pinned base, decided by gate</span>
+          <span class="ticker-item"><i class="dot"></i>every base pinned and licence-classed</span>
           <span class="ticker-item"><i class="dot"></i>raw records stay inside</span>
         </div>
       </div>
@@ -346,12 +346,13 @@
               <span class="bento-index mono">06</span>
             </div>
             <h3>Adaptation</h3>
-            <p>For an install that decides an existing open base is acceptable: a rank-8 adapter over one pinned base, streamed from disk, recorded on every model card by repo, revision and licence.</p>
+            <p>For an install that decides an existing open base is acceptable: a rank-8 adapter over a pinned base, streamed from disk, recorded on every model card by repo, revision and licence.</p>
             <div class="pinrow" aria-hidden="true">
               <div><span class="mono">repo</span><b>pinned</b></div>
               <div><span class="mono">revision</span><b>hash-checked</b></div>
               <div><span class="mono">licence</span><b>class allowlisted</b></div>
             </div>
+            <span class="pipe-foot mono">5 bases pinned <span class="dot">·</span> 246.42 tok/s fp16 sharded <span class="dot">·</span> 29% over 4-bit</span>
           </article>
         </div>
       </div>
@@ -475,7 +476,7 @@
           <article class="track alt">
             <span class="flag">Off by default</span>
             <h3>Alpha (adapter)</h3>
-            <p class="from">One pinned open base already on disk, adapted into an adapter the company owns.</p>
+            <p class="from">A pinned open base already on disk, adapted into an adapter the company owns.</p>
             <dl>
               <div><dt>Starts from</dt><dd>A hash-pinned base, allowlisted and recorded by repo, revision and licence.</dd></div>
               <div><dt>Gate before any weight loads</dt><dd><code>policy_decision</code> on <code>P6</code>, decided by <code>program_lead</code> and <code>legal</code>.</dd></div>
@@ -566,8 +567,9 @@
           <div class="evidence-copy reveal">
             <span class="eyebrow">Evidence</span>
             <h2 id="evidence-heading">Verified at scale — and honest when it falls short.</h2>
-            <p>One stress run on a 16 GB CPU-only workstation. Two things are quoted for: the audit chain held after two deliberate races, and the harness refused to promote a model that had not earned it.</p>
+            <p>Three bodies of evidence, each read from the artifact its run left behind. One stress run on a 16 GB CPU-only workstation, quoted for the audit chain holding after two deliberate races and the harness refusing to promote. One alpha lane on rented dual-T4 hardware, measuring the training step. One healthcare corpus of 144,496 records released through the real gates — after its first version was refused for its sensitivity class.</p>
             <p class="scale-note"><b>Promotion was refused:</b> recall@10 0.000 against a 0.000 keyword baseline. A slim model on a synthetic corpus does not beat keyword search, and the right behaviour is to say so — that is the data-volume problem, not a bug in the pipeline.</p>
+            <p class="scale-note"><b>Throughput is not quality.</b> The alpha lane measures the step on text the model cannot learn from, and its batching hypothesis came back negative — four sequences a step is 4% slower, not faster. The RFC corpus was refused staging outright: all 1,292 records are classified internal, so none of them reached rented hardware.</p>
             <a class="evidence-link" href="#console">Watch the run in the console <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h15"/><path d="M13 6l6 6-6 6"/></svg></a>
           </div>
           <div class="stats">
@@ -575,6 +577,10 @@
             <div class="stat"><div class="n" data-count="140176">140,176</div><div class="k">training tokens</div><div class="s">at 1,653 tokens/s, stopped early by the divergence guard</div></div>
             <div class="stat"><div class="n"><span data-count="36.4" data-decimals="1">36.4</span> min</div><div class="k">end to end</div><div class="s">16 GB CPU-only, exited clean</div></div>
             <div class="stat"><div class="n" data-count="17">17</div><div class="k">audit events</div><div class="s">chain verified after two races</div></div>
+            <div class="stat"><div class="n" data-count="144496">144,496</div><div class="k">records released</div><div class="s">PMC v2, every record public · released by gate</div></div>
+            <div class="stat"><div class="n" data-count="28917296">28,917,296</div><div class="k">tokens measured</div><div class="s">with BioMistral's own tokenizer · 0.7% below estimate</div></div>
+            <div class="stat"><div class="n"><span data-count="246.42" data-decimals="2">246.42</span> tok/s</div><div class="k">fp16 across both T4s</div><div class="s">29% faster than 4-bit · the exact arithmetic, nothing traded</div></div>
+            <div class="stat"><div class="n" data-count="200">200</div><div class="k">cited questions frozen</div><div class="s">drafted by pattern, no model wrote one · a person decided the gate</div></div>
           </div>
         </div>
       </div>
@@ -599,7 +605,7 @@
           </div>
           <div class="faq-item">
             <dt><button class="faq-question" aria-expanded="false" aria-controls="faq-3">Can I use an existing open model as a base?</button></dt>
-            <dd id="faq-3" class="faq-answer" hidden><p>Yes, through the alpha track. One pinned base (hash-pinned, allowlisted, recorded by repo, revision and licence) can be adapted into a rank-8 adapter. This requires a <code>policy_decision</code> gate approved by program lead and legal. Alpha output is never training data for the from-scratch track.</p></dd>
+            <dd id="faq-3" class="faq-answer" hidden><p>Yes, through the alpha track. A pinned base (hash-pinned, allowlisted, recorded by repo, revision and licence) can be adapted into a rank-8 adapter; this install pins five, each with its licence class, and a non-permissive one needs its own <code>base_model_exception</code> gate. A <code>policy_decision</code> gate approved by program lead and legal comes first. Alpha output is never training data for the from-scratch track.</p></dd>
           </div>
           <div class="faq-item">
             <dt><button class="faq-question" aria-expanded="false" aria-controls="faq-4">How does the evaluation work?</button></dt>
