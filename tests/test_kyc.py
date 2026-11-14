@@ -266,6 +266,17 @@ def test_bare_model_completions_read_as_values() -> None:
     )
     assert extract_completion("full_name", "") == ""
     assert extract_completion("occupation", "The person this form is for is") == ""
+    assert (
+        extract_completion(
+            "pep_declaration",
+            "Sampta Samplington's pep_declaration is not a PEP (test)\nmore",
+        )
+        == "not a PEP (test)"
+    )
+    assert (
+        extract_completion("account_type", "The account type is TEST-CURRENT\nmore")
+        == "TEST-CURRENT"
+    )
 
 
 def test_bank_lines_name_their_holder() -> None:

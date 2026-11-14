@@ -153,8 +153,24 @@ VALUE_PATTERNS: dict[str, tuple[str, ...]] = {
     "annual_income_band": (r"\d+(?:-\d+)?k\+? TEST",),
     "account_type": (r"TEST-(?:CURRENT|SAVINGS|BUSINESS)",),
     "source_of_funds": (r"[a-z ]+",),
-    "pep_declaration": (r".+?\(test\)",),
+    "pep_declaration": (r"not a PEP \(test\)",),
 }
+
+# Value shapes specific enough to search for inside a longer answer line: the
+# match is the value itself, not a fragment of prose. Open shapes (a name, an
+# occupation, a source of funds) stay full-line-only, because a search would
+# return the first capitalized word of any sentence.
+SEARCHABLE_VALUES: tuple[str, ...] = (
+    "date_of_birth",
+    "id_type",
+    "id_number",
+    "address",
+    "phone",
+    "email",
+    "annual_income_band",
+    "account_type",
+    "pep_declaration",
+)
 
 
 def extract_completion(field_name: str, completion: str) -> str:
@@ -169,6 +185,11 @@ def extract_completion(field_name: str, completion: str) -> str:
             match = re.fullmatch(pattern, first)
             if match:
                 return match.group(0)
+        if field_name in SEARCHABLE_VALUES:
+            for pattern in VALUE_PATTERNS[field_name]:
+                match = re.search(pattern, first)
+                if match:
+                    return match.group(0)
     return ""
 
 
