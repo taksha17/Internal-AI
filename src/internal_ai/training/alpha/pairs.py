@@ -391,6 +391,24 @@ def kyc_fill_text(values: dict[str, str], lines: list[str]) -> str:
     )
 
 
+def kyc_documents_from_text(text: str) -> list[str]:
+    """The papers back out of a training text: the dashed lines before the answers.
+
+    The staging lane ships documents for the rented box to answer from, and
+    the answers must not travel with them. Both directions live here, next to
+    the format, so a layout change cannot silently strand or leak either side.
+    """
+    lines: list[str] = []
+    started = False
+    for line in text.splitlines():
+        if line.startswith("- "):
+            started = True
+            lines.append(line[2:])
+        elif started:
+            break
+    return lines
+
+
 def kyc_prompt(lines: list[str], field_name: str, customer: str | None = None) -> str:
     """The exact text the model is asked at trial time: papers, one question.
 
