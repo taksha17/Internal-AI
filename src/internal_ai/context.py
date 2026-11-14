@@ -13,6 +13,7 @@ from internal_ai.engine import EngineConfig, Orchestrator
 from internal_ai.gates import GateService
 from internal_ai.llm import LLMAdapter, build_adapter
 from internal_ai.policy import PolicyRegistry
+from internal_ai.storage import BlobStore, blob_store
 from internal_ai.store import Store
 from internal_ai.tools import ToolRegistry, approved_web_allowlist
 
@@ -21,6 +22,7 @@ from internal_ai.tools import ToolRegistry, approved_web_allowlist
 class Platform:
     settings: Settings
     store: Store
+    blobs: BlobStore
     audit: AuditLog
     gates: GateService
     budget: BudgetManager
@@ -56,6 +58,9 @@ class Platform:
         return cls(
             settings=settings,
             store=store,
+            # Local disk unless the install names an S3/MinIO bucket; a bad
+            # setting refuses here rather than writing bytes somewhere else.
+            blobs=blob_store(settings.home / "objects"),
             audit=audit,
             gates=gates,
             budget=budget,

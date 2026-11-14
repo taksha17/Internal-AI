@@ -514,7 +514,9 @@ def cmd_data_release(args: argparse.Namespace) -> int:
 
         actor = _actor(platform, args, args.by, "ml_lead")
         require(platform.audit, actor, Action.RELEASE_DATASET, args.dataset_id)
-        pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+        pipeline = DataPipeline(
+            platform.store, platform.audit, platform.settings.root, platform.blobs
+        )
         gate_approved = _gate_ok(platform, args.gate_id, GateType.DATASET_RELEASE, args.dataset_id)
         try:
             dataset = pipeline.release(args.dataset_id, actor.id, gate_approved)
@@ -535,7 +537,9 @@ def cmd_data_pii_audit(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.data.pipeline import DataPipeline
 
-        pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+        pipeline = DataPipeline(
+            platform.store, platform.audit, platform.settings.root, platform.blobs
+        )
         result = pipeline.run_pii_audit(args.dataset_id, sample_size=args.sample_size)
         _print(result)
         return 0 if result["passed"] else 1
@@ -987,9 +991,9 @@ def cmd_dataset_trace(args: argparse.Namespace) -> int:
         if dataset is None:
             print(f"unknown dataset: {args.dataset_id}", file=sys.stderr)
             return 1
-        report = DataPipeline(platform.store, platform.audit, platform.settings.root).trace_sample(
-            args.dataset_id, limit=args.sample, actor=args.by or "cli"
-        )
+        report = DataPipeline(
+            platform.store, platform.audit, platform.settings.root, platform.blobs
+        ).trace_sample(args.dataset_id, limit=args.sample, actor=args.by or "cli")
         steps = ",".join(
             str(step.get("step", ""))
             for step in dataset.lineage.get("steps", [])

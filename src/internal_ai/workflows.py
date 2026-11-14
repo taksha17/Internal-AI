@@ -41,7 +41,7 @@ def build_corpus(
     actor: str = "data_engineer",
     config: PipelineConfig | None = None,
 ) -> CorpusBuild:
-    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root, platform.blobs)
     sources = [
         Source(
             source_id=path.stem,
@@ -160,7 +160,7 @@ def train_tokenizer_for(
         details={"vocab_size": tokenizer.vocab_size, "coverage": coverage},
     )
     measured = DataPipeline(
-        platform.store, platform.audit, platform.settings.root
+        platform.store, platform.audit, platform.settings.root, platform.blobs
     ).measure_token_count(dataset_id, tokenizer, actor=actor)
     coverage["tokens"] = measured["tokens"]
     coverage["token_count_estimate"] = measured["estimate"]

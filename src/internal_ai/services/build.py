@@ -591,7 +591,9 @@ def build_dataset(platform: Platform, actor: Actor, runner: JobRunner, source_id
             from internal_ai.data.pipeline import DataPipeline, PipelineConfig
             from internal_ai.data.records import Source
 
-            pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+            pipeline = DataPipeline(
+                platform.store, platform.audit, platform.settings.root, platform.blobs
+            )
             result = pipeline.run(
                 [
                     Source(
@@ -709,7 +711,7 @@ def request_release(platform: Platform, actor: Actor, dataset_id: str) -> GateRe
     if dataset.stats.get("token_count_kind") != "measured":
         raise ValueError("measure the tokens before asking for release")
     _no_open_gate(platform, GateType.DATASET_RELEASE, dataset_id)
-    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root, platform.blobs)
     audit_result = pipeline.run_pii_audit(dataset_id, sample_size=None)
     if not audit_result["passed"]:
         raise ValueError(
@@ -745,7 +747,7 @@ def drop_duplicate_copies(platform: Platform, actor: Actor, dataset_id: str) -> 
     from internal_ai.data.pipeline import DataPipeline
 
     require(platform.audit, actor, Action.BUILD_DATASET, dataset_id)
-    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root, platform.blobs)
     return pipeline.drop_duplicate_copies(dataset_id, actor.id)
 
 
@@ -754,7 +756,7 @@ def redact_personal_data(platform: Platform, actor: Actor, dataset_id: str) -> A
     from internal_ai.data.pipeline import DataPipeline
 
     require(platform.audit, actor, Action.BUILD_DATASET, dataset_id)
-    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root, platform.blobs)
     return pipeline.redact_personal_data(dataset_id, actor.id)
 
 
@@ -765,7 +767,7 @@ def release_dataset(platform: Platform, actor: Actor, dataset_id: str) -> Any:
     require(platform.audit, actor, Action.RELEASE_DATASET, dataset_id)
     require_programme(platform, actor.id, release=True, actor_kind=actor.kind)
     _require_gate(platform, actor, GateType.DATASET_RELEASE, dataset_id, "release_dataset")
-    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root, platform.blobs)
     return pipeline.release(dataset_id, actor.id, gate_approved=True)
 
 
