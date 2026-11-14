@@ -13,8 +13,11 @@ import pytest
 from conftest import enroll
 
 from internal_ai.data.pipeline import DataPipeline
-from internal_ai.data.shards import canonical_bytes, read_shard, write_shard
+from internal_ai.data.shards import canonical_bytes, read_shard, released_rows, write_shard
+from internal_ai.domain import DatasetVersion
 from internal_ai.feedback import export_feedback, file_feedback
+from internal_ai.ids import now_iso
+from internal_ai.serving.service import RetrievalService
 from internal_ai.storage import LocalBlobStore, StorageDenied
 
 
@@ -110,6 +113,83 @@ def test_a_release_writes_a_shard_and_records_it_on_the_version(platform, tmp_pa
 
     events = platform.store.list_audit(action="dataset.released", limit=5)
     assert events[-1].details["shard"] == shard["key"]
+
+
+def _released_export(platform, blobs: LocalBlobStore):
+    owner = enroll(platform, "Sam Owner", ["data_owner"], ["engineering"])
+    file_feedback(platform, owner, "where is the host", "src/app.py", 4, "ds_ask")
+    dataset = export_feedback(platform, owner)
+    released = DataPipeline(platform.store, platform.audit, platform.settings.root, blobs).release(
+        dataset.id, owner.id, gate_approved=True
+    )
+    return released
+
+
+def test_a_released_version_is_read_from_its_shard_not_from_the_table(platform, tmp_path) -> None:
+    """The table is an index. Editing a row afterwards must not change what was released."""
+    blobs = LocalBlobStore(tmp_path / "objects")
+    released = _released_export(platform, blobs)
+    released_rows(platform.store, blobs, released.id)
+
+    platform.store.conn.execute(
+        "UPDATE dataset_records SET payload = ? WHERE dataset_id = ?",
+        ("forged line", released.id),
+    )
+    rows = released_rows(platform.store, blobs, released.id)
+
+    assert rows
+    assert all(row["payload"] != "forged line" for row in rows)
+
+
+def test_a_recorded_shard_without_a_store_is_refused(platform, tmp_path) -> None:
+    blobs = LocalBlobStore(tmp_path / "objects")
+    released = _released_export(platform, blobs)
+
+    with pytest.raises(StorageDenied, match="no object store"):
+        released_rows(platform.store, None, released.id)
+
+
+def test_a_version_with_no_shard_still_reads_from_the_table(platform) -> None:
+    """Versions released before shards existed keep reading where they always did."""
+    platform.store.add_dataset(
+        DatasetVersion(
+            id="ds_old",
+            name="older",
+            version=1,
+            content_hash="abc",
+            record_count=1,
+            token_count=4,
+            created_at=now_iso(),
+            released=True,
+        )
+    )
+    platform.store.add_dataset_records(
+        "ds_old",
+        [{"record_key": "a.csv:1", "payload": "from the table", "acl": []}],
+    )
+
+    rows = released_rows(platform.store, None, "ds_old")
+
+    assert [row["payload"] for row in rows] == ["from the table"]
+
+
+def test_an_unknown_dataset_reads_as_no_documents(platform) -> None:
+    """A deployment may name a version this install never built; that is not an error."""
+    assert released_rows(platform.store, None, "ds_never_built") == []
+
+
+def test_retrieval_reads_the_released_rows(platform, tmp_path) -> None:
+    blobs = LocalBlobStore(tmp_path / "objects")
+    released = _released_export(platform, blobs)
+    platform.store.conn.execute(
+        "UPDATE dataset_records SET payload = ? WHERE dataset_id = ?",
+        ("forged line", released.id),
+    )
+
+    corpus = RetrievalService(platform.store, platform.audit, blobs).corpus(released.id)
+
+    assert corpus
+    assert all(row["payload"] != "forged line" for row in corpus)
 
 
 def test_a_pipeline_without_a_store_writes_no_shard(platform) -> None:
