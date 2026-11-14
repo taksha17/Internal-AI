@@ -1,9 +1,10 @@
 """Kubernetes placement is rendered exactly and runs where a cluster exists.
 
 The Job manifest is golden-tested so cluster placement does not drift. Object
-names are sanitised to RFC 1123, GPU jobs request a GPU, and a missing
-kubectl is a refusal before anything is written. The live tests run only
-where ``INTERNAL_AI_LIVE_K8S=1`` and a cluster answers.
+names are sanitised to RFC 1123, GPU jobs request a GPU, the pod cannot escalate
+or write its own root, and its egress policy allows nothing. A missing kubectl
+is a refusal before anything is written. The live tests run only where
+``INTERNAL_AI_LIVE_K8S=1`` and a cluster answers.
 """
 
 from __future__ import annotations
@@ -36,8 +37,9 @@ def _job(tmp_path, device="gpu") -> Job:
 def test_manifest_render_is_golden(tmp_path) -> None:
     job = _job(tmp_path)
     backend = KubernetesBackend(namespace="internal-ai", image="python:3.12-slim")
+    job_document, policy_document = backend.render_manifest(job).split("---\n")
 
-    assert backend.render_manifest(job) == (
+    assert job_document == (
         "apiVersion: batch/v1\n"
         "kind: Job\n"
         "metadata:\n"
@@ -47,6 +49,15 @@ def test_manifest_render_is_golden(tmp_path) -> None:
         "  template:\n"
         "    spec:\n"
         "      restartPolicy: Never\n"
+        "      automountServiceAccountToken: false\n"
+        "      runtimeClassName: gvisor\n"
+        "      securityContext:\n"
+        "        runAsNonRoot: true\n"
+        "        runAsUser: 65532\n"
+        "        runAsGroup: 65532\n"
+        "        fsGroup: 65532\n"
+        "        seccompProfile:\n"
+        "          type: RuntimeDefault\n"
         "      containers:\n"
         "        - name: runner\n"
         "          image: python:3.12-slim\n"
@@ -56,12 +67,68 @@ def test_manifest_render_is_golden(tmp_path) -> None:
         f"              value: {json.dumps('a')}\n"
         "            - name: B_KEY\n"
         f"              value: {json.dumps('b value')}\n"
+        "          securityContext:\n"
+        "            allowPrivilegeEscalation: false\n"
+        "            readOnlyRootFilesystem: true\n"
+        "            capabilities:\n"
+        "              drop:\n"
+        "                - ALL\n"
         "          resources:\n"
         "            requests:\n"
         '              nvidia.com/gpu: "1"\n'
         "            limits:\n"
         '              nvidia.com/gpu: "1"\n'
+        "          volumeMounts:\n"
+        "            - name: scratch\n"
+        "              mountPath: /tmp\n"
+        "      volumes:\n"
+        "        - name: scratch\n"
+        "          emptyDir: {}\n"
     )
+    assert policy_document == (
+        "apiVersion: networking.k8s.io/v1\n"
+        "kind: NetworkPolicy\n"
+        "metadata:\n"
+        "  name: internal-ai-job-test-egress\n"
+        "  namespace: internal-ai\n"
+        "spec:\n"
+        "  podSelector:\n"
+        "    matchLabels:\n"
+        "      job-name: internal-ai-job-test\n"
+        "  policyTypes:\n"
+        "    - Egress\n"
+        "  egress: []\n"
+    )
+
+
+def test_the_job_pod_cannot_escalate_or_write_its_own_root(tmp_path) -> None:
+    """A trainer reads inputs and writes checkpoints; every other permission is attack surface."""
+    manifest = KubernetesBackend().render_manifest(_job(tmp_path))
+
+    assert "allowPrivilegeEscalation: false" in manifest
+    assert "readOnlyRootFilesystem: true" in manifest
+    assert "runAsNonRoot: true" in manifest
+    assert "automountServiceAccountToken: false" in manifest
+    assert "                - ALL" in manifest
+    # A read-only root without somewhere to write would fail every trainer.
+    assert "mountPath: /tmp" in manifest
+
+
+def test_the_egress_policy_allows_nothing(tmp_path) -> None:
+    """An empty egress rule list is a deny; omitting the object would allow everything."""
+    policy = KubernetesBackend().egress_policy(_job(tmp_path))
+
+    assert "  egress: []\n" in policy
+    assert "  policyTypes:\n    - Egress\n" in policy
+    assert "      job-name: internal-ai-job-test\n" in policy
+
+
+def test_the_runtime_class_is_configurable_and_can_be_absent(tmp_path) -> None:
+    chosen = KubernetesBackend(runtime_class="kata").render_manifest(_job(tmp_path))
+    assert "      runtimeClassName: kata\n" in chosen
+
+    unisolated = KubernetesBackend(runtime_class=None).render_manifest(_job(tmp_path))
+    assert "runtimeClassName" not in unisolated
 
 
 def test_cpu_jobs_request_no_gpu(tmp_path) -> None:
@@ -114,12 +181,14 @@ def test_every_live_test_is_gated_on_the_switch_not_on_kubectl_alone() -> None:
         assert any("INTERNAL_AI_LIVE_K8S" in reason for reason in reasons), test.__name__
 
 
+# A single-node proof cluster has no gVisor RuntimeClass, so the live tests ask
+# for the placement without it; the isolation claims are tested in the manifest.
 @pytest.mark.skipif(
     not _live_cluster_answers(), reason="needs INTERNAL_AI_LIVE_K8S=1 and a cluster"
 )
 def test_live_submit_when_a_cluster_exists(tmp_path) -> None:
     _kubectl("create", "namespace", "internal-ai")
-    result = KubernetesBackend().submit(_job(tmp_path), sandbox=None)
+    result = KubernetesBackend(runtime_class=None).submit(_job(tmp_path), sandbox=None)
     assert result["exit_code"] == 0
 
 
@@ -127,7 +196,7 @@ def test_live_submit_when_a_cluster_exists(tmp_path) -> None:
     not _live_cluster_answers(), reason="needs INTERNAL_AI_LIVE_K8S=1 and a cluster"
 )
 def test_live_job_runs_to_completion_and_logs_output(tmp_path) -> None:
-    backend = KubernetesBackend()
+    backend = KubernetesBackend(runtime_class=None)
     spec = JobSpec(
         name="live-proof",
         command=["python", "-c", "print('hello world')"],
@@ -160,3 +229,4 @@ def test_live_job_runs_to_completion_and_logs_output(tmp_path) -> None:
         assert "hello world" in logs.stdout
     finally:
         _kubectl("delete", "job", name, "-n", backend.namespace)
+        _kubectl("delete", "networkpolicy", f"{name}-egress", "-n", backend.namespace)

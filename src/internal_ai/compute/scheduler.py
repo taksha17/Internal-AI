@@ -27,6 +27,12 @@ from internal_ai.ids import new_id, now_iso
 from internal_ai.sandbox import Sandbox
 from internal_ai.training.cost import CostEstimate, estimate_cpu_run, estimate_gpu_run
 
+# gVisor by default: a cluster without the RuntimeClass leaves the pod pending
+# instead of running it with the host kernel as its only boundary.
+DEFAULT_RUNTIME_CLASS = "gvisor"
+# The distroless "nonroot" uid; nothing in a training pod needs to write its root.
+SANDBOX_UID = 65532
+
 
 class JobState(StrEnum):
     QUEUED = "queued"
@@ -326,14 +332,30 @@ class KubernetesBackend:
 
     name = "kubernetes"
 
-    def __init__(self, namespace: str = "internal-ai", image: str = "python:3.12-slim") -> None:
+    def __init__(
+        self,
+        namespace: str = "internal-ai",
+        image: str = "python:3.12-slim",
+        runtime_class: str | None = DEFAULT_RUNTIME_CLASS,
+        run_as_user: int = SANDBOX_UID,
+    ) -> None:
         self.namespace = namespace
         self.image = image
+        self.runtime_class = runtime_class
+        self.run_as_user = run_as_user
 
     def object_name(self, job: Job) -> str:
         return f"internal-ai-{job.id}".replace("_", "-").lower()
 
     def render_manifest(self, job: Job) -> str:
+        return self.render_job(job) + "---\n" + self.egress_policy(job)
+
+    def render_job(self, job: Job) -> str:
+        """The Job, as a pod that cannot write its own root, escalate or hold a token.
+
+        The trainer reads its inputs and writes checkpoints; every permission it
+        does not need is one an exploited dependency cannot use.
+        """
         lines = [
             "apiVersion: batch/v1",
             "kind: Job",
@@ -344,16 +366,40 @@ class KubernetesBackend:
             "  template:",
             "    spec:",
             "      restartPolicy: Never",
-            "      containers:",
-            "        - name: runner",
-            f"          image: {self.image}",
-            f"          command: {json.dumps(job.spec.command)}",
+            "      automountServiceAccountToken: false",
         ]
+        if self.runtime_class:
+            lines.append(f"      runtimeClassName: {self.runtime_class}")
+        lines.extend(
+            [
+                "      securityContext:",
+                "        runAsNonRoot: true",
+                f"        runAsUser: {self.run_as_user}",
+                f"        runAsGroup: {self.run_as_user}",
+                f"        fsGroup: {self.run_as_user}",
+                "        seccompProfile:",
+                "          type: RuntimeDefault",
+                "      containers:",
+                "        - name: runner",
+                f"          image: {self.image}",
+                f"          command: {json.dumps(job.spec.command)}",
+            ]
+        )
         if job.spec.environment:
             lines.append("          env:")
             for key in sorted(job.spec.environment):
                 lines.append(f"            - name: {key}")
                 lines.append(f"              value: {json.dumps(job.spec.environment[key])}")
+        lines.extend(
+            [
+                "          securityContext:",
+                "            allowPrivilegeEscalation: false",
+                "            readOnlyRootFilesystem: true",
+                "            capabilities:",
+                "              drop:",
+                "                - ALL",
+            ]
+        )
         if job.spec.device == "gpu":
             lines.extend(
                 [
@@ -364,7 +410,41 @@ class KubernetesBackend:
                     '              nvidia.com/gpu: "1"',
                 ]
             )
+        # A read-only root leaves a trainer nowhere to spill, so it gets one
+        # writable directory and it dies with the pod.
+        lines.extend(
+            [
+                "          volumeMounts:",
+                "            - name: scratch",
+                "              mountPath: /tmp",
+                "      volumes:",
+                "        - name: scratch",
+                "          emptyDir: {}",
+            ]
+        )
         return "\n".join(lines) + "\n"
+
+    def egress_policy(self, job: Job) -> str:
+        """Zero egress: a policy that selects this job's pods and allows no traffic.
+
+        An empty rule list under ``Egress`` is a deny, not an omission -- without
+        the object the pod could reach anything the cluster network allows.
+        """
+        name = self.object_name(job)
+        return (
+            "apiVersion: networking.k8s.io/v1\n"
+            "kind: NetworkPolicy\n"
+            "metadata:\n"
+            f"  name: {name}-egress\n"
+            f"  namespace: {self.namespace}\n"
+            "spec:\n"
+            "  podSelector:\n"
+            "    matchLabels:\n"
+            f"      job-name: {name}\n"
+            "  policyTypes:\n"
+            "    - Egress\n"
+            "  egress: []\n"
+        )
 
     def submit(self, job: Job, sandbox: Sandbox) -> dict[str, Any]:
         if shutil.which("kubectl") is None:
