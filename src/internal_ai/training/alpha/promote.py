@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from internal_ai.artifacts import store_artifact
 from internal_ai.context import Platform
 from internal_ai.data.records import Record
 from internal_ai.data.splits import contamination_report
@@ -121,6 +122,9 @@ def register_alpha(
     # to come from the whole tree. Hashing only a file would refuse the one
     # adapter this package can actually promote.
     digest = tree_hash(adapter_path) if adapter_path.is_dir() else file_hash(adapter_path)
+    # The digest names the artifact; the stored manifest is what lets another
+    # install rebuild it and check every file, which a path to this machine cannot.
+    artifact = store_artifact(platform.blobs, adapter_path)
     card = alpha_card(
         base,
         RECIPE,
@@ -133,6 +137,7 @@ def register_alpha(
     if exception is not None:
         card["base_model_exception"] = exception.id
     card["provenance_mode"] = provenance_mode(platform)
+    card["artifact"] = artifact.to_dict()
     record = reproducibility_beside(adapter_path)
     if record:
         card["reproducibility"] = record
