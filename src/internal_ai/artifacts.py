@@ -196,6 +196,51 @@ def missing(path: Path, files: tuple[ArtifactFile, ...]) -> list[str]:
     return [item.name for item in files if not (root / item.name).exists()]
 
 
+# Paths already checked in this process, keyed by resolved path and manifest digest.
+# Hashing a hundred-megabyte adapter on every request would cost more than the
+# guarantee is worth, so a restart is when a silently edited directory is caught.
+_VERIFIED: set[tuple[str, str]] = set()
+
+
+def require_intact(
+    blobs: BlobStore | None,
+    model_path: str | Path,
+    card: dict[str, object],
+) -> None:
+    """Refuse a path that no longer matches the manifest its card records.
+
+    A card written before manifests existed, or an install with no object store,
+    has nothing to check against and loads as it always did. A card that records
+    one is a claim about specific bytes, and a loader that ignores it is trusting
+    whatever directory happens to sit at that path today.
+    """
+    if blobs is None or not has_manifest(card):
+        return
+    artifact = read_card_artifact(blobs, card)
+    if artifact is None:
+        return
+    path = Path(model_path or "")
+    resolved = str(path.resolve()) if path.exists() else str(path)
+    token = (resolved, artifact.digest)
+    if token in _VERIFIED:
+        return
+    broken = verify(path, artifact.files) if path.exists() else []
+    absent = (
+        missing(path, artifact.files) if path.exists() else [item.name for item in artifact.files]
+    )
+    if broken or absent:
+        raise ArtifactDenied(
+            f"{path} does not match artifact {artifact.digest}: "
+            f"{len(broken)} changed, {len(absent)} missing or moved"
+        )
+    _VERIFIED.add(token)
+
+
+def forget_verified() -> None:
+    """Drop the verification cache; a test that tampers twice needs the second check."""
+    _VERIFIED.clear()
+
+
 def has_manifest(card: dict[str, object]) -> bool:
     artifact = card.get("artifact")
     return isinstance(artifact, dict) and bool(artifact.get("manifest"))

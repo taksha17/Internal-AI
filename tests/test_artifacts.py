@@ -18,15 +18,20 @@ from internal_ai.artifacts import (
     artifact_digest,
     collect,
     file_key,
+    forget_verified,
     manifest_bytes,
     materialize,
     missing,
     read_card_artifact,
     read_manifest,
+    require_intact,
     store_artifact,
     verify,
 )
+from internal_ai.domain import ModelVersion
+from internal_ai.ids import now_iso
 from internal_ai.storage import LocalBlobStore, StorageDenied
+from internal_ai.training.alpha.local import answer_adapter
 
 
 def _adapter(root: Path) -> Path:
@@ -154,6 +159,82 @@ def test_a_card_written_before_manifests_reads_as_none(tmp_path: Path) -> None:
     blobs = LocalBlobStore(tmp_path / "objects")
 
     assert read_card_artifact(blobs, {"base": "qwen"}) is None
+
+
+def test_a_matching_artifact_is_accepted(tmp_path: Path) -> None:
+    blobs = LocalBlobStore(tmp_path / "objects")
+    adapter = _adapter(tmp_path)
+    stored = store_artifact(blobs, adapter)
+    forget_verified()
+
+    require_intact(blobs, adapter, {"artifact": stored.to_dict()})
+
+
+def test_a_changed_file_refuses_the_load(tmp_path: Path) -> None:
+    blobs = LocalBlobStore(tmp_path / "objects")
+    adapter = _adapter(tmp_path)
+    stored = store_artifact(blobs, adapter)
+    (adapter / "adapter_model.bin").write_bytes(b"changed after registration")
+    forget_verified()
+
+    with pytest.raises(ArtifactDenied, match="does not match artifact"):
+        require_intact(blobs, adapter, {"artifact": stored.to_dict()})
+
+
+def test_a_missing_file_refuses_the_load(tmp_path: Path) -> None:
+    blobs = LocalBlobStore(tmp_path / "objects")
+    adapter = _adapter(tmp_path)
+    stored = store_artifact(blobs, adapter)
+    (adapter / "sub" / "tokenizer.json").unlink()
+    forget_verified()
+
+    with pytest.raises(ArtifactDenied, match="missing or moved"):
+        require_intact(blobs, adapter, {"artifact": stored.to_dict()})
+
+
+def test_a_verified_artifact_is_not_rehashed_until_a_restart(tmp_path: Path) -> None:
+    """Hashing an adapter per request would cost more than the guarantee is worth."""
+    blobs = LocalBlobStore(tmp_path / "objects")
+    adapter = _adapter(tmp_path)
+    stored = store_artifact(blobs, adapter)
+    card = {"artifact": stored.to_dict()}
+    forget_verified()
+    require_intact(blobs, adapter, card)
+
+    (adapter / "adapter_model.bin").write_bytes(b"changed after the check")
+    require_intact(blobs, adapter, card)
+
+    forget_verified()
+    with pytest.raises(ArtifactDenied):
+        require_intact(blobs, adapter, card)
+
+
+def test_a_card_without_a_manifest_loads_as_before(tmp_path: Path) -> None:
+    blobs = LocalBlobStore(tmp_path / "objects")
+
+    require_intact(blobs, tmp_path / "anywhere", {"base": "qwen"})
+
+
+def test_answering_refuses_a_tampered_adapter_before_loading_it(
+    platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("INTERNAL_AI_LOCAL_RUNNER", raising=False)
+    adapter = _adapter(tmp_path)
+    stored = store_artifact(platform.blobs, adapter)
+    model = ModelVersion(
+        id="mdl_tampered",
+        name="qwen",
+        version=1,
+        content_hash="hash",
+        created_at=now_iso(),
+        card={"artifact": stored.to_dict()},
+        path=str(adapter),
+    )
+    (adapter / "adapter_model.bin").write_bytes(b"changed after registration")
+    forget_verified()
+
+    with pytest.raises(PermissionError, match="does not match artifact"):
+        answer_adapter(platform, model)
 
 
 def test_the_artifact_dataclass_carries_what_a_card_needs(tmp_path: Path) -> None:
