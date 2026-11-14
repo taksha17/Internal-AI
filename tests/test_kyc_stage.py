@@ -26,7 +26,27 @@ DECOYS = 2
 FAMILIES = 6
 
 
-def synthetic_dataset(platform, released: bool = True, legal_status: str = "internal"):
+def synthetic_dataset(
+    platform, enroll_person, tmp_path, monkeypatch, released=True, legal_status="internal"
+):
+    from internal_ai.services import build
+
+    monkeypatch.setenv("INTERNAL_AI_DATA_ROOTS", str(tmp_path))
+    owner = enroll_person(platform, "Dana Owner", ["data_owner"])
+    train_file = tmp_path / "train.jsonl"
+    train_file.write_text("{}\n")
+    source = build.register_source(
+        platform,
+        owner,
+        str(train_file),
+        "kyc-synthetic-stage-test",
+        "training text for the KYC form-filling agent",
+        ["engineering"],
+        legal_status=legal_status,
+        license_name="template-generated synthetic data",
+        license_url="https://example.internal/kyc-synthetic",
+        license_note="no real customer, every value carries a fake marker",
+    )
     corpus = build_corpus(count=FORMS, seed=21)
     records = []
     for index, form in enumerate(corpus.forms):
@@ -39,7 +59,7 @@ def synthetic_dataset(platform, released: bool = True, legal_status: str = "inte
         records.append(
             {
                 "record_key": form.form_id,
-                "payload": json.dumps({"text": text, "form_id": form.form_id}),
+                "payload": text,
                 "sensitivity": "internal",
                 "split": "test" if index >= FORMS - 4 else "train",
             }
@@ -52,15 +72,7 @@ def synthetic_dataset(platform, released: bool = True, legal_status: str = "inte
         record_count=len(records),
         token_count=1000,
         created_at=now_iso(),
-        lineage={
-            "sources": [
-                {
-                    "legal_status": legal_status,
-                    "license_name": "template-generated synthetic data",
-                    "license_note": "no real customer, every value carries a fake marker",
-                }
-            ]
-        },
+        lineage={"sources": [{"source_id": source["id"]}]},
         released=released,
     )
     platform.store.add_dataset(dataset)
@@ -75,24 +87,30 @@ def test_documents_survive_the_training_text() -> None:
     assert kyc_documents_from_text(kyc_fill_text(form.values, lines)) == lines
 
 
-def test_stage_refuses_an_unreleased_dataset(platform, tmp_path: Path) -> None:
-    dataset_id = synthetic_dataset(platform, released=False)
+def test_stage_refuses_an_unreleased_dataset(
+    platform, enroll_person, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dataset_id = synthetic_dataset(platform, enroll_person, tmp_path, monkeypatch, released=False)
     with pytest.raises(SystemExit, match="not released"):
         stage(platform, dataset_id, tmp_path / "kaggle")
 
 
-def test_stage_refuses_a_non_synthetic_source(platform, tmp_path: Path) -> None:
-    dataset_id = synthetic_dataset(platform, legal_status="licensed")
+def test_stage_refuses_a_non_synthetic_source(
+    platform, enroll_person, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dataset_id = synthetic_dataset(
+        platform, enroll_person, tmp_path, monkeypatch, legal_status="licensed"
+    )
     with pytest.raises(SystemExit, match="synthetic"):
         stage(platform, dataset_id, tmp_path / "kaggle")
 
 
 def test_stage_refuses_text_without_fake_markers(
-    platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    platform, enroll_person, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("INTERNAL_AI_OFFLINE", "0")
     assert offline_mode() is False
-    dataset_id = synthetic_dataset(platform)
+    dataset_id = synthetic_dataset(platform, enroll_person, tmp_path, monkeypatch)
     platform.store.conn.execute(
         "UPDATE dataset_records SET payload = ? WHERE dataset_id = ? AND record_key = ?",
         (
@@ -108,20 +126,20 @@ def test_stage_refuses_text_without_fake_markers(
 
 
 def test_stage_refuses_while_offline(
-    platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    platform, enroll_person, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("INTERNAL_AI_OFFLINE", "1")
     assert offline_mode() is True
-    dataset_id = synthetic_dataset(platform)
+    dataset_id = synthetic_dataset(platform, enroll_person, tmp_path, monkeypatch)
     with pytest.raises(SystemExit, match="offline"):
         stage(platform, dataset_id, tmp_path / "kaggle")
 
 
 def test_staged_package_carries_texts_questions_and_trainer(
-    platform, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    platform, enroll_person, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("INTERNAL_AI_OFFLINE", "0")
-    dataset_id = synthetic_dataset(platform)
+    dataset_id = synthetic_dataset(platform, enroll_person, tmp_path, monkeypatch)
     out = stage(platform, dataset_id, tmp_path / "kaggle")
     dataset_dir = Path(out["dataset_dir"])
     texts = [json.loads(line) for line in (dataset_dir / "train.jsonl").read_text().splitlines()]

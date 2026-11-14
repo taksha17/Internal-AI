@@ -92,12 +92,30 @@ def copy_package(destination: Path) -> None:
 def _payload(row: dict[str, Any]) -> dict[str, Any]:
     payload = row.get("payload", {})
     if isinstance(payload, str):
-        return json.loads(payload)
+        try:
+            parsed = json.loads(payload)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict):
+            return parsed
+        return {"text": payload}
     return dict(payload)
 
 
-def _sources(dataset) -> list[dict[str, Any]]:
-    return [dict(item) for item in (dataset.lineage.get("sources") or [])]
+def _sources(platform: Platform, dataset) -> list[dict[str, Any]]:
+    from internal_ai.services import build
+
+    resolved: list[dict[str, Any]] = []
+    lineage = dataset.lineage if isinstance(dataset.lineage, dict) else {}
+    for item in lineage.get("sources") or []:
+        source = build.get_source(platform, str(item.get("source_id") or ""))
+        if source is None:
+            raise SystemExit(
+                f"refused: dataset {dataset.id} names an unknown source; "
+                "the export lane stages released datasets only"
+            )
+        resolved.append(source)
+    return resolved
 
 
 def stage(
@@ -116,7 +134,7 @@ def stage(
     dataset = platform.store.get_dataset(dataset_id)
     if dataset is None or not dataset.released:
         raise SystemExit(f"refused: dataset {dataset_id} is not released")
-    sources = _sources(dataset)
+    sources = _sources(platform, dataset)
     if not sources or any(item.get("legal_status") != "internal" for item in sources):
         raise SystemExit(
             f"refused: dataset {dataset_id} is not from an internal source; "
