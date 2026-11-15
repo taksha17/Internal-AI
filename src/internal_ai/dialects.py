@@ -300,6 +300,16 @@ class Connection:
     def is_sqlite(self) -> bool:
         return self.dialect in SQLITE_SCHEMES
 
+    @property
+    def insertion_order(self) -> str:
+        """The pseudo-column that orders rows as they were written.
+
+        A server has no ``rowid``; ``ctid`` is the physical tuple position, which
+        is the same order for a table that is only ever appended to. Ordering, not
+        identity: never store either one.
+        """
+        return "rowid" if self.is_sqlite else "ctid"
+
     def execute(self, sql: str, params: Any = ()) -> Any:
         return self.raw.execute(translate(sql, self.placeholder), params)
 

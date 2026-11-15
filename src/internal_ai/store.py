@@ -300,8 +300,11 @@ class Store:
         return event
 
     def task_events(self, task_id: str) -> list[TaskEvent]:
+        # Two events in the same second are ordered by how they were written, which
+        # is rowid on sqlite and ctid on a server.
         rows = self.conn.execute(
-            "SELECT * FROM task_events WHERE task_id = ? ORDER BY created_at ASC, rowid ASC",
+            "SELECT * FROM task_events WHERE task_id = ? "
+            f"ORDER BY created_at ASC, {self.conn.insertion_order} ASC",
             (task_id,),
         ).fetchall()
         return [
