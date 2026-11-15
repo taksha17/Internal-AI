@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from internal_ai import signing
+from internal_ai.config import Settings
 from internal_ai.context import Platform
 from internal_ai.domain import BudgetScope, GateType
 from internal_ai.engine import PlanError
@@ -19,8 +21,10 @@ from internal_ai.llm import ScriptedAdapter
 from internal_ai.planner import TemplatePlanner
 from internal_ai.services import governance
 from internal_ai.services.actor import Actor
+from internal_ai.services.audit_head import anchor_head
 from internal_ai.services.identity import AuthenticationError, IdentityService
 from internal_ai.services.permissions import Action, PermissionDenied, require
+from internal_ai.signing import SigningRefused
 from internal_ai.store import TransitionError
 
 DEMO_APPROVER = "program_lead"
@@ -246,6 +250,34 @@ def cmd_audit_verify(args: argparse.Namespace) -> int:
         result = platform.audit.verify()
         _print(result.to_dict())
         return 0 if result.ok else 1
+
+
+def cmd_audit_anchor(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        actor = Actor.asserted(platform.store, args.actor)
+        try:
+            record = anchor_head(platform, actor)
+        except SigningRefused as refusal:
+            print(f"refused: {refusal}")
+            return 1
+        except PermissionDenied as denial:
+            print(f"refused: {denial}")
+            return 1
+        _print(record)
+    return 0
+
+
+def cmd_audit_key(args: argparse.Namespace) -> int:
+    """Create the signing key an install reads on open, once."""
+    path = signing.key_path() or (Settings.from_env(args.root).home / "audit.key")
+    try:
+        signer = signing.create_key(path)
+    except SigningRefused as refusal:
+        print(f"refused: {refusal}")
+        return 1
+    print(f"key {signer.key_id} written to {path} (owner read/write only)")
+    print("keep a copy outside this machine: without it the anchors cannot be checked")
+    return 0
 
 
 def cmd_budget_status(args: argparse.Namespace) -> int:
@@ -1278,6 +1310,13 @@ def build_parser() -> argparse.ArgumentParser:
     audit_list.add_argument("--actor", default=None)
     audit_list.add_argument("--json", action="store_true")
     audit_list.set_defaults(func=cmd_audit_list)
+    audit_anchor = audit_sub.add_parser("anchor", help="sign the current head")
+    audit_anchor.add_argument("--actor", required=True)
+    audit_anchor.set_defaults(func=cmd_audit_anchor)
+
+    audit_key = audit_sub.add_parser("key", help="create the audit signing key once")
+    audit_key.set_defaults(func=cmd_audit_key)
+
     audit_verify = audit_sub.add_parser("verify")
     audit_verify.set_defaults(func=cmd_audit_verify)
 

@@ -40,7 +40,7 @@ from internal_ai.evals import advice
 from internal_ai.gates import GATE_CATALOG, GateError
 from internal_ai.people import PeopleRegistry
 from internal_ai.roles import all_roles
-from internal_ai.services import build, governance, webfetch
+from internal_ai.services import audit_head, build, governance, webfetch
 from internal_ai.services.actor import Actor
 from internal_ai.services.identity import (
     MIN_PASSWORD_LENGTH,
@@ -972,9 +972,22 @@ def mount_console(
             table=table,
             events=table.rows,
             verify=ctx.platform.audit.verify().to_dict(),
+            anchor=audit_head.anchor_status(ctx.platform),
+            can_anchor=audit_head.may_anchor(ctx.actor),
             actor_filter=actor,
             action_filter=action,
             window=window,
+        )
+
+    @app.post("/console/audit/anchor", include_in_schema=False)
+    async def anchor_audit(request: Request) -> Response:
+        ctx = context(request)
+        await posted(ctx)
+        return await act(
+            ctx,
+            "/console/audit",
+            lambda: audit_head.anchor_head(ctx.platform, ctx.actor),
+            "head anchored: the sequence and hash are signed and the file is written",
         )
 
     # ----------------------------------------------------------------- plan

@@ -63,7 +63,11 @@ def test_permission_map_denies_the_wrong_role_and_every_agent() -> None:
         assert not allowed(human(set(roles) or {"program_lead"}, kind="agent"), action)
         if roles:
             assert allowed(human({next(iter(roles))}), action)
-            assert not allowed(human({"security"}), action)
+            # Whatever is outside the map is the wrong role for this action; naming
+            # one role here would stop being true the moment that role gains it.
+            outsider = {"program_lead", "data_engineer", "compliance", "security"} - set(roles)
+            assert outsider, f"{action} holds every plausible role; the test proves nothing"
+            assert not allowed(human({sorted(outsider)[0]}), action)
             assert "needs " in reason(action)
         else:
             assert allowed(human({"security"}), action)

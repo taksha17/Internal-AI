@@ -43,6 +43,7 @@ class Action(StrEnum):
     WRITE_RECIPE = "write_recipe"
     MANAGE_PEOPLE = "manage_people"
     VIEW_TRACES = "view_traces"
+    ANCHOR_AUDIT = "anchor_audit"
 
 
 ANYONE: frozenset[str] = frozenset()
@@ -73,6 +74,9 @@ ACTION_ROLES: dict[Action, frozenset[str]] = {
     Action.DECIDE_POLICY: frozenset({"program_lead", "legal"}),
     Action.WRITE_BRIEF: frozenset({"program_lead", "ml_lead"}),
     Action.WRITE_RECIPE: frozenset({"ml_lead", "program_lead"}),
+    # Anchoring is the ledger's own integrity operation, so it sits with the two
+    # roles that answer for evidence rather than with whoever runs the platform.
+    Action.ANCHOR_AUDIT: frozenset({"security", "compliance"}),
     Action.MANAGE_PEOPLE: frozenset({"program_lead", "engineering_manager"}),
     Action.VIEW_TRACES: frozenset({"ml_lead", "program_lead", "compliance", "domain_expert"}),
 }

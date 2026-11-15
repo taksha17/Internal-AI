@@ -7,6 +7,23 @@
 <p class="{{ 'callout' if verify.ok else 'refusal' }}">
   {% if verify.ok %}The hash chain is intact across {{ verify.checked }} events.{% else %}The hash chain is broken at event {{ verify.broken_at_seq }}: {{ verify.reason }}.{% endif %}
 </p>
+<section class="card">
+  <h2>Signed head</h2>
+  {% if anchor.signing %}
+  <p class="muted">Anchors are signed with key <code>{{ anchor.key_id }}</code> and written outside the database, so a deleted tail contradicts a file. {{ anchor.anchors }} anchor{{ '' if anchor.anchors == 1 else 's' }} on disk{% if anchor.latest_seq %}; newest at event #{{ anchor.latest_seq }} ({{ anchor.latest_at | when }}){% endif %}.</p>
+  {% else %}
+  <p class="callout">No signing key on this install, so a head cannot be anchored: the chain links every event to the one before it, but a deleted tail would look like a shorter chain. Set <code>INTERNAL_AI_AUDIT_KEY_FILE</code>, or run <code>internal-ai audit key</code>.</p>
+  {% endif %}
+  <p class="small">{{ verify.anchor_note }}</p>
+  {% if can_anchor and anchor.signing %}
+  <form method="post" action="/console/audit/anchor">
+    {{ m.csrf_field() }}
+    <button type="submit">Anchor the current head</button>
+  </form>
+  {% elif anchor.signing %}
+  <p class="muted small">Anchoring needs security or compliance.</p>
+  {% endif %}
+</section>
 <form method="get" action="/console/audit" class="toolbar">
   <label class="grow">Actor <input type="search" name="actor" value="{{ actor_filter }}" placeholder="person id or agent"></label>
   <label class="grow">Action <input type="search" name="action" value="{{ action_filter }}" placeholder="for example gate.decided"></label>

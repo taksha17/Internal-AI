@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from internal_ai import signing
 from internal_ai.agent import AgentRuntime
 from internal_ai.audit import AuditLog
 from internal_ai.budget import BudgetManager
@@ -43,7 +44,13 @@ class Platform:
         settings = Settings.from_env(root)
         settings.ensure_dirs()
         store = Store(settings.database_url)
-        audit = AuditLog(store)
+        # The signing key lives outside the database; an install without one can
+        # still link events, it just cannot anchor a head.
+        audit = AuditLog(
+            store,
+            signer=signing.signer_for(settings.home),
+            anchor_dir=settings.home / "audit_anchors",
+        )
         gates = GateService(store)
         budget = BudgetManager(store, project=project)
         tools = ToolRegistry(audit, settings.workspace_dir, settings.artifacts_dir)
