@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Compute{% endblock %}
+{% block crumb %}Compute{% endblock %}
+{% block content %}
+{{ m.page_head("Compute advice", "What a released corpus needs before a from-scratch run, and which machine can take it. The hours use the same 6 × parameters × tokens figure as the trainer; attaching a backend does not start a run.") }}
+
+<form method="get" action="/console/compute" class="toolbar">
+  <label class="grow">Dataset
+    <select name="dataset">
+      {% for item in datasets %}
+      <option value="{{ item.id }}"{{ ' selected' if dataset and item.id == dataset.id else '' }}>{{ item.name }} v{{ item.version }}, {{ "{:,}".format(item.token_count) }} tokens</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Show</button>
+</form>
+
+{% if not datasets %}
+<p class="callout">No released dataset yet. Advice is about a released corpus: build one from a source and release it through a <code>dataset_release</code> gate first.</p>
+{% elif dataset is none %}
+<p class="callout">Choose a released dataset to see its advice.</p>
+{% else %}
+<p class="muted">{{ dataset.name }} v{{ dataset.version }}, {{ "{:,}".format(dataset.token_count) }} tokens, counted by {{ advice.token_count_kind if advice else "unknown" }}. Attached backend <strong>{{ backend }}</strong>.</p>
+
+{% if advice is none %}
+<p class="callout">No advice stored for this corpus yet. Working it out records the hours, the floor check and the machine per size.</p>
+{% if can("advise_compute") %}
+<form method="post" action="/console/compute/advise">
+  {{ m.csrf_field() }}
+  <input type="hidden" name="dataset_id" value="{{ dataset.id }}">
+  <button type="submit">Work out what it needs</button>
+</form>
+{% else %}
+<p class="small">Recording advice {{ why("advise_compute") }}.</p>
+{% endif %}
+{% else %}
+
+{% if not advice.measured %}
+<p class="callout">The token count is an estimate, so every size below is waiting: the hours stay provisional until the tokenizer measures this corpus.</p>
+{% endif %}
+
+{% call m.data_table([("Size",), ("Parameters", true), ("GPU-hours", true), ("Machine",), ("Tokens per parameter", true), ("Floor",), ("Runnable",)]) %}
+  {% for row in rows %}
+  <tr class="{{ 'warn' if not row.runnable else '' }}">
+    <td>{{ row.size }}</td>
+    <td class="num">{{ "{:,}".format(row.parameters) }}</td>
+    <td class="num">{{ row.planning_gpu_hours }}</td>
+    <td>{{ row.machine }}</td>
+    <td class="num">{{ row.tokens_per_parameter }}</td>
+    <td>{{ "meets" if row.meets_floor else "below" }}</td>
+    <td>{% if row.runnable %}yes{% else %}<span class="muted">waiting — {{ row.reasons | join("; ") }}</span>{% endif %}</td>
+  </tr>
+  {% endfor %}
+{% endcall %}
+
+<p class="small muted">The floor is {{ floor }} tokens per parameter, read from the trainer rather than restated here. A waiting size is not a warning: a run at that size would spend the machine's hours on a shape the corpus cannot support, and <code>require_runnable_size</code> refuses it with the same sentence this table shows.</p>
+
+<form method="post" action="/console/compute/advise">
+  {{ m.csrf_field() }}
+  <input type="hidden" name="dataset_id" value="{{ dataset.id }}">
+  <button type="submit" class="quiet">Recount</button>
+</form>
+{% endif %}
+{% endif %}
+
+<section class="card">
+  <h2>Machine</h2>
+  <p class="muted">Attached backend: <strong>{{ backend }}</strong>. Local takes anything under one GPU-hour; larger sizes need an H100-class entry, which the advice calls <code>slurm</code>.</p>
+  {% if can("attach_compute") %}
+  <form method="post" action="/console/compute/attach" class="toolbar">
+    {{ m.csrf_field() }}
+    <label>Backend
+      <select name="backend">
+        <option value="local"{{ ' selected' if backend == "local" else '' }}>local</option>
+        <option value="slurm"{{ ' selected' if backend == "slurm" else '' }}>slurm</option>
+      </select>
+    </label>
+    <button type="submit">Attach</button>
+  </form>
+  <p class="small muted">Attaching records which machine showed up; it does not submit a job. <a href="/console/jobs">Training</a> is where a run starts.</p>
+  {% else %}
+  <p class="small">Attaching a backend {{ why("attach_compute") }}.</p>
+  {% endif %}
+</section>
+{% endblock %}

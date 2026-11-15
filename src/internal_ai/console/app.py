@@ -40,7 +40,7 @@ from internal_ai.evals import advice
 from internal_ai.gates import GATE_CATALOG, GateError
 from internal_ai.people import PeopleRegistry
 from internal_ai.roles import all_roles
-from internal_ai.services import audit_head, build, governance, webfetch
+from internal_ai.services import audit_head, build, compute_advice, governance, webfetch
 from internal_ai.services.actor import Actor
 from internal_ai.services.identity import (
     MIN_PASSWORD_LENGTH,
@@ -97,6 +97,7 @@ NAV = [
     ("Pipelines", "/console/plan"),
     ("Datasets", "/console/datasets"),
     ("Training", "/console/jobs"),
+    ("Compute", "/console/compute"),
     ("Evaluations", "/console/evals"),
     ("Approvals", "/console/approvals"),
     ("Web fetch", "/console/web"),
@@ -1692,6 +1693,36 @@ def mount_console(
     )
 
     # ------------------------------------------------------------ eval sets
+
+    @app.get("/console/compute", include_in_schema=False)
+    def compute_page(request: Request, dataset: str = "") -> Response:
+        ctx = context(request)
+        return render(ctx, "compute.html", **compute_advice.page(ctx.platform, dataset))
+
+    @app.post("/console/compute/advise", include_in_schema=False)
+    async def compute_advise(request: Request) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        dataset_id = form.get("dataset_id", "")
+        back = f"/console/compute?dataset={dataset_id}" if dataset_id else "/console/compute"
+        return await act(
+            ctx,
+            back,
+            lambda: compute_advice.advise(ctx.platform, ctx.actor, dataset_id),
+            f"advice recorded for {dataset_id}: the sizes and their hours are on this page",
+        )
+
+    @app.post("/console/compute/attach", include_in_schema=False)
+    async def compute_attach(request: Request) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        backend = form.get("backend", "")
+        return await act(
+            ctx,
+            "/console/compute",
+            lambda: compute_advice.attach(ctx.platform, ctx.actor, backend),
+            f"backend attached: {backend}. Attaching does not start a run",
+        )
 
     @app.get("/console/evals", include_in_schema=False)
     def evals_page(
