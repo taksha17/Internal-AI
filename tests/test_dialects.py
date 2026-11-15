@@ -14,7 +14,15 @@ import pytest
 from internal_ai import dialects
 from internal_ai.config import Settings
 from internal_ai.context import Platform
-from internal_ai.dialects import DatabaseDenied, Target, describe, open_target, parse
+from internal_ai.dialects import (
+    Connection,
+    DatabaseDenied,
+    Target,
+    describe,
+    open_target,
+    parse,
+    translate,
+)
 from internal_ai.store import Store
 
 
@@ -125,6 +133,89 @@ def test_a_platform_still_opens_the_default_database(tmp_path: Path) -> None:
     with Platform.create(root=tmp_path) as platform:
         assert platform.store.target.is_sqlite
         assert platform.settings.db_path.exists()
+
+
+def test_placeholders_become_percent_s_for_a_server_dialect() -> None:
+    assert translate("SELECT a FROM t WHERE b = ?", "%s") == "SELECT a FROM t WHERE b = %s"
+
+
+def test_a_sqlite_statement_is_never_rewritten() -> None:
+    sql = "SELECT '?' AS q WHERE a = ?"
+
+    assert translate(sql, "?") == sql
+
+
+def test_a_question_mark_inside_a_literal_is_data() -> None:
+    sql = 'SELECT \'{"q":"why?"}\' AS j WHERE id = ?'
+
+    rewritten = translate(sql, "%s")
+
+    assert '\'{"q":"why?"}\'' in rewritten
+    assert rewritten.endswith("WHERE id = %s")
+
+
+def test_a_doubled_quote_does_not_end_the_literal() -> None:
+    rewritten = translate("SELECT 'it''s ?' AS s WHERE id = ?", "%s")
+
+    assert "'it''s ?'" in rewritten
+    assert rewritten.endswith("%s")
+
+
+def test_a_quoted_identifier_is_untouched() -> None:
+    rewritten = translate('SELECT "weird?column" FROM t WHERE id = ?', "%s")
+
+    assert '"weird?column"' in rewritten
+    assert rewritten.endswith("%s")
+
+
+def test_comments_are_untouched() -> None:
+    assert translate("SELECT 1 -- why?\n", "%s") == "SELECT 1 -- why?\n"
+    assert translate("/* why? */ SELECT 1", "%s") == "/* why? */ SELECT 1"
+
+
+def test_the_wrapper_passes_sqlite_through_unchanged(tmp_path: Path) -> None:
+    conn = open_target(parse(tmp_path / "x.db"))
+    try:
+        conn.execute("CREATE TABLE t (id INTEGER, question TEXT)")
+        conn.execute("INSERT INTO t (id, question) VALUES (?, ?)", (1, "why?"))
+        found = conn.execute("SELECT question FROM t WHERE id = ?", (1,)).fetchone()
+        assert found["question"] == "why?"
+    finally:
+        conn.close()
+
+
+def test_the_wrapper_exposes_transaction_state(tmp_path: Path) -> None:
+    conn = open_target(parse(tmp_path / "x.db"))
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        assert conn.in_transaction
+        conn.execute("COMMIT")
+        assert not conn.in_transaction
+    finally:
+        conn.close()
+
+
+def test_executescript_refuses_a_non_sqlite_dialect() -> None:
+    conn = Connection(raw=object(), dialect="postgres")
+
+    with pytest.raises(DatabaseDenied, match="executescript"):
+        conn.executescript("CREATE TABLE t (id int);")
+
+
+def test_a_server_dialect_wrapper_rewrites_what_it_is_handed() -> None:
+    class Recorder:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, object]] = []
+
+        def execute(self, sql: str, params: object = ()) -> None:
+            self.calls.append((sql, params))
+
+    raw = Recorder()
+    conn = Connection(raw=raw, dialect="postgres")
+
+    conn.execute("SELECT '?' AS q WHERE id = ?", (7,))
+
+    assert raw.calls == [("SELECT '?' AS q WHERE id = %s", (7,))]
 
 
 def test_the_home_variable_still_decides_where_the_file_goes(

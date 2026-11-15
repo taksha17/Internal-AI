@@ -112,7 +112,110 @@ def parse(source: str | Path) -> Target:
     )
 
 
-def open_target(target: Target) -> sqlite3.Connection:
+PLACEHOLDERS: dict[str, str] = {
+    "sqlite": "?",
+    "sqlite3": "?",
+    "file": "?",
+    "postgres": "%s",
+    "postgresql": "%s",
+}
+
+
+def translate(sql: str, placeholder: str) -> str:
+    """Rewrite ``?`` placeholders, leaving quoted text and comments untouched.
+
+    A literal that contains a question mark is data (a JSON blob, a question in a
+    prompt); rewriting it would corrupt the row. The scanner is what makes the
+    shim safe enough to sit on the write path of every statement.
+    """
+    if placeholder == "?" or "?" not in sql:
+        return sql
+    out: list[str] = []
+    index = 0
+    length = len(sql)
+    while index < length:
+        char = sql[index]
+        pair = sql[index : index + 2]
+        if char == "'":
+            end = _skip_quoted(sql, index, "'")
+            out.append(sql[index:end])
+            index = end
+            continue
+        if char == '"':
+            end = _skip_quoted(sql, index, '"')
+            out.append(sql[index:end])
+            index = end
+            continue
+        if pair == "--":
+            end = sql.find("\n", index)
+            end = length if end == -1 else end
+            out.append(sql[index:end])
+            index = end
+            continue
+        if pair == "/*":
+            end = sql.find("*/", index)
+            end = length if end == -1 else end + 2
+            out.append(sql[index:end])
+            index = end
+            continue
+        out.append(placeholder if char == "?" else char)
+        index += 1
+    return "".join(out)
+
+
+def _skip_quoted(sql: str, start: int, quote: str) -> int:
+    """Index just past a quoted run, honouring the doubled-quote escape."""
+    index = start + 1
+    while index < len(sql):
+        if sql[index] == quote:
+            if sql[index + 1 : index + 2] == quote:
+                index += 2
+                continue
+            return index + 1
+        index += 1
+    return len(sql)
+
+
+class Connection:
+    """A connection that speaks the schema's sqlite dialect and no other yet.
+
+    Wrapping the connection rather than rewriting every call site means the
+    placeholders and row access live in one place, and this wrapper runs on every
+    statement the suite executes -- in pass-through for sqlite -- so the shim
+    cannot rot while the PostgreSQL schema is still being ported.
+    """
+
+    def __init__(self, raw: Any, dialect: str) -> None:
+        self.raw = raw
+        self.dialect = dialect
+        self.placeholder = PLACEHOLDERS.get(dialect, "?")
+
+    @property
+    def is_sqlite(self) -> bool:
+        return self.dialect in SQLITE_SCHEMES
+
+    def execute(self, sql: str, params: Any = ()) -> Any:
+        return self.raw.execute(translate(sql, self.placeholder), params)
+
+    def executemany(self, sql: str, rows: Any) -> Any:
+        return self.raw.executemany(translate(sql, self.placeholder), rows)
+
+    def executescript(self, script: str) -> Any:
+        if not self.is_sqlite:
+            raise DatabaseDenied(
+                "executescript runs a sqlite schema; a PostgreSQL schema is applied "
+                "statement by statement in one transaction"
+            )
+        return self.raw.executescript(script)
+
+    def close(self) -> None:
+        self.raw.close()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.raw, name)
+
+
+def open_target(target: Target) -> Connection:
     """A connection to this target, or a refusal naming why not.
 
     Only sqlite has a schema here. Opening a PostgreSQL connection would produce a
@@ -131,7 +234,7 @@ def open_target(target: Target) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=30000")
-    return conn
+    return Connection(conn, target.scheme)
 
 
 def describe(target: Target) -> dict[str, Any]:

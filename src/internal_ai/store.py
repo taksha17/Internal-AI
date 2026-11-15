@@ -89,15 +89,15 @@ class Store:
         # caller believes it has a database.
         self.target = dialects.parse(db_path)
         self._local = threading.local()
-        self._connections: list[sqlite3.Connection] = []
+        self._connections: list[dialects.Connection] = []
         self._lock = threading.Lock()
         self._connection()
 
     @property
-    def conn(self) -> sqlite3.Connection:
+    def conn(self) -> dialects.Connection:
         return self._connection()
 
-    def _connection(self) -> sqlite3.Connection:
+    def _connection(self) -> dialects.Connection:
         existing = getattr(self._local, "conn", None)
         if existing is not None:
             return existing
