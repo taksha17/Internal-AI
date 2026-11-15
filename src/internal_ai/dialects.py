@@ -314,7 +314,16 @@ class Connection:
         return self.raw.execute(translate(sql, self.placeholder), params)
 
     def executemany(self, sql: str, rows: Any) -> Any:
-        return self.raw.executemany(translate(sql, self.placeholder), rows)
+        translated = translate(sql, self.placeholder)
+        direct = getattr(self.raw, "executemany", None)
+        if direct is not None:
+            return direct(translated, rows)
+        # psycopg keeps executemany on the cursor, sqlite on the connection.
+        cursor = self.raw.cursor()
+        try:
+            return cursor.executemany(translated, rows)
+        finally:
+            cursor.close()
 
     def executescript(self, script: str) -> Any:
         if not self.is_sqlite:
