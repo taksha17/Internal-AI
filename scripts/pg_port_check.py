@@ -20,13 +20,12 @@ import os
 import sqlite3
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from internal_ai.db import SCHEMA
-from internal_ai.dialects import postgres_schema
+from internal_ai.dialects import postgres_schema, split_statements
 
 
 def sqlite_inventory(conn: sqlite3.Connection) -> dict[str, set[str]]:
@@ -81,18 +80,18 @@ def main() -> int:
         print("INTERNAL_AI_TEST_PG_URL is not set; nothing to compare against")
         return 2
 
-    ddl = postgres_schema(SCHEMA)
-    with tempfile.NamedTemporaryFile("w", suffix=".sql", delete=False) as handle:
-        handle.write(ddl)
-        ddl_path = handle.name
-    applied = subprocess.run(
-        ["psql", "-v", "ON_ERROR_STOP=1", "-q", "-d", url, "-f", ddl_path],
-        capture_output=True,
-        text=True,
-    )
-    if applied.returncode != 0:
-        print("applying the PostgreSQL schema failed:\n" + applied.stderr.strip())
-        return 1
+    # Applied exactly the way `init_db` applies it: the same splitter, one
+    # statement per round trip, so a statement the splitter mangles fails here
+    # rather than on the first request that needs the table.
+    statements = split_statements(postgres_schema(SCHEMA))
+    for index, statement in enumerate(statements, start=1):
+        try:
+            psql(url, statement)
+        except SystemExit as failure:
+            print(f"statement {index} of {len(statements)} was rejected: {failure}")
+            print(statement[:400])
+            return 1
+    print(f"applied {len(statements)} statements")
 
     with sqlite3.connect(":memory:") as local:
         expected = sqlite_inventory(local)

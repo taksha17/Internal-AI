@@ -10,6 +10,9 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
+
+from internal_ai.dialects import postgres_schema, split_statements
 
 SCHEMA_VERSION = 1
 
@@ -438,7 +441,16 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
-def init_db(conn: sqlite3.Connection) -> None:
+def init_db(conn: Any) -> None:
+    """Create or migrate the schema on whichever database this is.
+
+    The server path applies the generated schema statement by statement and stops
+    there: it has no history to migrate, because a server install is created from
+    this schema rather than from an older sqlite file.
+    """
+    if not getattr(conn, "is_sqlite", True):
+        _init_db_server(conn)
+        return
     conn.executescript(SCHEMA)
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(dataset_records)").fetchall()}
     if "split" not in columns:
@@ -519,9 +531,21 @@ def init_db(conn: sqlite3.Connection) -> None:
     )
 
 
+def _init_db_server(conn: Any) -> None:
+    for statement in split_statements(postgres_schema(SCHEMA)):
+        conn.execute(statement)
+    conn.execute(
+        "INSERT INTO schema_meta(key, value) VALUES(?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        ("version", str(SCHEMA_VERSION)),
+    )
+
+
 @contextmanager
-def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
-    conn.execute("BEGIN IMMEDIATE")
+def transaction(conn: Any) -> Iterator[Any]:
+    # IMMEDIATE takes sqlite's write lock up front; a server takes it on the first
+    # write instead, which is the same guarantee without a lock nobody else needs.
+    conn.execute("BEGIN" if not getattr(conn, "is_sqlite", True) else "BEGIN IMMEDIATE")
     try:
         yield conn
     except Exception:

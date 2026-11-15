@@ -14,7 +14,7 @@ import pytest
 from internal_ai import dialects
 from internal_ai.config import Settings
 from internal_ai.context import Platform
-from internal_ai.db import SCHEMA
+from internal_ai.db import SCHEMA, init_db, transaction
 from internal_ai.dialects import (
     Connection,
     DatabaseDenied,
@@ -23,6 +23,7 @@ from internal_ai.dialects import (
     open_target,
     parse,
     postgres_schema,
+    split_statements,
     translate,
 )
 from internal_ai.store import Store
@@ -50,13 +51,39 @@ def test_an_in_memory_url_is_recognised() -> None:
         _ = target.path
 
 
-def test_postgresql_is_refused_with_the_reason() -> None:
-    with pytest.raises(DatabaseDenied) as refused:
-        parse("postgresql://user:secret@db.internal:5432/internal_ai")
+def test_postgresql_is_a_target_now_that_the_schema_is_generated() -> None:
+    target = parse("postgresql://user:secret@db.internal:5432/internal_ai")
 
-    assert "not ported" in str(refused.value)
-    assert "INTERNAL_AI_DATABASE_URL" in str(refused.value)
-    assert "secret" not in str(refused.value)
+    assert target.scheme == "postgresql"
+    assert not target.is_sqlite
+    assert "secret" not in target.label
+
+
+def test_a_server_url_without_a_host_is_refused() -> None:
+    with pytest.raises(DatabaseDenied, match="names no host"):
+        parse("postgresql:///internal_ai")
+
+
+def test_opening_a_server_target_without_the_driver_names_the_extra(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_psycopg(name: str, *args: object, **kwargs: object) -> object:
+        if name.startswith("psycopg"):
+            raise ModuleNotFoundError(f"No module named {name!r}")
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(builtins, "__import__", no_psycopg)
+
+    with pytest.raises(DatabaseDenied) as refused:
+        open_target(parse("postgresql://u:p@127.0.0.1:5433/internal_ai"))
+
+    message = str(refused.value)
+    assert "psycopg" in message
+    assert "internal-ai[postgres]" in message
 
 
 def test_an_unknown_scheme_is_refused_rather_than_guessed() -> None:
@@ -125,7 +152,17 @@ def test_a_configured_url_wins_over_the_default(
 def test_a_platform_refuses_a_url_it_cannot_serve(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv(dialects.ENV_DATABASE_URL, "postgresql://u:p@localhost/ai")
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_psycopg(name: str, *args: object, **kwargs: object) -> object:
+        if name.startswith("psycopg"):
+            raise ModuleNotFoundError(f"No module named {name!r}")
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(builtins, "__import__", no_psycopg)
+    monkeypatch.setenv(dialects.ENV_DATABASE_URL, "postgresql://u:p@127.0.0.1:5433/ai")
 
     with pytest.raises(DatabaseDenied):
         Platform.create(root=tmp_path)
@@ -259,6 +296,84 @@ def test_the_generated_schema_is_statement_terminated() -> None:
     assert ddl.count("CREATE TABLE") == 31
     assert not ddl.strip().endswith(";\n\n")
     assert "END;" in ddl
+
+
+class _FakeServer:
+    """A server connection that records what would be sent."""
+
+    is_sqlite = False
+    dialect = "postgres"
+
+    def __init__(self) -> None:
+        self.statements: list[tuple[str, tuple[object, ...]]] = []
+
+    def execute(self, sql: str, params: object = ()) -> _FakeServer:
+        self.statements.append((sql, tuple(params) if params else ()))
+        return self
+
+    def close(self) -> None:
+        return None
+
+
+def test_a_function_body_is_one_statement() -> None:
+    sql = (
+        "CREATE FUNCTION f() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'x'; END; $$ "
+        "LANGUAGE plpgsql; CREATE TABLE t (id int);"
+    )
+
+    statements = split_statements(sql)
+
+    assert len(statements) == 2
+    assert statements[0].endswith("LANGUAGE plpgsql")
+    assert statements[1] == "CREATE TABLE t (id int)"
+
+
+def test_a_semicolon_inside_a_literal_or_comment_does_not_split() -> None:
+    statements = split_statements("INSERT INTO t VALUES ('a;b'); SELECT 1 -- why;\n")
+
+    assert len(statements) == 2
+    assert "'a;b'" in statements[0]
+
+
+def test_the_generated_schema_splits_into_its_parts() -> None:
+    statements = split_statements(postgres_schema(SCHEMA))
+
+    assert sum(1 for s in statements if s.startswith("CREATE TABLE")) == 31
+    assert sum(1 for s in statements if "audit_events_append_only" in s) >= 1
+
+
+def test_a_server_database_is_created_statement_by_statement() -> None:
+    conn = _FakeServer()
+
+    init_db(conn)
+
+    sent = "\n".join(sql for sql, _ in conn.statements)
+    assert "CREATE TABLE IF NOT EXISTS tasks" in sent
+    assert "audit_events_append_only" in sent
+    assert "AUTOINCREMENT" not in sent
+    assert len(conn.statements) > 30
+    last_sql, last_params = conn.statements[-1]
+    assert last_sql.startswith("INSERT INTO schema_meta")
+    assert last_params == ("version", "1")
+
+
+def test_a_server_transaction_does_not_take_sqlite_s_write_lock() -> None:
+    conn = _FakeServer()
+
+    with transaction(conn):
+        pass
+
+    assert [sql for sql, _ in conn.statements] == ["BEGIN", "COMMIT"]
+
+
+def test_a_sqlite_transaction_still_opens_immediately(tmp_path: Path) -> None:
+    conn = open_target(parse(tmp_path / "tx.db"))
+    try:
+        with transaction(conn):
+            conn.execute("CREATE TABLE t (id INTEGER)")
+        assert conn.execute("SELECT COUNT(*) AS n FROM t").fetchone()["n"] == 0
+    finally:
+        conn.close()
 
 
 def test_the_home_variable_still_decides_where_the_file_goes(

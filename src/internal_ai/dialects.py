@@ -6,12 +6,11 @@ not be discovered halfway through a migration -- so the target is parsed here,
 the sqlite case keeps working exactly as before, and a PostgreSQL URL is refused
 with the reason and the next step rather than opening something that looks alive.
 
-The refusal is deliberate. The schema in ``db.py`` is sqlite through and through:
-PRAGMA pragmas, ``AUTOINCREMENT``, ``strftime``, triggers, and ``INSERT OR
-REPLACE``. Pointing a PostgreSQL connection at it would fail on the first
-statement with a syntax error an operator has to decode; naming the gap is more
-useful than a traceback, and it keeps a half-ported database from looking
-supported.
+The schema a server gets is generated from the sqlite text by ``postgres_schema``,
+so the two cannot drift; ``init_db`` applies it statement by statement when the
+connection speaks PostgreSQL. What is still missing is the driver: without
+``psycopg`` nothing can connect, and saying so is better than a handle that looks
+alive until its first statement fails.
 """
 
 from __future__ import annotations
@@ -27,12 +26,10 @@ ENV_DATABASE_URL = "INTERNAL_AI_DATABASE_URL"
 SQLITE_SCHEMES = frozenset({"sqlite", "sqlite3", "file"})
 POSTGRES_SCHEMES = frozenset({"postgres", "postgresql"})
 
-POSTGRES_NOT_PORTED = (
-    "PostgreSQL is not ported yet: the schema still uses PRAGMA, AUTOINCREMENT, "
-    "strftime, triggers and INSERT OR REPLACE, none of which exist there. Set "
-    f"{ENV_DATABASE_URL} to a sqlite:/// path until the migration lands; a "
-    "connection that opened against the sqlite schema would fail on its first "
-    "statement."
+POSTGRES_DRIVER_MISSING = (
+    "PostgreSQL needs its optional driver and it is not installed: "
+    "pip install 'internal-ai[postgres]'. The schema is generated and verified "
+    "against a server, but no statement can be sent without psycopg."
 )
 
 
@@ -106,7 +103,9 @@ def parse(source: str | Path) -> Target:
             return Target("sqlite", ":memory:")
         return Target(scheme, location)
     if scheme in POSTGRES_SCHEMES:
-        raise DatabaseDenied(POSTGRES_NOT_PORTED)
+        if not parsed.netloc:
+            raise DatabaseDenied(f"{text} names no host")
+        return Target(scheme, text)
     raise DatabaseDenied(
         f"unknown database scheme {scheme!r}; this install speaks sqlite and is "
         "being ported to postgresql"
@@ -135,6 +134,64 @@ CREATE TRIGGER audit_events_no_delete
 """
 
 _TRIGGER_BLOCK = re.compile(r"CREATE\s+TRIGGER\b.*?END\s*;", re.IGNORECASE | re.DOTALL)
+
+
+def _dollar_tag(sql: str, index: int) -> str:
+    """The opening tag of a dollar-quoted body, or empty if this is not one."""
+    match = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$").match(sql, index)
+    return match.group(0) if match else ""
+
+
+def split_statements(sql: str) -> list[str]:
+    """Statements in order, keeping dollar-quoted bodies and literals whole.
+
+    A PL/pgSQL function body contains semicolons, so splitting on ``;`` would
+    hand the server half a function and fail the migration somewhere unrelated.
+    """
+    statements: list[str] = []
+    current: list[str] = []
+    index = 0
+    while index < len(sql):
+        char = sql[index]
+        pair = sql[index : index + 2]
+        if char in {"'", '"'}:
+            end = _skip_quoted(sql, index, char)
+            current.append(sql[index:end])
+            index = end
+            continue
+        if char == "$":
+            tag = _dollar_tag(sql, index)
+            if tag:
+                end = sql.find(tag, index + len(tag))
+                end = len(sql) if end == -1 else end + len(tag)
+                current.append(sql[index:end])
+                index = end
+                continue
+        if pair == "--":
+            end = sql.find("\n", index)
+            end = len(sql) if end == -1 else end
+            current.append(sql[index:end])
+            index = end
+            continue
+        if pair == "/*":
+            end = sql.find("*/", index)
+            end = len(sql) if end == -1 else end + 2
+            current.append(sql[index:end])
+            index = end
+            continue
+        if char == ";":
+            text = "".join(current).strip()
+            if text:
+                statements.append(text)
+            current = []
+            index += 1
+            continue
+        current.append(char)
+        index += 1
+    tail = "".join(current).strip()
+    if tail:
+        statements.append(tail)
+    return statements
 
 
 def postgres_schema(schema: str) -> str:
@@ -271,8 +328,8 @@ def open_target(target: Target) -> Connection:
     handle that cannot run a single statement of ``db.py``, so the refusal happens
     before the driver is asked for anything.
     """
-    if not target.is_sqlite:
-        raise DatabaseDenied(POSTGRES_NOT_PORTED)
+    if target.scheme in POSTGRES_SCHEMES:
+        return _open_postgres(target)
     if target.is_memory:
         conn = sqlite3.connect(":memory:", isolation_level=None, timeout=30.0)
     else:
@@ -284,6 +341,21 @@ def open_target(target: Target) -> Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=30000")
     return Connection(conn, target.scheme)
+
+
+def _open_postgres(target: Target) -> Connection:
+    """A server connection, or the refusal that names what is missing.
+
+    Autocommit is on because the application manages its own transactions and the
+    server would otherwise keep one open from the first INSERT until close.
+    """
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+    except ModuleNotFoundError as missing:
+        raise DatabaseDenied(POSTGRES_DRIVER_MISSING) from missing
+    raw = psycopg.connect(target.location, autocommit=True, row_factory=dict_row)
+    return Connection(raw, "postgres")
 
 
 def describe(target: Target) -> dict[str, Any]:
