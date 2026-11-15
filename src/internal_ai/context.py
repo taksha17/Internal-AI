@@ -42,7 +42,7 @@ class Platform:
     ) -> Platform:
         settings = Settings.from_env(root)
         settings.ensure_dirs()
-        store = Store(settings.db_path)
+        store = Store(settings.database_url)
         audit = AuditLog(store)
         gates = GateService(store)
         budget = BudgetManager(store, project=project)

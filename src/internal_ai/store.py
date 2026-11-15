@@ -14,7 +14,8 @@ import threading
 from collections.abc import Iterable
 from typing import Any
 
-from internal_ai.db import connect, init_db, transaction
+from internal_ai import dialects
+from internal_ai.db import init_db, transaction
 from internal_ai.domain import (
     AuditEvent,
     BudgetLimit,
@@ -84,6 +85,9 @@ class Store:
 
     def __init__(self, db_path: Any) -> None:
         self.db_path = db_path
+        # A path or a URL; an unsupported scheme is refused here, before any
+        # caller believes it has a database.
+        self.target = dialects.parse(db_path)
         self._local = threading.local()
         self._connections: list[sqlite3.Connection] = []
         self._lock = threading.Lock()
@@ -97,7 +101,7 @@ class Store:
         existing = getattr(self._local, "conn", None)
         if existing is not None:
             return existing
-        conn = connect(self.db_path)
+        conn = dialects.open_target(self.target)
         init_db(conn)
         self._local.conn = conn
         with self._lock:
