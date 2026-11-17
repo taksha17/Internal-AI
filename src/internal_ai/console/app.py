@@ -87,6 +87,7 @@ from internal_ai.training.provenance import OPEN_WEIGHT_ALLOWED, POLICY_ID, prov
 HERE = Path(__file__).resolve().parent
 SESSION_COOKIE = "iai_session"
 SIGNIN_COOKIE = "iai_signin"
+OIDC_STATE_COOKIE = "iai_oidc"
 SIGNIN_ATTEMPTS = 10
 SIGNIN_WINDOW_SECONDS = 300
 
@@ -512,6 +513,12 @@ def mount_console(
         except oidc.OidcDenied as exc:
             return None, str(exc)
 
+    def signin_refused(request: Request, error: str, status_code: int = 400) -> HTMLResponse:
+        """A sign-in that did not finish, with the browser's half of the state cleared."""
+        response = signin_page(request, error, status_code)
+        response.delete_cookie(OIDC_STATE_COOKIE, path="/console/signin/oidc")
+        return response
+
     def signin_page(request: Request, error: str = "", status_code: int = 200) -> HTMLResponse:
         token = secrets.token_urlsafe(24)
         provider, provider_error = configured_provider()
@@ -552,19 +559,36 @@ def mount_console(
         if provider is None:
             return signin_page(request, provider_error or "no identity provider is configured", 503)
         state, nonce = oidc.new_state()
+        # The state alone proves nothing about the browser that finishes with it:
+        # a callback link is a URL, and a URL travels. This random value goes into
+        # the cache beside the nonce and into this browser's own cookie, so a link
+        # minted in one browser cannot sign another one in.
+        browser = secrets.token_urlsafe(24)
         try:
             url, verifier = await run_in_threadpool(oidc.OidcClient(provider).begin, state, nonce)
         except oidc.OidcDenied as exc:
             return signin_page(request, message(exc), 502)
-        # The state is the only thing tying the callback back to this browser, so
-        # it is single use and lives in the shared cache when there is one: a
-        # second console process has to be able to read it.
+        # The cache carries the state because a second console process has to be
+        # able to read it; with no shared cache it is process-local, as the
+        # runbook already says a multi-process install needs one.
         get_platform().cache.set(
             f"oidc:state:{state}",
-            json.dumps({"nonce": nonce, "verifier": verifier}),
+            json.dumps({"nonce": nonce, "verifier": verifier, "browser": browser}),
             oidc.STATE_SECONDS,
         )
-        return RedirectResponse(url, status_code=303)
+        response = RedirectResponse(url, status_code=303)
+        # Lax, not Strict: the provider sends the browser back with a cross-site
+        # top-level GET, and a Strict cookie would not be sent with it.
+        response.set_cookie(
+            OIDC_STATE_COOKIE,
+            browser,
+            httponly=True,
+            samesite="lax",
+            secure=secure_cookies,
+            path="/console/signin/oidc",
+            max_age=oidc.STATE_SECONDS,
+        )
+        return response
 
     @app.get("/console/signin/oidc/callback", include_in_schema=False)
     async def oidc_callback(
@@ -575,7 +599,9 @@ def mount_console(
             return signin_page(request, provider_error or "no identity provider is configured", 503)
         if error:
             # The provider's own text is remote and is not repeated on this page.
-            return signin_page(request, "the identity provider refused the sign-in", 401)
+            if state:
+                get_platform().cache.delete(f"oidc:state:{state}")
+            return signin_refused(request, "the identity provider refused the sign-in", 401)
         client_id = request.client.host if request.client else "unknown"
         if not limiter.allow(client_id):
             return signin_page(request, "too many sign-in attempts; wait a few minutes", 429)
@@ -583,13 +609,32 @@ def mount_console(
         key = f"oidc:state:{state}" if state else ""
         pending = platform.cache.get(key) if key else None
         if not pending:
-            return signin_page(
-                request, "this sign-in link has expired or was already used; start again", 400
+            return signin_refused(
+                request, "this sign-in link has expired or was already used; start again"
+            )
+        try:
+            remembered = json.loads(pending)
+        except ValueError:
+            platform.cache.delete(key)
+            return signin_refused(
+                request, "this sign-in link has expired or was already used; start again"
+            )
+        started_here = str(remembered.get("browser", ""))
+        arrived_with = request.cookies.get(OIDC_STATE_COOKIE, "")
+        if (
+            not started_here
+            or not arrived_with
+            or not hmac.compare_digest(arrived_with.encode(), started_here.encode())
+        ):
+            # The link was used somewhere other than the browser that asked for
+            # it, so it is spent: whoever holds it can start a fresh sign-in.
+            platform.cache.delete(key)
+            return signin_refused(
+                request, "this sign-in was started in another browser; start again here"
             )
         platform.cache.delete(key)
         identity = IdentityService(platform)
         try:
-            remembered = json.loads(pending)
             claims = await run_in_threadpool(
                 oidc.OidcClient(provider).complete,
                 code,
@@ -598,9 +643,9 @@ def mount_console(
             )
             actor = await run_in_threadpool(identity.sign_in_with_identity, claims, client_id)
         except (KeyError, oidc.OidcDenied, ValueError) as exc:
-            return signin_page(request, message(exc), 401)
+            return signin_refused(request, message(exc), 401)
         except AuthenticationError as exc:
-            return signin_page(request, str(exc), 401)
+            return signin_refused(request, str(exc), 401)
         session = identity.rotate_session(request.cookies.get(SESSION_COOKIE, ""), actor)
         response = redirect("/console/home")
         response.set_cookie(
@@ -611,6 +656,7 @@ def mount_console(
             secure=secure_cookies,
             path="/console",
         )
+        response.delete_cookie(OIDC_STATE_COOKIE, path="/console/signin/oidc")
         return response
 
     @app.post("/console/signin", include_in_schema=False)

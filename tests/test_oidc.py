@@ -260,6 +260,61 @@ def test_the_state_of_a_sign_in_cannot_be_used_twice(
         assert "expired or was already used" in replay.text
 
 
+def test_a_callback_started_in_another_browser_is_refused(
+    tmp_path: Path, issuer: StubIssuer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A state is a URL, and a URL travels: the browser that finishes must be the one that began."""
+    configured(monkeypatch, issuer)
+    app = create_app(root=tmp_path, llm_kind="scripted")
+    with TestClient(app) as first:
+        platform = app.state.platform
+        admin = enroll(platform, "Ada Admin", ["program_lead"])
+        person = enroll(platform, "Pia Person", ["ml_lead"])
+        IdentityService(platform).link_identity(person.id, issuer.url, SUBJECT, admin)
+
+        state, nonce, challenge = start(first)
+        code = issuer.issue(challenge, nonce)
+        assert first.cookies.get("iai_oidc"), "the starting browser keeps no half of the state"
+
+        # A second browser holding the link: it never asked for this sign-in, so it
+        # has no cookie to answer with.
+        second = TestClient(app)
+        stolen = second.get(f"{CALLBACK}?code={code}&state={state}")
+        assert stolen.status_code == 400
+        assert "started in another browser" in stolen.text
+        assert not second.cookies.get("iai_session")
+
+        # The link is spent by the attempt, so it cannot be replayed into the
+        # browser it was minted for either.
+        assert first.get(f"{CALLBACK}?code={code}&state={state}").status_code == 400
+        assert not first.cookies.get("iai_session")
+        assert (
+            IdentityService(platform).resume_session(first.cookies.get("iai_session", "")) is None
+        )
+
+
+def test_a_callback_without_the_browser_cookie_is_refused(
+    tmp_path: Path, issuer: StubIssuer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Deleting the cookie is what a link pasted into a fresh browser looks like."""
+    configured(monkeypatch, issuer)
+    app = create_app(root=tmp_path, llm_kind="scripted")
+    with TestClient(app) as client:
+        platform = app.state.platform
+        admin = enroll(platform, "Ada Admin", ["program_lead"])
+        person = enroll(platform, "Pia Person", ["ml_lead"])
+        IdentityService(platform).link_identity(person.id, issuer.url, SUBJECT, admin)
+
+        state, nonce, challenge = start(client)
+        code = issuer.issue(challenge, nonce)
+        client.cookies.delete("iai_oidc")
+
+        refused = client.get(f"{CALLBACK}?code={code}&state={state}")
+        assert refused.status_code == 400
+        assert "started in another browser" in refused.text
+        assert not client.cookies.get("iai_session")
+
+
 def test_an_identity_nobody_linked_is_refused(
     tmp_path: Path, issuer: StubIssuer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
