@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Artifacts{% endblock %}
+{% block crumb %}Artifacts{% endblock %}
+{% block content %}
+{{ m.page_head("Artifacts", "What each model card records about the bytes it was promoted from, and the check the loader runs before it answers anything.") }}
+{% call m.data_table([("Model", false, "name"), ("Digest",), ("Files", true, "files", "desc"), ("Signed",), ("Check",)], table) %}
+  {% for row in rows %}
+  <tr>
+    <td><a href="/console/models">{{ row.model }} v{{ row.version }}</a> <span class="muted small">{{ row.status }}</span></td>
+    <td>{% if row.recorded %}<code class="small">{{ row.digest[:16] }}</code> <span class="muted small">{{ row.size }} bytes</span>{% else %}<span class="muted">none recorded</span>{% endif %}</td>
+    <td class="num">{{ row.files if row.recorded else "" }}</td>
+    <td>{% if row.signed %}<span class="muted small">key {{ row.key_id }}</span>{% elif row.recorded %}<span class="muted">unsigned</span>{% else %}<span class="muted">n/a</span>{% endif %}</td>
+    <td>
+      {% if row.recorded and can("verify_artifact") %}
+      <form method="post" action="/console/artifacts/{{ row.id }}/verify" class="inline-form">{{ m.csrf_field() }}<button type="submit">Check now</button></form>
+      {% elif row.recorded %}
+      <span class="muted small">needs ml_lead, security or infra_engineer</span>
+      {% else %}
+      <span class="muted small">nothing to check</span>
+      {% endif %}
+    </td>
+  </tr>
+  {% else %}
+  {{ m.empty_row(5, "No models yet", "An artifact is recorded when a training run is promoted to a model card.", "/console/models", "Open models") }}
+  {% endfor %}
+{% endcall %}
+<section class="card">
+  <h2>What a check proves</h2>
+  <p class="muted">Checking now hashes every file on disk against the stored manifest and verifies the manifest's signature against this install's audit key. A pass means the directory at the recorded path is the one that was promoted; a refusal names what changed, what went missing, or which key signed it instead.</p>
+</section>
+{% endblock %}

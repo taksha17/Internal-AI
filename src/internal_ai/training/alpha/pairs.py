@@ -18,9 +18,13 @@ model that wrote the questions would be third-party output in the training set.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import random
 import re
 from typing import Any
+
+PROMPT_VERSION = "alpha-pairs-v1"
 
 INSTRUCTION = (
     "Corpus lookup. Answer only from the corpus text you were trained on, and cite the file "
@@ -199,6 +203,24 @@ def prompt_for(question: str) -> str:
     prompt it will be asked under.
     """
     return f"{INSTRUCTION}\nQuestion: {question}\nAnswer:"
+
+
+def prompt_fingerprint() -> str:
+    """The id of these prompts: a hash of their text, not the version label.
+
+    Training, evaluation and serving all call ``prompt_for`` and
+    ``prompt_for_candidates``, so they cannot ask in different words. They can still
+    drift from a model that was trained on an earlier wording, and a version string
+    does not catch that: an edit that forgets to bump it is exactly the edit this
+    catches. The card records this id, so a model says which prompt produced it.
+    """
+    body = {
+        "version": PROMPT_VERSION,
+        "answer": prompt_for("{question}"),
+        "selection": prompt_for_candidates("{question}", [("{key}", "{text}")]),
+    }
+    payload = json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def keywords_for(text: str, limit: int = MAX_KEYWORDS) -> str:

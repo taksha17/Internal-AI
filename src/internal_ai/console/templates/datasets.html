@@ -34,4 +34,11 @@
   {% endfor %}
 {% endcall %}
 {{ m.pager(table, "datasets") }}
+<section class="card">
+  <h2>Conversations into training data</h2>
+  <p class="muted">Filing a preference or a failed citation is not training data until it is exported. Each export makes a new unreleased dataset, so its gates still decide whether anything trains on it.</p>
+  <form method="post" action="/console/exports/feedback" class="inline-form">{{ m.csrf_field() }}<button type="submit">Export failed answers</button></form>
+  <form method="post" action="/console/exports/preferences" class="inline-form">{{ m.csrf_field() }}<button type="submit">Export preferences</button></form>
+  <p class="muted small">Exporting failed answers needs data_owner; exporting preferences needs the role that files them.</p>
+</section>
 {% endblock %}

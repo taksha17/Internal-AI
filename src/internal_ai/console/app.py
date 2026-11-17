@@ -30,6 +30,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from internal_ai import brief
+from internal_ai.artifacts import ArtifactDenied
 from internal_ai.console import find as finder
 from internal_ai.console import inbox, lists
 from internal_ai.context import Platform
@@ -40,7 +41,15 @@ from internal_ai.evals import advice
 from internal_ai.gates import GATE_CATALOG, GateError
 from internal_ai.people import PeopleRegistry
 from internal_ai.roles import all_roles
-from internal_ai.services import audit_head, build, compute_advice, governance, webfetch
+from internal_ai.services import (
+    artifacts_view,
+    audit_head,
+    build,
+    compute_advice,
+    conversions,
+    governance,
+    webfetch,
+)
 from internal_ai.services.actor import Actor
 from internal_ai.services.identity import (
     MIN_PASSWORD_LENGTH,
@@ -83,6 +92,7 @@ HARNESS_WINDOW_TOKENS = 8192
 """What the console assumes a model carries, since no served model states one."""
 
 REFUSALS = (
+    ArtifactDenied,
     AuthenticationError,
     PermissionError,
     GateError,
@@ -98,6 +108,7 @@ NAV = [
     ("Datasets", "/console/datasets"),
     ("Training", "/console/jobs"),
     ("Compute", "/console/compute"),
+    ("Artifacts", "/console/artifacts"),
     ("Evaluations", "/console/evals"),
     ("Approvals", "/console/approvals"),
     ("Web fetch", "/console/web"),
@@ -1723,6 +1734,51 @@ def mount_console(
             "/console/compute",
             lambda: compute_advice.attach(ctx.platform, ctx.actor, backend),
             f"backend attached: {backend}. Attaching does not start a run",
+        )
+
+    @app.get("/console/artifacts", include_in_schema=False)
+    def artifacts_page(request: Request) -> Response:
+        ctx = context(request)
+        return render(ctx, "artifacts.html", rows=artifacts_view.rows(ctx.platform))
+
+    @app.post("/console/artifacts/{model_id}/verify", include_in_schema=False)
+    async def artifacts_verify(request: Request, model_id: str) -> Response:
+        ctx = context(request)
+        await posted(ctx)
+        return await act(
+            ctx,
+            "/console/artifacts",
+            lambda: artifacts_view.verify(ctx.platform, ctx.actor, model_id),
+            lambda row: (
+                f"{row['model']} v{row['version']} matches {row['digest'][:16]}: "
+                f"{row['files']} files intact"
+                + (", signature checked" if row["signed"] else ", unsigned card")
+            ),
+        )
+
+    @app.post("/console/datasets/{dataset_id}/audit", include_in_schema=False)
+    async def dataset_audit(request: Request, dataset_id: str) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        sample = form.get("sample_size", "")
+        size = int(sample) if sample.isdigit() else 50
+        return await act(
+            ctx,
+            f"/console/datasets/{dataset_id}",
+            lambda: conversions.rerun_pii(ctx.platform, ctx.actor, dataset_id, size),
+            conversions.audit_message,
+        )
+
+    @app.post("/console/exports/{kind}", include_in_schema=False)
+    async def exports_run(request: Request, kind: str) -> Response:
+        ctx = context(request)
+        await posted(ctx)
+        return await act(
+            ctx,
+            "/console/datasets",
+            lambda: conversions.export(ctx.platform, ctx.actor, kind),
+            conversions.export_message,
+            lambda dataset: f"/console/datasets/{dataset.id}",
         )
 
     @app.get("/console/evals", include_in_schema=False)

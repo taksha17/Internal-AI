@@ -46,6 +46,8 @@ class Action(StrEnum):
     ANCHOR_AUDIT = "anchor_audit"
     ADVISE_COMPUTE = "advise_compute"
     ATTACH_COMPUTE = "attach_compute"
+    VERIFY_ARTIFACT = "verify_artifact"
+    AUDIT_DATASET = "audit_dataset"
 
 
 ANYONE: frozenset[str] = frozenset()
@@ -84,6 +86,8 @@ ACTION_ROLES: dict[Action, frozenset[str]] = {
     # recorded as such.
     Action.ADVISE_COMPUTE: ANYONE,
     Action.ATTACH_COMPUTE: frozenset({"infra_engineer"}),
+    Action.VERIFY_ARTIFACT: frozenset({"ml_lead", "security", "infra_engineer"}),
+    Action.AUDIT_DATASET: frozenset({"data_owner", "compliance", "ml_lead"}),
     Action.MANAGE_PEOPLE: frozenset({"program_lead", "engineering_manager"}),
     Action.VIEW_TRACES: frozenset({"ml_lead", "program_lead", "compliance", "domain_expert"}),
 }

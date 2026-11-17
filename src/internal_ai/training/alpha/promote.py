@@ -27,6 +27,7 @@ from internal_ai.training.alpha.citations import (
     score_answer,
     without_citation,
 )
+from internal_ai.training.alpha.pairs import PROMPT_VERSION, prompt_fingerprint
 from internal_ai.training.alpha.pin import FALLBACK, PRIMARY, RECIPE, LicenseClass, PinnedBase
 from internal_ai.training.ownership import require_released_dataset
 from internal_ai.training.provenance import provenance_mode
@@ -138,6 +139,9 @@ def register_alpha(
         card["base_model_exception"] = exception.id
     card["provenance_mode"] = provenance_mode(platform)
     card["artifact"] = artifact.to_dict()
+    # Which prompt produced these pairs, as a hash of its text. A model trained in
+    # an older wording then says so on its card instead of being inferred from a date.
+    card["prompt"] = {"version": PROMPT_VERSION, "id": prompt_fingerprint()}
     record = reproducibility_beside(adapter_path)
     if record:
         card["reproducibility"] = record
