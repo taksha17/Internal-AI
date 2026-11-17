@@ -92,7 +92,7 @@ def test_stage_refuses_an_unreleased_dataset(
 ) -> None:
     dataset_id = synthetic_dataset(platform, enroll_person, tmp_path, monkeypatch, released=False)
     with pytest.raises(SystemExit, match="not released"):
-        stage(platform, dataset_id, tmp_path / "kaggle")
+        stage(platform, dataset_id, tmp_path / "kaggle", owner="tester")
 
 
 def test_stage_refuses_a_non_synthetic_source(
@@ -102,7 +102,7 @@ def test_stage_refuses_a_non_synthetic_source(
         platform, enroll_person, tmp_path, monkeypatch, legal_status="licensed"
     )
     with pytest.raises(SystemExit, match="synthetic"):
-        stage(platform, dataset_id, tmp_path / "kaggle")
+        stage(platform, dataset_id, tmp_path / "kaggle", owner="tester")
 
 
 def test_stage_refuses_text_without_fake_markers(
@@ -122,7 +122,7 @@ def test_stage_refuses_text_without_fake_markers(
         ),
     )
     with pytest.raises(SystemExit, match="fake marker"):
-        stage(platform, dataset_id, tmp_path / "kaggle")
+        stage(platform, dataset_id, tmp_path / "kaggle", owner="tester")
 
 
 def test_stage_refuses_while_offline(
@@ -132,7 +132,7 @@ def test_stage_refuses_while_offline(
     assert offline_mode() is True
     dataset_id = synthetic_dataset(platform, enroll_person, tmp_path, monkeypatch)
     with pytest.raises(SystemExit, match="offline"):
-        stage(platform, dataset_id, tmp_path / "kaggle")
+        stage(platform, dataset_id, tmp_path / "kaggle", owner="tester")
 
 
 def test_staged_package_carries_texts_questions_and_trainer(
@@ -140,7 +140,7 @@ def test_staged_package_carries_texts_questions_and_trainer(
 ) -> None:
     monkeypatch.setenv("INTERNAL_AI_OFFLINE", "0")
     dataset_id = synthetic_dataset(platform, enroll_person, tmp_path, monkeypatch)
-    out = stage(platform, dataset_id, tmp_path / "kaggle")
+    out = stage(platform, dataset_id, tmp_path / "kaggle", owner="tester")
     dataset_dir = Path(out["dataset_dir"])
     texts = [json.loads(line) for line in (dataset_dir / "train.jsonl").read_text().splitlines()]
     assert len(texts) == FORMS - 4

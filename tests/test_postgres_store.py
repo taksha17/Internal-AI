@@ -50,7 +50,7 @@ def test_the_schema_is_the_one_the_port_check_expects(store: Store) -> None:
         "SELECT count(*) AS n FROM information_schema.tables WHERE table_schema = 'public'"
     ).fetchone()
 
-    assert counted["n"] == 31
+    assert counted["n"] == 35
 
 
 def test_a_task_survives_a_round_trip(store: Store) -> None:

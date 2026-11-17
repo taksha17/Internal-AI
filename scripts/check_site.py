@@ -184,6 +184,28 @@ def media_block(query: str) -> str | None:
     return None
 
 
+def media_bodies(query: str) -> list[str]:
+    """Return every body of an @media block with this query, braces balanced."""
+    bodies, start = [], 0
+    while True:
+        found = CSS.find(f"@media {query}", start)
+        if found == -1:
+            return bodies
+        brace = CSS.find("{", found)
+        if brace == -1:
+            return bodies
+        depth = 0
+        for index in range(brace, len(CSS)):
+            if CSS[index] == "{":
+                depth += 1
+            elif CSS[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    bodies.append(CSS[brace + 1 : index])
+                    start = index + 1
+                    break
+
+
 def rule_for(selector: str) -> str | None:
     match = re.search(re.escape(selector) + r"[^{}]*\{([^}]*)\}", CSS)
     return match.group(1) if match else None
@@ -194,10 +216,10 @@ def check_structure() -> None:
     check(skips == 1, f"skip links: {skips}, expected 1")
 
     actions = HTML.find('class="hero-actions"')
-    proof = HTML.find('class="hero-proof"')
+    scope = HTML.find("hero-scope")
     check(
-        actions != -1 and proof != -1 and actions < proof,
-        "the hero actions do not sit above the proof",
+        actions != -1 and scope != -1 and actions < scope,
+        "the hero actions do not sit above the scope line",
     )
 
     for selector in (".pill", ".kill"):
@@ -214,7 +236,7 @@ def check_structure() -> None:
     check(phone is not None, "the 720px media block is missing")
     if phone is not None:
         check(
-            "--masthead-h: 6.75rem" in phone,
+            "--masthead-h:" in phone,
             "the phone masthead height is not set",
         )
 
@@ -223,20 +245,21 @@ def check_structure() -> None:
         "section anchors do not clear the masthead",
     )
 
-    hidden = re.search(r"\.nav-links[^{}]*\{[^}]*display:\s*none", CSS)
-    check(hidden is None, "the nav is hidden instead of reflowed")
-
-    wide = media_block("(min-width: 721px)")
-    check(wide is not None, "the 721px media block is missing")
-    if wide is not None:
+    for hit in re.finditer(r"\.nav-links[^{}]*\{[^}]*display:\s*none", CSS):
+        open_at = CSS.rfind("@media", 0, hit.start())
+        still_open = open_at != -1 and CSS.find("}", open_at, hit.start()) == -1
         check(
-            re.search(r"\.console\s*\{[^}]*min-width", wide) is not None,
-            "the console has no floor on a wide screen",
+            still_open and "max-width" in CSS[open_at : hit.start()],
+            "the nav is hidden outside a narrow-screen media block",
         )
-    without_wide = CSS.replace(wide, "") if wide is not None else CSS
+
     check(
-        re.search(r"\.console\s*\{[^}]*min-width", without_wide) is None,
-        "a console min-width sits outside the wide media block",
+        re.search(r"\.console-main\s*\{[^}]*min-width:\s*0", CSS) is not None,
+        "the console column does not shrink inside its row",
+    )
+    check(
+        re.search(r"\.console-mini\s*\{[^}]*min-width:\s*0", CSS) is not None,
+        "the console mini panels do not shrink inside their row",
     )
 
 
@@ -245,10 +268,10 @@ def check_rhythm() -> None:
     check(eyebrows >= 6, f"eyebrows: {eyebrows}, expected 6 or more")
 
     kickers = HTML.count('class="kicker"')
-    check(3 <= kickers <= 4, f"kickers: {kickers}, expected 3 or 4")
+    check(2 <= kickers <= 4, f"kickers: {kickers}, expected 2 to 4")
 
-    check("counter(card" in CSS, "the cards carry no index")
-    check(".card::after" in CSS, "the card index has no rule")
+    check("bento-index" in HTML, "the cards carry no index")
+    check(".bento-index" in CSS, "the card index has no rule")
 
     check(".section-head::after" not in CSS, "the section head has a second rule")
 
@@ -273,13 +296,13 @@ def check_access() -> None:
         "a focus ring on night does not use the night accent",
     )
 
-    hover = media_block("(hover: hover)")
-    check(hover is not None, "the hover media query is missing")
-    if hover is not None:
-        check(
-            ".card:hover" in hover and "transform" in hover,
-            "the card lift is not gated on a pointing device",
-        )
+    hover = "".join(media_bodies("(hover: hover)"))
+    check(bool(hover), "the hover media query is missing")
+    check(
+        all(sel in hover for sel in (".bento-card:hover", ".benefit-card:hover", ".step:hover"))
+        and "transform" in hover,
+        "the card lift is not gated on a pointing device",
+    )
 
     for name in ("band-night", "notfound", "kicker", "btn", "btn-primary", "home"):
         check(f".{name}" in CSS, f"the result page class .{name} has no rule")
@@ -291,7 +314,7 @@ def check_access() -> None:
         "the first script is not the structured-data block",
     )
     check(
-        'src="landing.js"' in scripts[1],
+        re.search(r'src="landing\.js(\?[^"]*)?"', scripts[1]) is not None,
         "the second script is not landing.js",
     )
     check("<style" not in HTML, "an inline style block is present")

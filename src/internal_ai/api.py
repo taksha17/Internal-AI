@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from internal_ai.context import Platform
 from internal_ai.engine import PlanError
 from internal_ai.gates import GateError
-from internal_ai.services import governance
+from internal_ai.services import governance, oidc
 from internal_ai.services.actor import Actor
 from internal_ai.services.identity import AuthenticationError, IdentityService
 from internal_ai.services.jobs import JobRunner
@@ -167,6 +167,33 @@ def create_app(
         if x_internal_key != key:
             raise HTTPException(status_code=401, detail="invalid or missing X-Internal-Key")
 
+    def provider_actor(platform: Platform, token: str) -> Actor | None:
+        """The person an identity provider's token stands for, or None if it is not one.
+
+        A signed JWT from the configured provider is checked the way the console
+        checks one (key, issuer, audience, time) and then resolved through the
+        same `(issuer, subject)` binding, so a token is worth exactly what a link
+        an administrator made is worth. Nothing here changes what the person may
+        do: the caller's capability check runs on the resolved roles as before.
+        An opaque token, or an install with no provider, returns None and keeps
+        the personal-token refusal below.
+        """
+        if token.count(".") != 2:
+            return None
+        try:
+            config = oidc.OidcConfig.configured()
+        except oidc.OidcDenied as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+        if config is None:
+            return None
+        try:
+            claims = oidc.OidcClient(config).verify(token, None, audience=config.api_audience)
+            return IdentityService(platform).sign_in_with_identity(
+                claims, client="api", record_sign_in=False
+            )
+        except (AuthenticationError, oidc.OidcDenied) as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+
     def require_person(
         authorization: str | None = Header(default=None),
         _: None = Depends(require_key),
@@ -175,12 +202,20 @@ def create_app(
         if scheme.lower() != "bearer" or not token.strip():
             raise HTTPException(
                 status_code=401,
-                detail="governance writes need a personal token: Authorization: Bearer <token>",
+                detail=(
+                    "governance writes need a personal token or a provider token: "
+                    "Authorization: Bearer <token>"
+                ),
             )
-        actor = IdentityService(get_platform()).token_actor(token.strip())
-        if actor is None:
+        token = token.strip()
+        platform = get_platform()
+        actor = IdentityService(platform).token_actor(token)
+        if actor is not None:
+            return actor
+        from_provider = provider_actor(platform, token)
+        if from_provider is None:
             raise HTTPException(status_code=401, detail="invalid or revoked personal token")
-        return actor
+        return from_provider
 
     @app.get("/health")
     def health() -> dict[str, Any]:

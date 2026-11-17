@@ -29,6 +29,10 @@
       <label>Name or person id <input type="text" name="person" autocomplete="username" required autofocus></label>
       <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
       <button type="submit" class="primary">Sign in</button>
+      {% if oidc %}
+      <p class="muted small">This install also signs in through <strong>{{ oidc.issuer }}</strong>, which checks your password instead of this form.</p>
+      <a class="quiet-link" href="/console/signin/oidc">Sign in with the company account</a>
+      {% endif %}
       <p class="muted small">No account? An administrator creates one for you. The first account is created on the command line with <code>internal-ai console create-account --person "Your Name"</code>.</p>
     </form>
   </div>
