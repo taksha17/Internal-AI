@@ -19,6 +19,19 @@ from internal_ai.ids import new_id, now_iso
 from internal_ai.store import Store
 
 
+def _person_dict(row: Any) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "title": row["title"],
+        "roles": [role for role in row["roles"].split(",") if role],
+        "groups": [group for group in row["groups"].split(",") if group],
+        "placeholder": bool(row["placeholder"]),
+        "external_id": row["external_id"],
+        "scim_managed": bool(row["scim_managed"]),
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class Person:
     id: str
@@ -161,17 +174,7 @@ class PeopleRegistry:
     def list_people(self) -> list[dict[str, Any]]:
         self.seed()
         rows = self.store.conn.execute("SELECT * FROM people ORDER BY name").fetchall()
-        return [
-            {
-                "id": row["id"],
-                "name": row["name"],
-                "title": row["title"],
-                "roles": [role for role in row["roles"].split(",") if role],
-                "groups": [group for group in row["groups"].split(",") if group],
-                "placeholder": bool(row["placeholder"]),
-            }
-            for row in rows
-        ]
+        return [_person_dict(row) for row in rows]
 
     def get(self, identifier: str) -> dict[str, Any] | None:
         """A person by id or exact name, from the persisted roster."""
@@ -182,14 +185,57 @@ class PeopleRegistry:
         ).fetchone()
         if row is None:
             return None
-        return {
-            "id": row["id"],
-            "name": row["name"],
-            "title": row["title"],
-            "roles": [role for role in row["roles"].split(",") if role],
-            "groups": [group for group in row["groups"].split(",") if group],
-            "placeholder": bool(row["placeholder"]),
-        }
+        return _person_dict(row)
+
+    def by_external_id(self, external_id: str) -> dict[str, Any] | None:
+        """The person a directory called this, if provisioning recorded it."""
+        if not external_id:
+            return None
+        row = self.store.conn.execute(
+            "SELECT * FROM people WHERE external_id = ?", (external_id,)
+        ).fetchone()
+        return _person_dict(row) if row else None
+
+    def new_directory_person(
+        self, name: str, groups: list[str], roles: list[str], external_id: str
+    ) -> dict[str, Any]:
+        """A person the directory provisioned, whose roles come from its groups.
+
+        `scim_managed` is what separates them from the roster: their roles are
+        recomputed from the group mapping whenever their membership changes, and
+        the console shows the difference rather than pretending they are local.
+        """
+        self.seed()
+        person_id = new_id("ppl")
+        self.store.conn.execute(
+            "INSERT INTO people (id, name, title, roles, groups, placeholder, created_at,"
+            " external_id, scim_managed) VALUES (?,?,?,?,?,0,?,?,1)",
+            (
+                person_id,
+                name,
+                "provisioned by the directory",
+                ",".join(roles),
+                ",".join(groups),
+                now_iso(),
+                external_id,
+            ),
+        )
+        return self.get(person_id) or {}
+
+    def update_directory_person(
+        self, person_id: str, name: str, groups: list[str], roles: list[str], external_id: str
+    ) -> None:
+        self.store.conn.execute(
+            "UPDATE people SET name = ?, groups = ?, roles = ?, external_id = ? WHERE id = ?",
+            (name, ",".join(groups), ",".join(roles), external_id, person_id),
+        )
+
+    def set_directory_membership(self, person_id: str, groups: list[str], roles: list[str]) -> None:
+        """Move one person in or out of a group without touching who manages them."""
+        self.store.conn.execute(
+            "UPDATE people SET groups = ?, roles = ? WHERE id = ?",
+            (",".join(groups), ",".join(roles), person_id),
+        )
 
     def set_groups(self, person_id: str, groups: list[str]) -> None:
         self.seed()

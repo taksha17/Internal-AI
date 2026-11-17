@@ -89,6 +89,7 @@ Change the rule in its own file, never around it.
 | Rule | Home | A change needs |
 | --- | --- | --- |
 | Who may do what | `internal_ai/roles.py` (agents), `services/permissions.py` (people) | the role that needs it and nothing else |
+| What a directory may provision | `services/scim.py` (`PROVISIONABLE_ROLES`, the group mapping) | a token and a mapped group, never an unmapped one; the same session and token revocation `set_disabled` performs |
 | Every agent action | `internal_ai/agent.py`, `internal_ai/tools.py`, `agentic.py` | capability check plus an audit event |
 | Task states | `internal_ai/store.py:ALLOWED_TRANSITIONS` | the map entry is the specification |
 | Spend | `internal_ai/budget.py` | every new spend path calls `record_spend` or `check`; bypassing it is a bug |

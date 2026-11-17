@@ -27,7 +27,7 @@
   {% for person in people %}
   {% set account = accounts.get(person.id) %}
   <tr>
-    <td><strong>{{ person.name }}</strong> {% if person.placeholder %}{{ m.status_badge("placeholder") }}{% endif %}<br><span class="muted small">{{ person.id }}, {{ person.title }}</span></td>
+    <td><strong>{{ person.name }}</strong> {% if person.placeholder %}{{ m.status_badge("placeholder") }}{% endif %}{% if person.scim_managed %} <span class="muted small">directory</span>{% endif %}<br><span class="muted small">{{ person.id }}, {{ person.title }}</span></td>
     <td>{{ person.roles | join(", ") }}</td>
     <td>{{ person.groups | join(", ") }}</td>
     <td>{% if account %}{{ m.status_badge("disabled" if account.disabled else ("must_change" if account.must_change_password else "active")) }}{% else %}<span class="muted">none</span>{% endif %}</td>

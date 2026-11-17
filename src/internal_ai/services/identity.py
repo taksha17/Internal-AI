@@ -194,6 +194,61 @@ class IdentityService:
             subject=person_id,
         )
 
+    def provision_from_directory(self, person_id: str, service: str) -> None:
+        """Give a directory-provisioned person the account they sign in with.
+
+        The password is random and discarded: the directory is the credential,
+        and a password nobody was given cannot be used to reach a dashboard the
+        directory has not vouched for. The pending-change flag stays set as the
+        record of exactly that, and a provider sign-in clears it the way it
+        already does for an account an administrator reset.
+        """
+        person = self.person(person_id)
+        if person is None:
+            raise KeyError(f"unknown person: {person_id}")
+        if person["placeholder"]:
+            raise ValueError(f"{person['name']} is a placeholder identity")
+        if self.account(person_id) is not None:
+            raise ValueError(f"{person['name']} already has an account")
+        stamp = now_iso()
+        self.store.conn.execute(
+            "INSERT INTO accounts (person_id, password_hash, must_change_password, created_by,"
+            " created_at, rotated_at) VALUES (?,?,1,?,?,?)",
+            (person_id, hash_password(secrets.token_urlsafe(32)), service, stamp, stamp),
+        )
+        self.audit.record(
+            actor=service,
+            actor_kind="service",
+            action="account.created",
+            subject=person_id,
+            details={"source": service, "password": "none issued"},
+        )
+
+    def set_disabled_from_directory(self, person_id: str, disabled: bool, service: str) -> None:
+        """Deprovision or reprovision an account on the directory's word.
+
+        Same revocation `set_disabled` performs for an administrator — sessions
+        and personal tokens end — recorded under the service's name so the audit
+        trail does not read as though a person clicked it.
+        """
+        if self.account(person_id) is None:
+            raise KeyError(f"{person_id} has no account")
+        self.store.conn.execute(
+            "UPDATE accounts SET disabled = ? WHERE person_id = ?", (int(disabled), person_id)
+        )
+        if disabled:
+            self.end_all_sessions(person_id)
+            self.store.conn.execute(
+                "UPDATE api_tokens SET revoked = 1 WHERE person_id = ?", (person_id,)
+            )
+        self.audit.record(
+            actor=service,
+            actor_kind="service",
+            action="account.disabled" if disabled else "account.enabled",
+            subject=person_id,
+            details={"source": service, "sessions_revoked": disabled, "tokens_revoked": disabled},
+        )
+
     def change_password(self, person_id: str, current: str, new: str) -> None:
         account = self.account(person_id)
         if account is None or not verify_password(current, account["password_hash"]):
