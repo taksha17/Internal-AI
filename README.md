@@ -328,6 +328,7 @@ you. Every message below is what the platform actually printed.
 | `data release` without `--gate-id` | `error: dataset release requires an approved dataset_release gate` | an approval is passed explicitly, never inferred |
 | release before the language sample is reviewed | `error: a domain expert has not reviewed the language sample` | a person must read the corpus |
 | `tokenizer train` twice | `tokenizer for ds_… is frozen; train it on a new dataset version` | a tokenizer is pinned to its dataset version |
+| `answer` after the adapter changed on disk | `… does not match artifact …: 1 changed, 0 missing or moved` | a passing check expires after `INTERNAL_AI_REVERIFY_SECONDS` (15 minutes); tampering is caught without a restart |
 | `train run` before a frozen eval set | `training waits for a frozen eval set of questions a domain expert filed` | you cannot grade yourself with questions you wrote |
 | `train run` on too small a corpus | `35078 tokens and 209152 parameters are below 20 tokens per parameter` | the floor, and it does not move |
 
