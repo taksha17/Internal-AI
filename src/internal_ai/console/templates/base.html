@@ -14,8 +14,8 @@
 {{ m.sprite() }}
 {% if actor %}<a class="skip" href="#main">Skip to content</a>{% endif %}
 {% if actor %}
-{% set nav_icons = {"Overview": "home", "Pipelines": "map", "Datasets": "layers", "Training": "activity", "Evaluations": "clipboard", "Approvals": "check-circle", "Audit log": "list", "Inbox": "inbox", "Failed answers": "clipboard", "Data": "database", "Models": "cube", "Brief": "gauge", "Ask": "chat", "Harness": "gauge", "Admin": "users"} %}
-{% set nav_rows = [("", "Overview"), ("", "Pipelines"), ("", "Datasets"), ("", "Training"), ("", "Evaluations"), ("", "Approvals"), ("", "Audit log"), ("rule", ""), ("", "Inbox"), ("", "Failed answers"), ("", "Data"), ("", "Models"), ("", "Brief"), ("", "Ask"), ("", "Harness"), ("", "Admin")] %}
+{% set nav_icons = {"Overview": "home", "Pipelines": "map", "Datasets": "layers", "Training": "activity", "Compute": "activity", "Evaluations": "clipboard", "Approvals": "check-circle", "Audit log": "list", "Inbox": "inbox", "Failed answers": "clipboard", "Data": "database", "Models": "cube", "Brief": "gauge", "Ask": "chat", "Harness": "gauge", "Admin": "users"} %}
+{% set nav_rows = [("", "Overview"), ("", "Pipelines"), ("", "Datasets"), ("", "Training"), ("", "Compute"), ("", "Evaluations"), ("", "Approvals"), ("", "Audit log"), ("rule", ""), ("", "Inbox"), ("", "Failed answers"), ("", "Data"), ("", "Models"), ("", "Brief"), ("", "Ask"), ("", "Harness"), ("", "Admin")] %}
 {% set nav_by_label = dict(nav) %}
 <aside class="rail">
   <a class="brand" href="/console/home">
@@ -78,6 +78,9 @@
     </details>
   </div>
 </header>
+{% if not audit_health.ok %}
+<p class="refusal" role="alert">The audit chain is broken at event {{ audit_health.broken_at_seq }}: {{ audit_health.reason }}. Nothing else in this console should be trusted until it is explained. <a href="/console/audit">Open the audit log</a>.</p>
+{% endif %}
 {% endif %}
 <main id="main" tabindex="-1">
   {% for kind, text in flashes %}

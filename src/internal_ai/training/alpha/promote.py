@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from internal_ai.artifacts import store_artifact
 from internal_ai.context import Platform
 from internal_ai.data.records import Record
 from internal_ai.data.splits import contamination_report
@@ -26,6 +27,7 @@ from internal_ai.training.alpha.citations import (
     score_answer,
     without_citation,
 )
+from internal_ai.training.alpha.pairs import PROMPT_VERSION, prompt_fingerprint
 from internal_ai.training.alpha.pin import FALLBACK, PRIMARY, RECIPE, LicenseClass, PinnedBase
 from internal_ai.training.ownership import require_released_dataset
 from internal_ai.training.provenance import provenance_mode
@@ -121,6 +123,9 @@ def register_alpha(
     # to come from the whole tree. Hashing only a file would refuse the one
     # adapter this package can actually promote.
     digest = tree_hash(adapter_path) if adapter_path.is_dir() else file_hash(adapter_path)
+    # The digest names the artifact; the stored manifest is what lets another
+    # install rebuild it and check every file, which a path to this machine cannot.
+    artifact = store_artifact(platform.blobs, adapter_path, signer=platform.audit.signer)
     card = alpha_card(
         base,
         RECIPE,
@@ -133,6 +138,10 @@ def register_alpha(
     if exception is not None:
         card["base_model_exception"] = exception.id
     card["provenance_mode"] = provenance_mode(platform)
+    card["artifact"] = artifact.to_dict()
+    # Which prompt produced these pairs, as a hash of its text. A model trained in
+    # an older wording then says so on its card instead of being inferred from a date.
+    card["prompt"] = {"version": PROMPT_VERSION, "id": prompt_fingerprint()}
     record = reproducibility_beside(adapter_path)
     if record:
         card["reproducibility"] = record

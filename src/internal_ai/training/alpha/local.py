@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from internal_ai.artifacts import ArtifactDenied, require_intact
 from internal_ai.context import Platform
 from internal_ai.domain import ModelVersion
 from internal_ai.llm import Completion, LLMAdapter
@@ -175,6 +176,13 @@ def answer_adapter(platform: Platform, model: ModelVersion) -> LLMAdapter:
         runner = LocalRunnerAdapter()
         require_runner_hash(model, runner)
         return runner
+    # The card says which bytes this artifact was; a directory that changed since
+    # registration loads silently and answers differently, so it is checked before
+    # anything is read from it.
+    try:
+        require_intact(platform.blobs, model.path, model.card, signer=platform.audit.signer)
+    except ArtifactDenied as exc:
+        raise PermissionError(str(exc)) from exc
     adapter_path = Path(model.path or "")
     if adapter_path.is_dir() and (adapter_path / "adapter_config.json").exists():
         from internal_ai.training.alpha.backend import peft_backend

@@ -93,6 +93,16 @@
         <button type="submit">File this question</button></form>
       {% endif %}
     </li>
+    <li>Re-run the privacy check.
+      {% if can("audit_dataset") %}
+      <form method="post" action="/console/datasets/{{ dataset.id }}/audit" class="inline-form">{{ m.csrf_field() }}
+        <label>Sample <input type="number" name="sample_size" value="50" min="1" max="100000"></label>
+        <button type="submit">Sample again</button></form>
+      <span class="muted small">Reports only; release still reads every record.</span>
+      {% else %}
+      <span class="muted small">needs data_owner, compliance or ml_lead</span>
+      {% endif %}
+    </li>
   </ol>
 </section>
 

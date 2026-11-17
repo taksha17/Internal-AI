@@ -41,7 +41,7 @@ def build_corpus(
     actor: str = "data_engineer",
     config: PipelineConfig | None = None,
 ) -> CorpusBuild:
-    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root, platform.blobs)
     sources = [
         Source(
             source_id=path.stem,
@@ -144,7 +144,17 @@ def train_tokenizer_for(
             f"tokenizer for {dataset_id} is frozen; train it on a new dataset version"
         )
     tokenizer.save(path)
-    digest_path.write_text(hashlib.sha256(path.read_bytes()).hexdigest() + "\n", encoding="utf-8")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    digest_path.write_text(digest + "\n", encoding="utf-8")
+    # A tokenizer is an artifact of the dataset it was trained on. Recording it as one
+    # is what lets another machine rebuild it instead of trusting whatever file is on
+    # disk under the same name.
+    from internal_ai.artifacts import store_artifact
+
+    artifact = store_artifact(
+        platform.blobs, path, prefix="tokenizers", signer=platform.audit.signer
+    )
+    _record_tokenizer_artifact(platform, dataset_id, artifact.to_dict())
     from internal_ai.data.mixture import write_shards
 
     shard_dir = platform.settings.models_dir / "shards" / dataset_id
@@ -160,7 +170,7 @@ def train_tokenizer_for(
         details={"vocab_size": tokenizer.vocab_size, "coverage": coverage},
     )
     measured = DataPipeline(
-        platform.store, platform.audit, platform.settings.root
+        platform.store, platform.audit, platform.settings.root, platform.blobs
     ).measure_token_count(dataset_id, tokenizer, actor=actor)
     coverage["tokens"] = measured["tokens"]
     coverage["token_count_estimate"] = measured["estimate"]
@@ -288,6 +298,67 @@ def require_frozen_tokenizer(path: Path) -> str:
     return actual
 
 
+def _record_tokenizer_artifact(platform: Platform, dataset_id: str, entry: dict[str, Any]) -> None:
+    dataset = platform.store.get_dataset(dataset_id)
+    if dataset is None:
+        return
+    stats = dict(dataset.stats)
+    stats["tokenizer_artifact"] = entry
+    platform.store.conn.execute(
+        "UPDATE datasets SET stats = ? WHERE id = ?",
+        (json.dumps(stats, sort_keys=True, default=str), dataset_id),
+    )
+
+
+def frozen_tokenizer(platform: Platform, dataset_id: str) -> Path:
+    """The frozen tokenizer for a dataset, rebuilt from the blob store when it is gone.
+
+    The stored manifest is the authority, so a missing file is rebuilt and a file that
+    no longer matches is refused rather than quietly replaced: an edited tokenizer
+    changes every token count a run reports, and hiding that is the bug this is for.
+    A dataset trained before artifacts existed keeps the sidecar check it was frozen
+    with, because refusing every older install would not make it more honest.
+    """
+    from internal_ai.artifacts import (
+        artifact_from_card,
+        materialize,
+        read_manifest,
+        verify,
+        verify_signature,
+    )
+
+    path = platform.settings.models_dir / f"tokenizer-{dataset_id}.json"
+    dataset = platform.store.get_dataset(dataset_id)
+    entry = (dataset.stats.get("tokenizer_artifact") if dataset is not None else None) or None
+    if not isinstance(entry, dict) or not entry.get("manifest"):
+        require_frozen_tokenizer(path)
+        return path
+    card = {"artifact": entry}
+    artifact = artifact_from_card(card)
+    assert artifact is not None
+    verify_signature(artifact, platform.audit.signer)
+    manifest = read_manifest(platform.blobs, artifact.manifest_key)
+    block = type(artifact)(
+        manifest_key=artifact.manifest_key,
+        digest=artifact.digest,
+        files=manifest,
+        size=artifact.size,
+        prefix=artifact.prefix,
+        signature=artifact.signature,
+        key_id=artifact.key_id,
+    )
+    if not path.is_file():
+        materialize(platform.blobs, block, path.parent)
+        return path
+    changed = verify(path.parent, manifest)
+    if changed:
+        raise PermissionError(
+            f"tokenizer for {dataset_id} does not match the stored artifact: "
+            f"{', '.join(changed)} changed; delete it and the next run rebuilds it"
+        )
+    return path
+
+
 def require_token_budget(platform: Platform, dataset: Any, actor: str, parameters: int) -> None:
     """Refuse an estimate, and a measured corpus below the tokens-per-parameter floor."""
     from internal_ai.brief import load as load_brief
@@ -383,7 +454,7 @@ def train_embedding_model(
     require_token_budget(platform, dataset, actor, _embedding_parameters(train_config, tokenizer))
     if not train_config.vocab_rationale.strip():
         raise PermissionError("say why this vocabulary size was chosen")
-    require_frozen_tokenizer(platform.settings.models_dir / f"tokenizer-{dataset_id}.json")
+    frozen_tokenizer(platform, dataset_id)
     trainer = Trainer(
         platform.store,
         platform.audit,

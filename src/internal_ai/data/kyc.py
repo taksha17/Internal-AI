@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 
 from internal_ai.ids import content_hash
 
-GENERATOR_VERSION = 1
+GENERATOR_VERSION = 2
 DEFAULT_FORMS = 1200
 FORMS_PER_CUSTOMER = 4
 
@@ -36,12 +36,43 @@ KYC_FIELDS: tuple[str, ...] = (
     "pep_declaration",
 )
 
-FIRST_NAMES = ("Testara", "Sampta", "Dumella", "Exampla", "Fictoria", "Mockesha")
-LAST_NAMES = ("Testerson", "Samplington", "Dummond", "Exampler", "Fictman", "Mockley")
-NATIONALITIES = ("Testlandian", "Samplian", "Examplese")
+FIRST_NAMES = (
+    "Testara",
+    "Sampta",
+    "Dummya",
+    "Exampla",
+    "Fictoria",
+    "Mockesha",
+    "Testwin",
+    "Sampleen",
+)
+LAST_NAMES = (
+    "Testerson",
+    "Samplington",
+    "Mockford",
+    "Exampler",
+    "Fictman",
+    "Mockley",
+    "Testworthy",
+    "Samplefield",
+)
+NATIONALITIES = ("Testlandian", "Samplian", "Examplese", "Mocklandian")
 ID_TYPES = ("SAMPLE-PASSPORT", "SAMPLE-DRIVING-LICENCE", "SAMPLE-NATIONAL-ID")
-OCCUPATIONS = ("Test Engineer", "Sample Analyst", "Mock Auditor", "Dummy Clerk")
-EMPLOYERS = ("Test Street Bank", "Sample Ledger Ltd", "Mock Vault Inc")
+OCCUPATIONS = (
+    "Test Engineer",
+    "Sample Analyst",
+    "Mock Auditor",
+    "Dummy Clerk",
+    "Mock Underwriter",
+    "Sample Compliance Clerk",
+)
+EMPLOYERS = (
+    "Test Street Bank",
+    "Sample Ledger Ltd",
+    "Mock Vault Inc",
+    "Mock Trust Ltd",
+    "Dummy Savings Ltd",
+)
 INCOME_BANDS = ("0-25k TEST", "25-50k TEST", "50-100k TEST", "100k+ TEST")
 ACCOUNT_TYPES = ("TEST-CURRENT", "TEST-SAVINGS", "TEST-BUSINESS")
 SOURCES_OF_FUNDS = ("test salary", "sample savings", "mock pension")
@@ -113,13 +144,49 @@ PASSPORT_TEMPLATE = (
     "PASSPORT {id_type} {id_number} holder {full_name} "
     "born {date_of_birth} nationality {nationality}"
 )
-DOC_TEMPLATES: tuple[str, ...] = (
-    PASSPORT_TEMPLATE,
-    "UTILITY BILL {full_name} resides at {address} phone {phone}",
-    "PAYSLIP {full_name} works as {occupation} for {employer} income band {annual_income_band}",
-    "BANK STATEMENT {email} source of funds {source_of_funds} account {account_type}",
-    "DECLARATION {full_name} declares {pep_declaration}",
+DOC_FAMILIES: tuple[tuple[str, ...], ...] = (
+    (
+        PASSPORT_TEMPLATE,
+        "PASSPORT of {nationality} issue: holder {full_name}, born {date_of_birth}, "
+        "{id_type} {id_number}",
+        "IDENTITY PAPER {id_type} number {id_number} belongs to {full_name}, "
+        "a {nationality} national born {date_of_birth}",
+    ),
+    (
+        "UTILITY BILL {full_name} resides at {address} phone {phone}",
+        "UTILITY BILL for the property at {address}: the account holder is {full_name}, "
+        "who can be called on {phone}",
+        "COUNCIL TAX NOTICE addressed to {full_name} at {address}, contact number {phone}",
+    ),
+    (
+        "PAYSLIP {full_name} works as {occupation} for {employer} income band {annual_income_band}",
+        "PAYSLIP from {employer}: {full_name} is employed there as a {occupation}, and the "
+        "pay sits in the {annual_income_band} band",
+        "EMPLOYMENT RECORD {employer} lists {full_name} as a {occupation} on the "
+        "{annual_income_band} income band",
+    ),
+    (
+        "BANK STATEMENT for {full_name} ({email}) source of funds {source_of_funds} "
+        "account {account_type}",
+        "BANK STATEMENT for the {account_type} account held by {full_name}, contactable "
+        "at {email}, where the source of funds is stated as {source_of_funds}",
+        "ACCOUNT SUMMARY {account_type} in the name of {full_name} ({email}), funded from "
+        "{source_of_funds}",
+    ),
+    (
+        "DECLARATION {full_name} declares {pep_declaration}",
+        "SIGNED DECLARATION: {full_name} states that they are {pep_declaration}",
+        "COMPLIANCE DECLARATION signed by {full_name}, recording {pep_declaration}",
+    ),
+    (
+        "TAX RESIDENCY CERTIFICATE {full_name} of {nationality} residing at {address}",
+        "TAX CERTIFICATE: {full_name}, a {nationality} national of {address}, "
+        "id {id_type} {id_number}",
+        "RESIDENCY RECORD {id_number} ({id_type}) certifies {full_name} resides at {address}",
+    ),
 )
+
+DOC_TEMPLATES: tuple[str, ...] = tuple(template for family in DOC_FAMILIES for template in family)
 
 
 def evidence_lines(
@@ -131,7 +198,7 @@ def evidence_lines(
     values, the decoys name other customers', and only the line's content
     tells them apart.
     """
-    lines = [template.format(**form.values) for template in DOC_TEMPLATES]
+    lines = [rng.choice(family).format(**form.values) for family in DOC_FAMILIES]
     lines.extend(distractors)
     rng.shuffle(lines)
     return lines

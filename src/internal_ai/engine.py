@@ -23,6 +23,7 @@ from internal_ai.ids import new_id, now_iso
 from internal_ai.planner import TaskDraft
 from internal_ai.roles import get_role, reviewer_for
 from internal_ai.store import Store
+from internal_ai.tools import CURRENT_TASK
 
 
 @dataclass(slots=True)
@@ -286,7 +287,28 @@ class Orchestrator:
         self.store.set_task_state(task, TaskState.IN_PROGRESS, role.name, "agent", "agent started")
         task.attempts += 1
         upstream = self._upstream_artifacts(task)
-        result = self.runtime.execute(role, task, upstream=upstream)
+        step = self.store.open_step(
+            task_id=task.id,
+            attempt=task.attempts,
+            agent=role.name,
+            step_id=new_id("stp"),
+        )
+        token = CURRENT_TASK.set(task.id)
+        try:
+            result = self.runtime.execute(role, task, upstream=upstream)
+        except Exception as exc:
+            # Closed as failed before the error propagates: a step left `running`
+            # means the process died inside the call, which is what a resume looks for.
+            self.store.close_step(step["id"], state="failed", summary=str(exc)[:500])
+            CURRENT_TASK.reset(token)
+            raise
+        CURRENT_TASK.reset(token)
+        self.store.close_step(
+            step["id"],
+            state="done" if result.status == "ok" else "failed",
+            summary=result.summary[:500],
+            cost_usd=result.cost_usd,
+        )
         task.actual_cost_usd += result.cost_usd
         task.artifacts = list(dict.fromkeys([*task.artifacts, *result.artifacts]))
         self.store.update_task(task)
@@ -353,10 +375,43 @@ class Orchestrator:
         )
         self.escalations.append({"task_id": task.id, "reason": reason, "at": now_iso()})
 
+    def resume(self) -> list[dict[str, Any]]:
+        """Explain the steps a dead process left open, and put their tasks back in play.
+
+        A step row is written before the agent runs, so an open one means the process
+        stopped inside the call and nobody knows what it finished. Abandoning it is not
+        the same as retrying: the task goes back to the queue, the attempt count stays
+        what the database says, and the audit event names the step that was cut off.
+        """
+        abandoned: list[dict[str, Any]] = []
+        for step in self.store.unfinished_steps():
+            self.store.close_step(step["id"], state="abandoned", summary="interrupted")
+            task = self.store.get_task(step["task_id"])
+            if task is None or task.state != TaskState.IN_PROGRESS:
+                abandoned.append({**step, "state": "abandoned"})
+                continue
+            self.store.set_task_state(
+                task,
+                TaskState.IN_PROGRESS,
+                "orchestrator",
+                "agent",
+                f"attempt {step['attempt']} was interrupted; queued again",
+            )
+            self.audit.record(
+                actor="orchestrator",
+                action="plan.step_abandoned",
+                subject=task.id,
+                outcome=AuditOutcome.FAILURE,
+                details={"step": step["id"], "attempt": step["attempt"], "agent": step["agent"]},
+            )
+            abandoned.append({**step, "state": "abandoned"})
+        return abandoned
+
     def run(self, max_iterations: int | None = None) -> dict[str, Any]:
         limit = max_iterations or self.config.max_iterations
         outcomes: list[DispatchOutcome] = []
         iterations = 0
+        resumed = self.resume()
         while iterations < limit:
             iterations += 1
             if self.budget.kill_switch_engaged():
@@ -379,6 +434,7 @@ class Orchestrator:
                 continue
         summary = {
             "iterations": iterations,
+            "resumed": len(resumed),
             "dispatched": len(outcomes),
             "accepted": sum(1 for item in outcomes if item.state == str(TaskState.ACCEPTED)),
             "blocked": sum(1 for item in outcomes if item.state == str(TaskState.BLOCKED)),

@@ -22,8 +22,10 @@ from typing import Any
 import numpy as np
 
 from internal_ai.audit import AuditLog
+from internal_ai.data.shards import released_rows
 from internal_ai.domain import AuditOutcome, ModelVersion
 from internal_ai.evals.metrics import bm25_scores
+from internal_ai.storage import BlobStore
 from internal_ai.store import Store
 from internal_ai.training.alpha.citations import hit_from_key
 
@@ -241,14 +243,25 @@ class RetrievalService:
     widen what a principal is allowed to read.
     """
 
-    def __init__(self, store: Store, audit: AuditLog) -> None:
+    def __init__(
+        self,
+        store: Store,
+        audit: AuditLog,
+        blobs: BlobStore | None = None,
+    ) -> None:
         self.store = store
         self.audit = audit
+        self.blobs = blobs
         self._cache: dict[str, tuple[str, np.ndarray]] = {}
         self._cache_lock = threading.Lock()
 
     def corpus(self, dataset_id: str) -> list[dict[str, Any]]:
-        return self.store.dataset_records(dataset_id)
+        """The released rows, read from the shard that names them where one exists.
+
+        Serving from the table would answer from whatever the rows say today;
+        the shard is what was released, so that is what a reader is given.
+        """
+        return released_rows(self.store, self.blobs, dataset_id)
 
     def _embedder_identity(self, embedder: Any) -> str:
         """What the cached vectors belong to. A different model must not hit them."""

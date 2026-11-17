@@ -38,6 +38,9 @@ alpha = [
     "bitsandbytes>=0.43",
 ]
 
+postgres = ["psycopg[binary]>=3.2"]
+redis = ["redis>=5.0"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

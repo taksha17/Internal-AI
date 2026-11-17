@@ -8,6 +8,7 @@ must not be able to skip.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from collections.abc import Callable
@@ -38,6 +39,21 @@ WEIGHT_SUFFIXES = frozenset(
     {".pt", ".pth", ".bin", ".safetensors", ".gguf", ".onnx", ".ckpt", ".h5", ".pb", ".tflite"}
 )
 SOURCE_FILE_SUFFIXES = frozenset({".jsonl", ".ndjson", ".csv", ".txt", ".md"}) | DOCUMENT_SUFFIXES
+
+
+def versioned_source_name(name: str, path: Path) -> str:
+    """A source name that changes when the file's bytes do.
+
+    A pipeline that finds its source by name alone reuses the dataset built from
+    an older rendering of the same rows: the corpus generator's hash covers the
+    forms, not the text written from them, so a change to how a record is
+    rendered moves no hash anywhere and the run retrains on the text it already
+    had. Naming the source after its content makes the reuse honest — the same
+    bytes converge on the same source, different bytes open a new one and a new
+    dataset version behind its own approved gate.
+    """
+    digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()[:10]
+    return f"{name}-{digest}"
 
 
 def _secret_hits(text: str) -> dict[str, int]:
@@ -575,7 +591,9 @@ def build_dataset(platform: Platform, actor: Actor, runner: JobRunner, source_id
             from internal_ai.data.pipeline import DataPipeline, PipelineConfig
             from internal_ai.data.records import Source
 
-            pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+            pipeline = DataPipeline(
+                platform.store, platform.audit, platform.settings.root, platform.blobs
+            )
             result = pipeline.run(
                 [
                     Source(
@@ -693,7 +711,7 @@ def request_release(platform: Platform, actor: Actor, dataset_id: str) -> GateRe
     if dataset.stats.get("token_count_kind") != "measured":
         raise ValueError("measure the tokens before asking for release")
     _no_open_gate(platform, GateType.DATASET_RELEASE, dataset_id)
-    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root, platform.blobs)
     audit_result = pipeline.run_pii_audit(dataset_id, sample_size=None)
     if not audit_result["passed"]:
         raise ValueError(
@@ -729,7 +747,7 @@ def drop_duplicate_copies(platform: Platform, actor: Actor, dataset_id: str) -> 
     from internal_ai.data.pipeline import DataPipeline
 
     require(platform.audit, actor, Action.BUILD_DATASET, dataset_id)
-    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root, platform.blobs)
     return pipeline.drop_duplicate_copies(dataset_id, actor.id)
 
 
@@ -738,7 +756,7 @@ def redact_personal_data(platform: Platform, actor: Actor, dataset_id: str) -> A
     from internal_ai.data.pipeline import DataPipeline
 
     require(platform.audit, actor, Action.BUILD_DATASET, dataset_id)
-    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root, platform.blobs)
     return pipeline.redact_personal_data(dataset_id, actor.id)
 
 
@@ -749,7 +767,7 @@ def release_dataset(platform: Platform, actor: Actor, dataset_id: str) -> Any:
     require(platform.audit, actor, Action.RELEASE_DATASET, dataset_id)
     require_programme(platform, actor.id, release=True, actor_kind=actor.kind)
     _require_gate(platform, actor, GateType.DATASET_RELEASE, dataset_id, "release_dataset")
-    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root)
+    pipeline = DataPipeline(platform.store, platform.audit, platform.settings.root, platform.blobs)
     return pipeline.release(dataset_id, actor.id, gate_approved=True)
 
 

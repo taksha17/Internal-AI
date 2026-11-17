@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from internal_ai.context import Platform
+from internal_ai.data.shards import released_rows
 from internal_ai.data.tokenizer import Tokenizer
 from internal_ai.domain import ModelVersion
 from internal_ai.ids import new_id
@@ -103,7 +104,7 @@ def create_serving_app(
         platform = Platform.create(root=root)
         app.state.platform = platform
         app.state.router = ModelRouter(platform.store, platform.audit)
-        app.state.retrieval = RetrievalService(platform.store, platform.audit)
+        app.state.retrieval = RetrievalService(platform.store, platform.audit, platform.blobs)
         app.state.embedders: dict[str, TorchEmbedder] = {}
         app.state.tokenizers: dict[str, Any] = {}
         try:
@@ -264,7 +265,7 @@ def create_serving_app(
         model = served_model(platform.store, app.state.router)
         if model is None or not model.dataset_ids:
             return []
-        rows = platform.store.dataset_records(model.dataset_ids[0])
+        rows = released_rows(platform.store, platform.blobs, model.dataset_ids[0])
         step = max(len(rows) // MEMORISATION_SAMPLE, 1)
         return [row["payload"] for row in rows[::step][:MEMORISATION_SAMPLE]]
 

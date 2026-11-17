@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from internal_ai.dialects import ENV_DATABASE_URL
+
 ENV_HOME = "INTERNAL_AI_HOME"
 ENV_OFFLINE = "INTERNAL_AI_OFFLINE"
 ENV_GUARDRAIL_POLICY = "INTERNAL_AI_GUARDRAIL_POLICY"
@@ -50,6 +52,22 @@ class Settings:
     logs_dir: Path
     eval_dir: Path
     lineage_dir: Path
+
+    @property
+    def redis_url(self) -> str:
+        """The shared cache, when an install has one; empty means process-local."""
+        return os.environ.get("INTERNAL_AI_REDIS_URL", "").strip()
+
+    @property
+    def database_url(self) -> str:
+        """Where the control-plane database lives.
+
+        A URL wins over the default file so an install can point at a cluster
+        without editing code; the default stays the sqlite file under ``home``,
+        which is what every existing install has on disk.
+        """
+        configured = os.environ.get(ENV_DATABASE_URL, "").strip()
+        return configured or f"sqlite://{self.db_path}"
 
     @classmethod
     def from_env(cls, root: Path | None = None) -> Settings:

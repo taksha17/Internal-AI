@@ -10,6 +10,7 @@ from typing import Any
 
 from internal_ai.audit import AuditLog
 from internal_ai.data.records import EXCLUDED_SENSITIVITY, Record, Source, ingest_source
+from internal_ai.data.shards import Shard, write_shard
 from internal_ai.data.transforms import (
     deduplicate,
     duplicate_report,
@@ -19,6 +20,7 @@ from internal_ai.data.transforms import (
 )
 from internal_ai.domain import AuditOutcome, DatasetVersion
 from internal_ai.ids import content_hash, new_id, now_iso
+from internal_ai.storage import BlobStore
 from internal_ai.store import Store
 
 
@@ -123,10 +125,19 @@ def sample_lineage(dataset: DatasetVersion, rows: list[Any], limit: int = 20) ->
 
 
 class DataPipeline:
-    def __init__(self, store: Store, audit: AuditLog, root: Path | None = None) -> None:
+    def __init__(
+        self,
+        store: Store,
+        audit: AuditLog,
+        root: Path | None = None,
+        blobs: BlobStore | None = None,
+    ) -> None:
         self.store = store
         self.audit = audit
         self.root = root or Path.cwd()
+        # Optional so a unit test can build a pipeline without a store; the
+        # platform always passes one, so a release always writes a shard.
+        self.blobs = blobs
 
     def run(
         self,
@@ -692,6 +703,7 @@ class DataPipeline:
                 dataset_id, current.token_count, {**current.stats, "training_data": True}
             )
         self.store.release_dataset(dataset_id)
+        shard = self._write_shard(dataset_id)
         released = self.store.get_dataset(dataset_id) or dataset
         if kind in {"feedback", "preference"}:
             self.audit.record(
@@ -712,9 +724,32 @@ class DataPipeline:
                 "pii_audit": audit_result,
                 "toxicity_flagged": quality["toxicity_flagged"],
                 "kind": kind,
+                "shard": shard.key if shard else None,
             },
         )
         return released
+
+    def _write_shard(self, dataset_id: str) -> Shard | None:
+        """Freeze the released rows as one immutable object, named by its hash.
+
+        Written after the release flag flips and recorded on the version, so a
+        reader can fetch the exact rows this release contained instead of asking
+        the database what it happens to hold today.
+        """
+        if self.blobs is None:
+            return None
+        shard = write_shard(
+            self.blobs, self.store.dataset_records(dataset_id), dataset_id=dataset_id
+        )
+        current = self.store.get_dataset(dataset_id)
+        if current is not None:
+            stats = dict(current.stats)
+            stats["shard"] = shard.to_dict()
+            self.store.conn.execute(
+                "UPDATE datasets SET stats = ? WHERE id = ?",
+                (json.dumps(stats, sort_keys=True, default=str), dataset_id),
+            )
+        return shard
 
     def lineage(self, dataset_id: str) -> dict[str, Any]:
         dataset = self.store.get_dataset(dataset_id)

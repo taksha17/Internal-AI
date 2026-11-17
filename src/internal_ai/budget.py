@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -19,6 +20,14 @@ _TOLERANCE = 1e-9
 # A hold that is never settled, because the caller died, returns its room after
 # this. It is much longer than any call the platform makes.
 RESERVATION_TTL_SECONDS = 900
+
+
+def _billed(totals: dict[str, dict[str, float]], project: str) -> float:
+    """The number a bill quotes: the project's own scope, never the scoped sum."""
+    for candidate in (f"project:{project}", "global:global"):
+        if candidate in totals:
+            return round(totals[candidate]["usd"], 6)
+    return round(sum(item["usd"] for item in totals.values()), 6)
 
 
 def week_start(reference: datetime | None = None) -> datetime:
@@ -47,6 +56,10 @@ class BudgetStatus:
             "utilization": round(self.utilization, 4),
             "exceeded": self.exceeded,
         }
+
+
+class BudgetPeriodError(RuntimeError):
+    """A period was closed twice, or the window it names is not a period."""
 
 
 @dataclass(slots=True)
@@ -146,6 +159,11 @@ class BudgetManager:
         stamp = now_iso()
         expires_at = (datetime.now(UTC) + timedelta(seconds=ttl_seconds)).isoformat()
         with transaction(self.store.conn):
+            # Before reading the totals, not after: on a server the read is what has
+            # to wait, and two callers that both read first have already spent the
+            # same room between them.
+            for scope, key in self._scopes(agent, job_id):
+                self.store.lock_budget_limit(scope, key)
             self.store.expire_spend_reservations(stamp)
             over = self._over_cap(amount_usd, agent, job_id)
             if over is not None:
@@ -176,6 +194,7 @@ class BudgetManager:
     def settle(self, reservation_id: str, notes: str = "") -> list[SpendRecord]:
         """Turn a hold into spend. A hold can only be settled once."""
         with transaction(self.store.conn):
+            self.store.lock_reservations(reservation_id)
             rows = self.store.reservation_rows(reservation_id)
             if not rows:
                 return []
@@ -231,6 +250,91 @@ class BudgetManager:
         for entry in entries:
             self.store.record_spend(entry)
         return entries
+
+    def close_period(self, starts_at: str, ends_at: str, closed_by: str) -> dict[str, object]:
+        """Freeze a window's spend so a chargeback has one number per scope.
+
+        A close is not bookkeeping the caller can redo: two invoices for one month is
+        how a budget stops being trusted, so the second close of a window is refused
+        rather than merged into the first.
+        """
+        if not starts_at or not ends_at or starts_at >= ends_at:
+            raise BudgetPeriodError(f"{starts_at!r} .. {ends_at!r} is not a period")
+        totals: dict[str, dict[str, float]] = {}
+        for row in self.store.spend_between(starts_at, ends_at):
+            key = f"{row['scope']}:{row['key']}"
+            entry = totals.setdefault(key, {"usd": 0.0, "records": 0})
+            entry["usd"] = round(entry["usd"] + float(row["amount_usd"]), 6)
+            entry["records"] += 1
+        stamp = now_iso()
+        period_id = new_id("bpd")
+        with transaction(self.store.conn):
+            if self.store.budget_period(self.project, starts_at) is not None:
+                raise BudgetPeriodError(
+                    f"{starts_at} is already closed for {self.project}; a closed period is "
+                    "not reopened, a correction is a new one"
+                )
+            self.store.add_budget_period(
+                period_id=period_id,
+                project=self.project,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                closed_at=stamp,
+                closed_by=closed_by,
+                totals=json.dumps(totals, sort_keys=True),
+            )
+        return {
+            "id": period_id,
+            "project": self.project,
+            "starts_at": starts_at,
+            "ends_at": ends_at,
+            "closed_at": stamp,
+            "closed_by": closed_by,
+            "totals": totals,
+            # One call lands in four scopes, so a sum over scopes counts it four
+            # times; the bill is the project scope, which is what a chargeback quotes.
+            "billed_usd": _billed(totals, self.project),
+            "scope_total_usd": round(sum(item["usd"] for item in totals.values()), 6),
+        }
+
+    def periods(self) -> list[dict[str, object]]:
+        return [
+            {**row, "totals": json.loads(row["totals"] or "{}")}
+            for row in self.store.list_budget_periods(self.project)
+        ]
+
+    def export_period(self, starts_at: str) -> dict[str, object]:
+        """The rows behind a closed period, for billing.
+
+        An open period is refused: its total is still moving, and a chargeback built
+        on a number that changed after the invoice is worse than no invoice.
+        """
+        row = self.store.budget_period(self.project, starts_at)
+        if row is None:
+            raise BudgetPeriodError(
+                f"{starts_at} is not closed for {self.project}; close it before exporting it"
+            )
+        rows = self.store.spend_between(row["starts_at"], row["ends_at"])
+        return {
+            "project": row["project"],
+            "starts_at": row["starts_at"],
+            "ends_at": row["ends_at"],
+            "closed_at": row["closed_at"],
+            "closed_by": row["closed_by"],
+            "totals": json.loads(row["totals"] or "{}"),
+            "rows": [
+                {
+                    "scope": item["scope"],
+                    "key": item["key"],
+                    "amount_usd": float(item["amount_usd"]),
+                    "agent": item["agent"],
+                    "task_id": item["task_id"] or "",
+                    "job_id": item["job_id"] or "",
+                    "created_at": item["created_at"],
+                }
+                for item in rows
+            ],
+        }
 
     def kill_switch_engaged(self) -> bool:
         return self.store.kv_get(KILL_SWITCH_KEY, "0") == "1"

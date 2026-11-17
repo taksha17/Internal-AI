@@ -54,6 +54,23 @@ def stored_advice(platform: Platform, dataset_id: str) -> dict[str, Any] | None:
     return json.loads(raw) if raw else None
 
 
+def waiting_reasons(advice: dict[str, Any], row: dict[str, Any]) -> list[str]:
+    """Why this size is waiting, in the words the refusal uses.
+
+    One function for the page and for the refusal: a sentence typed twice is a
+    sentence that drifts, and then the console would explain a refusal it does not
+    actually perform.
+    """
+    reasons: list[str] = []
+    if not advice.get("measured"):
+        reasons.append("the token count is still an estimate")
+    if not row.get("meets_floor"):
+        reasons.append("the corpus is below the tokens-per-parameter floor")
+    if row.get("machine") == "H100-class" and advice.get("backend") == "local":
+        reasons.append("no H100-class backend is attached")
+    return reasons
+
+
 def require_runnable_size(platform: Platform, dataset_id: str, size: str) -> dict[str, Any]:
     """The advised row for a size, refusing one this platform cannot take.
 
@@ -72,14 +89,7 @@ def require_runnable_size(platform: Platform, dataset_id: str, size: str) -> dic
     if row is None:
         raise ValueError(f"the stored advice has no {size} row")
     if not row.get("runnable"):
-        reasons = []
-        if not advice.get("measured"):
-            reasons.append("the token count is still an estimate")
-        if not row.get("meets_floor"):
-            reasons.append("the corpus is below the tokens-per-parameter floor")
-        if row.get("machine") == "H100-class" and advice.get("backend") == "local":
-            reasons.append("no H100-class backend is attached")
-        detail = "; ".join(reasons) or "the advice marks it waiting"
+        detail = "; ".join(waiting_reasons(advice, row)) or "the advice marks it waiting"
         raise ValueError(
             f"{size} is waiting: {row.get('planning_gpu_hours')} GPU-hours on "
             f"{row.get('machine')} ({detail})"

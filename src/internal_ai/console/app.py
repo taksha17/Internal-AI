@@ -30,6 +30,8 @@ from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from internal_ai import brief
+from internal_ai.artifacts import ArtifactDenied
+from internal_ai.budget import BudgetPeriodError
 from internal_ai.console import find as finder
 from internal_ai.console import inbox, lists
 from internal_ai.context import Platform
@@ -40,7 +42,15 @@ from internal_ai.evals import advice
 from internal_ai.gates import GATE_CATALOG, GateError
 from internal_ai.people import PeopleRegistry
 from internal_ai.roles import all_roles
-from internal_ai.services import build, governance, webfetch
+from internal_ai.services import (
+    artifacts_view,
+    audit_head,
+    build,
+    compute_advice,
+    conversions,
+    governance,
+    webfetch,
+)
 from internal_ai.services.actor import Actor
 from internal_ai.services.identity import (
     MIN_PASSWORD_LENGTH,
@@ -83,6 +93,8 @@ HARNESS_WINDOW_TOKENS = 8192
 """What the console assumes a model carries, since no served model states one."""
 
 REFUSALS = (
+    ArtifactDenied,
+    BudgetPeriodError,
     AuthenticationError,
     PermissionError,
     GateError,
@@ -97,6 +109,8 @@ NAV = [
     ("Pipelines", "/console/plan"),
     ("Datasets", "/console/datasets"),
     ("Training", "/console/jobs"),
+    ("Compute", "/console/compute"),
+    ("Artifacts", "/console/artifacts"),
     ("Evaluations", "/console/evals"),
     ("Approvals", "/console/approvals"),
     ("Web fetch", "/console/web"),
@@ -457,6 +471,7 @@ def mount_console(
             "attention": waiting.count,
             "can": lambda action: allowed(ctx.actor, Action(action)),
             "why": lambda action: reason(Action(action)),
+            "audit_health": platform.audit.health().to_dict(),
         }
         values.update(data)
         return templates.TemplateResponse(ctx.request, name, values, status_code=status_code)
@@ -972,9 +987,22 @@ def mount_console(
             table=table,
             events=table.rows,
             verify=ctx.platform.audit.verify().to_dict(),
+            anchor=audit_head.anchor_status(ctx.platform),
+            can_anchor=audit_head.may_anchor(ctx.actor),
             actor_filter=actor,
             action_filter=action,
             window=window,
+        )
+
+    @app.post("/console/audit/anchor", include_in_schema=False)
+    async def anchor_audit(request: Request) -> Response:
+        ctx = context(request)
+        await posted(ctx)
+        return await act(
+            ctx,
+            "/console/audit",
+            lambda: audit_head.anchor_head(ctx.platform, ctx.actor),
+            "head anchored: the sequence and hash are signed and the file is written",
         )
 
     # ----------------------------------------------------------------- plan
@@ -988,12 +1016,21 @@ def mount_console(
             for task in tasks
         }
         history = {task.id: ctx.platform.store.task_events(task.id) for task in tasks}
+        attempts = [
+            {**step, "task": task.id}
+            for task in tasks
+            for step in ctx.platform.store.steps_for(task.id)
+        ]
         return render(
             ctx,
             "plan.html",
             tasks=tasks,
             moves=moves,
             history=history,
+            attempts=attempts,
+            # An open step is a process that died inside a call. It is shown because
+            # the next run is what turns it into an `abandoned` row and a queue entry.
+            unfinished=ctx.platform.store.unfinished_steps(),
             report=ctx.platform.orchestrator.status_report(),
         )
 
@@ -1679,6 +1716,81 @@ def mount_console(
     )
 
     # ------------------------------------------------------------ eval sets
+
+    @app.get("/console/compute", include_in_schema=False)
+    def compute_page(request: Request, dataset: str = "") -> Response:
+        ctx = context(request)
+        return render(ctx, "compute.html", **compute_advice.page(ctx.platform, dataset))
+
+    @app.post("/console/compute/advise", include_in_schema=False)
+    async def compute_advise(request: Request) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        dataset_id = form.get("dataset_id", "")
+        back = f"/console/compute?dataset={dataset_id}" if dataset_id else "/console/compute"
+        return await act(
+            ctx,
+            back,
+            lambda: compute_advice.advise(ctx.platform, ctx.actor, dataset_id),
+            f"advice recorded for {dataset_id}: the sizes and their hours are on this page",
+        )
+
+    @app.post("/console/compute/attach", include_in_schema=False)
+    async def compute_attach(request: Request) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        backend = form.get("backend", "")
+        return await act(
+            ctx,
+            "/console/compute",
+            lambda: compute_advice.attach(ctx.platform, ctx.actor, backend),
+            f"backend attached: {backend}. Attaching does not start a run",
+        )
+
+    @app.get("/console/artifacts", include_in_schema=False)
+    def artifacts_page(request: Request) -> Response:
+        ctx = context(request)
+        return render(ctx, "artifacts.html", rows=artifacts_view.rows(ctx.platform))
+
+    @app.post("/console/artifacts/{model_id}/verify", include_in_schema=False)
+    async def artifacts_verify(request: Request, model_id: str) -> Response:
+        ctx = context(request)
+        await posted(ctx)
+        return await act(
+            ctx,
+            "/console/artifacts",
+            lambda: artifacts_view.verify(ctx.platform, ctx.actor, model_id),
+            lambda row: (
+                f"{row['model']} v{row['version']} matches {row['digest'][:16]}: "
+                f"{row['files']} files intact"
+                + (", signature checked" if row["signed"] else ", unsigned card")
+            ),
+        )
+
+    @app.post("/console/datasets/{dataset_id}/audit", include_in_schema=False)
+    async def dataset_audit(request: Request, dataset_id: str) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        sample = form.get("sample_size", "")
+        size = int(sample) if sample.isdigit() else 50
+        return await act(
+            ctx,
+            f"/console/datasets/{dataset_id}",
+            lambda: conversions.rerun_pii(ctx.platform, ctx.actor, dataset_id, size),
+            conversions.audit_message,
+        )
+
+    @app.post("/console/exports/{kind}", include_in_schema=False)
+    async def exports_run(request: Request, kind: str) -> Response:
+        ctx = context(request)
+        await posted(ctx)
+        return await act(
+            ctx,
+            "/console/datasets",
+            lambda: conversions.export(ctx.platform, ctx.actor, kind),
+            conversions.export_message,
+            lambda dataset: f"/console/datasets/{dataset.id}",
+        )
 
     @app.get("/console/evals", include_in_schema=False)
     def evals_page(
@@ -2585,7 +2697,55 @@ def mount_console(
             for gate in ctx.platform.store.list_gates()
             if str(gate.gate_type) == str(GateType.BUDGET_INCREASE)
         ]
-        return render(ctx, "budget.html", budget=ctx.platform.budget.all_status(), gates=gates)
+        return render(
+            ctx,
+            "budget.html",
+            budget=ctx.platform.budget.all_status(),
+            gates=gates,
+            periods=ctx.platform.budget.periods(),
+        )
+
+    @app.post("/console/admin/budget/close", include_in_schema=False)
+    async def budget_close(request: Request) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        starts_at = form.get("starts_at", "").strip()
+        ends_at = form.get("ends_at", "").strip()
+        return await act(
+            ctx,
+            "/console/admin/budget",
+            lambda: governance.close_budget_period(ctx.platform, ctx.actor, starts_at, ends_at),
+            lambda period: (
+                f"{period['starts_at']} .. {period['ends_at']} closed, billing "
+                f"${period['billed_usd']:.4f} across {len(period['totals'])} scopes"
+            ),
+        )
+
+    @app.get("/console/admin/budget/periods/{starts_at}.csv", include_in_schema=False)
+    def budget_export_csv(request: Request, starts_at: str) -> Response:
+        ctx = context(request)
+        try:
+            export = governance.budget_export(ctx.platform, ctx.actor, starts_at)
+        except REFUSALS as exc:
+            flash(ctx, "error", message(exc))
+            return redirect("/console/admin/budget")
+        lines = ["scope,key,amount_usd,agent,task_id,job_id,created_at"]
+        for row in export["rows"]:
+            lines.append(
+                ",".join(
+                    _csv_cell(row[field])
+                    for field in ("scope", "key", "amount_usd", "agent", "task_id", "job_id")
+                )
+                + ","
+                + _csv_cell(row["created_at"])
+            )
+        body = "\n".join(lines) + "\n"
+        stamp = starts_at.replace(":", "").replace("+", "")
+        return Response(
+            body,
+            media_type="text/csv",
+            headers={"content-disposition": f'attachment; filename="spend-{stamp}.csv"'},
+        )
 
     @app.post("/console/admin/budget", include_in_schema=False)
     async def budget_set(request: Request) -> Response:
@@ -2606,6 +2766,14 @@ def mount_console(
                 f"{result['scope']}:{result['key']} limit set to ${result['limit_usd']:.2f}"
             ),
         )
+
+
+def _csv_cell(value: Any) -> str:
+    """One CSV field: quoted when it carries a comma, a quote or a newline."""
+    text = str(value)
+    if any(char in text for char in ',"\n'):
+        return '"' + text.replace('"', '""') + '"'
+    return text
 
 
 def _next_step(job: dict[str, Any]) -> tuple[str, str] | None:

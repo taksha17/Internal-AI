@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
+from internal_ai.cache import Cache
 from internal_ai.context import Platform
 from internal_ai.domain import AuditOutcome
 from internal_ai.ids import new_id, now_iso
@@ -91,6 +92,7 @@ class IdentityService:
         self.store = platform.store
         self.audit = platform.audit
         self.people = PeopleRegistry(platform.store)
+        self.cache: Cache = platform.cache
         self.clock = clock
 
     # ----------------------------------------------------------- accounts
@@ -222,11 +224,23 @@ class IdentityService:
     # ----------------------------------------------------- authentication
 
     def authenticate(self, identifier: str, password: str, client: str = "") -> Actor:
-        """Check a password, applying the lockout rule, and return the actor."""
+        """Check a password, applying the lockout rule, and return the actor.
+
+        Two locks, deliberately: the account row's own counter, which is the one
+        that survives everything, and a shared counter per identifier and client,
+        which is what stops one address from spraying passwords across accounts
+        faster than any single account's counter would trip.
+        """
+        throttle = f"auth:{identifier.strip().lower()}:{client}"
         person = self.person(identifier.strip())
         now = self.clock()
         account = self.account(person["id"]) if person else None
         if person is None or account is None:
+            if self.cache.incr(throttle, LOCKOUT_SECONDS) > MAX_FAILED_ATTEMPTS:
+                self._failed(identifier, client, "too many failed attempts from this client")
+                raise AuthenticationError(
+                    "too many failed attempts from this client; try again later"
+                )
             self._failed(identifier, client, "unknown account")
             raise AuthenticationError("unknown account or wrong password")
         if account["disabled"]:
@@ -239,6 +253,13 @@ class IdentityService:
             self._failed(person["id"], client, "account locked")
             minutes = int((account["locked_until"] - now) // 60) + 1
             raise AuthenticationError(f"too many failed attempts; try again in {minutes} minutes")
+        if account["locked_until"]:
+            # The account's own lock has served its window, so the shared burst
+            # counter starts again with it instead of outliving the rule it backs.
+            self.cache.delete(throttle)
+        if self.cache.incr(throttle, LOCKOUT_SECONDS) > MAX_FAILED_ATTEMPTS:
+            self._failed(person["id"], client, "too many failed attempts from this client")
+            raise AuthenticationError("too many failed attempts from this client; try again later")
         if not verify_password(password, account["password_hash"]):
             attempts = account["failed_attempts"] + 1
             locked_until = now + LOCKOUT_SECONDS if attempts >= MAX_FAILED_ATTEMPTS else 0
@@ -254,6 +275,7 @@ class IdentityService:
             "UPDATE accounts SET failed_attempts = 0, locked_until = 0 WHERE person_id = ?",
             (person["id"],),
         )
+        self.cache.delete(throttle)
         self.audit.record(
             actor=person["id"],
             actor_kind="human",
@@ -303,6 +325,11 @@ class IdentityService:
         if not token:
             return None
         digest = token_hash(token)
+        if self.cache.get(f"revoked:{digest}") is not None:
+            # The database row is deleted below and stays deleted across a cache
+            # restart; this mirror is what a second process sees before its own
+            # read of the row would have caught up.
+            return None
         row = self.store.conn.execute(
             "SELECT * FROM sessions WHERE token_hash = ?", (digest,)
         ).fetchone()
@@ -328,9 +355,16 @@ class IdentityService:
         )
 
     def end_session(self, token: str) -> None:
-        self.store.conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash(token),))
+        digest = token_hash(token)
+        self.store.conn.execute("DELETE FROM sessions WHERE token_hash = ?", (digest,))
+        self.cache.set(f"revoked:{digest}", "1", SESSION_ABSOLUTE_SECONDS)
 
     def end_all_sessions(self, person_id: str) -> None:
+        rows = self.store.conn.execute(
+            "SELECT token_hash FROM sessions WHERE person_id = ?", (person_id,)
+        ).fetchall()
+        for row in rows:
+            self.cache.set(f"revoked:{row['token_hash']}", "1", SESSION_ABSOLUTE_SECONDS)
         self.store.conn.execute("DELETE FROM sessions WHERE person_id = ?", (person_id,))
 
     # ---------------------------------------------------------- api tokens

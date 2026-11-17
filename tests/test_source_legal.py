@@ -11,6 +11,23 @@ from internal_ai.services import build, governance
 from internal_ai.workflows import build_corpus
 
 
+def test_a_changed_file_is_a_new_source_not_a_reused_name(tmp_path) -> None:
+    """Reusing a source by name alone retrains on the old text after the
+    rendering changed, and the record then lies about what the model saw."""
+    first = tmp_path / "train.jsonl"
+    first.write_text('{"text": "papers then answers"}\n', encoding="utf-8")
+    second = tmp_path / "train2.jsonl"
+    second.write_text('{"text": "answers then papers"}\n', encoding="utf-8")
+
+    one = build.versioned_source_name("kyc-training-text", first)
+    same = build.versioned_source_name("kyc-training-text", first)
+    other = build.versioned_source_name("kyc-training-text", second)
+
+    assert one == same
+    assert one != other
+    assert one.startswith("kyc-training-text-")
+
+
 def test_a_source_without_legal_status_cannot_open_a_gate(platform, enroll_person) -> None:
     owner = enroll_person(platform, "Dana Owner", ["data_owner"])
     with pytest.raises(ValueError, match="legal_status"):

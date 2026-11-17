@@ -14,7 +14,8 @@ import threading
 from collections.abc import Iterable
 from typing import Any
 
-from internal_ai.db import connect, init_db, transaction
+from internal_ai import dialects
+from internal_ai.db import init_db, transaction
 from internal_ai.domain import (
     AuditEvent,
     BudgetLimit,
@@ -84,20 +85,23 @@ class Store:
 
     def __init__(self, db_path: Any) -> None:
         self.db_path = db_path
+        # A path or a URL; an unsupported scheme is refused here, before any
+        # caller believes it has a database.
+        self.target = dialects.parse(db_path)
         self._local = threading.local()
-        self._connections: list[sqlite3.Connection] = []
+        self._connections: list[dialects.Connection] = []
         self._lock = threading.Lock()
         self._connection()
 
     @property
-    def conn(self) -> sqlite3.Connection:
+    def conn(self) -> dialects.Connection:
         return self._connection()
 
-    def _connection(self) -> sqlite3.Connection:
+    def _connection(self) -> dialects.Connection:
         existing = getattr(self._local, "conn", None)
         if existing is not None:
             return existing
-        conn = connect(self.db_path)
+        conn = dialects.open_target(self.target)
         init_db(conn)
         self._local.conn = conn
         with self._lock:
@@ -296,8 +300,11 @@ class Store:
         return event
 
     def task_events(self, task_id: str) -> list[TaskEvent]:
+        # Two events in the same second are ordered by how they were written, which
+        # is rowid on sqlite and ctid on a server.
         rows = self.conn.execute(
-            "SELECT * FROM task_events WHERE task_id = ? ORDER BY created_at ASC, rowid ASC",
+            "SELECT * FROM task_events WHERE task_id = ? "
+            f"ORDER BY created_at ASC, {self.conn.insertion_order} ASC",
             (task_id,),
         ).fetchall()
         return [
@@ -666,6 +673,29 @@ class Store:
         ).fetchone()
         return float(row["total"])
 
+    def lock_budget_limit(self, scope: BudgetScope, key: str) -> None:
+        """Wait for the limit row's writer on a server; a no-op on sqlite.
+
+        sqlite's `BEGIN IMMEDIATE` already excludes every other writer, so there is
+        nothing to wait for. A server takes only the rows it writes, which means two
+        reservations can read the same committed total and both fit inside the cap.
+        This is the row lock that makes the second one wait.
+        """
+        if getattr(self.conn, "is_sqlite", True):
+            return
+        self.conn.execute(
+            "SELECT limit_usd FROM budget_limits WHERE scope = ? AND key = ? FOR UPDATE",
+            (str(scope), key),
+        )
+
+    def lock_reservations(self, group_id: str) -> None:
+        """The same wait for a hold being settled, so it cannot be settled twice."""
+        if getattr(self.conn, "is_sqlite", True):
+            return
+        self.conn.execute(
+            "SELECT id FROM spend_reservations WHERE group_id = ? FOR UPDATE", (group_id,)
+        )
+
     def reservation_rows(self, group_id: str) -> list[sqlite3.Row]:
         return self.conn.execute(
             "SELECT * FROM spend_reservations WHERE group_id = ? ORDER BY scope",
@@ -674,6 +704,49 @@ class Store:
 
     def delete_spend_reservations(self, group_id: str) -> None:
         self.conn.execute("DELETE FROM spend_reservations WHERE group_id = ?", (group_id,))
+
+    def add_budget_period(
+        self,
+        *,
+        period_id: str,
+        project: str,
+        starts_at: str,
+        ends_at: str,
+        closed_at: str,
+        closed_by: str,
+        totals: str,
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO budget_periods (id, project, starts_at, ends_at, closed_at,
+                                        closed_by, totals)
+            VALUES (?,?,?,?,?,?,?)
+            """,
+            (period_id, project, starts_at, ends_at, closed_at, closed_by, totals),
+        )
+
+    def budget_period(self, project: str, starts_at: str) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT * FROM budget_periods WHERE project = ? AND starts_at = ?",
+            (project, starts_at),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def list_budget_periods(self, project: str) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT * FROM budget_periods WHERE project = ? ORDER BY starts_at DESC",
+            (project,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def spend_between(self, starts_at: str, ends_at: str) -> list[dict[str, Any]]:
+        """Every spend row in a window, for a close and for a chargeback export."""
+        rows = self.conn.execute(
+            "SELECT * FROM spend_records WHERE created_at >= ? AND created_at < ? "
+            "ORDER BY scope, key, created_at",
+            (starts_at, ends_at),
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def expire_spend_reservations(self, now: str) -> None:
         self.conn.execute("DELETE FROM spend_reservations WHERE expires_at <= ?", (now,))
@@ -686,6 +759,81 @@ class Store:
         return {f"{row['scope']}:{row['key']}": float(row["total"]) for row in rows}
 
     # ----------------------------------------------------------------- runs
+
+    def tool_call(self, task_id: str, tool_name: str, args_hash: str) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT * FROM tool_calls WHERE task_id = ? AND tool_name = ? AND args_hash = ?",
+            (task_id, tool_name, args_hash),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def begin_tool_call(
+        self, *, call_id: str, task_id: str, tool_name: str, args_hash: str
+    ) -> None:
+        """Claim a side-effecting call before it runs, so a crash is not invisible."""
+        self.conn.execute(
+            """
+            INSERT INTO tool_calls (id, task_id, tool_name, args_hash, state, result, created_at)
+            VALUES (?,?,?,?,'running','',?)
+            """,
+            (call_id, task_id, tool_name, args_hash, now_iso()),
+        )
+
+    def finish_tool_call(self, call_id: str, *, state: str, result: str) -> None:
+        self.conn.execute(
+            "UPDATE tool_calls SET state = ?, result = ?, finished_at = ? WHERE id = ?",
+            (state, result, now_iso(), call_id),
+        )
+
+    def open_step(self, *, task_id: str, attempt: int, agent: str, step_id: str) -> dict[str, Any]:
+        """Write the step before the work starts, so a crash leaves a record of it.
+
+        A row that exists before the call is the difference between "this attempt
+        never finished" and "nobody knows whether it ran".
+        """
+        stamp = now_iso()
+        self.conn.execute(
+            """
+            INSERT INTO plan_steps (id, task_id, attempt, agent, state, started_at,
+                                    summary, cost_usd, metadata)
+            VALUES (?,?,?,?,?,?,'',0,'{}')
+            """,
+            (step_id, task_id, attempt, agent, "running", stamp),
+        )
+        return {
+            "id": step_id,
+            "task_id": task_id,
+            "attempt": attempt,
+            "agent": agent,
+            "state": "running",
+            "started_at": stamp,
+        }
+
+    def close_step(
+        self, step_id: str, *, state: str, summary: str = "", cost_usd: float = 0.0
+    ) -> None:
+        self.conn.execute(
+            "UPDATE plan_steps SET state = ?, finished_at = ?, summary = ?, cost_usd = ? "
+            "WHERE id = ?",
+            (state, now_iso(), summary, cost_usd, step_id),
+        )
+
+    def step(self, step_id: str) -> dict[str, Any] | None:
+        row = self.conn.execute("SELECT * FROM plan_steps WHERE id = ?", (step_id,)).fetchone()
+        return dict(row) if row is not None else None
+
+    def steps_for(self, task_id: str) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT * FROM plan_steps WHERE task_id = ? ORDER BY attempt, started_at", (task_id,)
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def unfinished_steps(self) -> list[dict[str, Any]]:
+        """Steps that were opened and never closed: the list a resume has to explain."""
+        rows = self.conn.execute(
+            "SELECT * FROM plan_steps WHERE state = 'running' ORDER BY started_at"
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def record_run(self, run: RunSummary) -> RunSummary:
         self.conn.execute(

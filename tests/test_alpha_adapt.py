@@ -8,15 +8,19 @@ from pathlib import Path
 
 import pytest
 
+from internal_ai.training.alpha import adapt as alpha_adapt
 from internal_ai.training.alpha.adapt import (
     BACKEND,
     DIVERGENCE_WINDOW,
     IGNORE_INDEX,
     PAD_ID,
+    TARGET_MODULES,
     AdaptationUnavailable,
     _batches,
     _dtype,
     _landed_placement,
+    _load_model,
+    _lora_targets,
     _loss_scaling,
     _p50,
     _padded,
@@ -331,6 +335,139 @@ def test_a_torch_that_cannot_exclude_emulation_is_not_trusted() -> None:
 
 def test_the_cpu_stays_in_fp32() -> None:
     assert _dtype(_Torch(_Card(native=True)), "cpu") == "float32"
+
+
+def _recording_loader(seen: dict[str, object]):
+    class _Loader:
+        @staticmethod
+        def from_pretrained(directory: object, **kwargs: object) -> str:
+            seen.update(kwargs)
+            seen["directory"] = directory
+            return "model"
+
+    return _Loader
+
+
+def _card(*, present: bool = True, free_mib: int = 6852, total_mib: int = 8192):
+    class _Cuda:
+        @staticmethod
+        def is_available() -> bool:
+            return present
+
+        @staticmethod
+        def device_count() -> int:
+            return 1
+
+        @staticmethod
+        def mem_get_info(index: int) -> tuple[int, int]:
+            return (free_mib * 1024**2, total_mib * 1024**2)
+
+    class _Torch:
+        cuda = _Cuda()
+
+    return _Torch()
+
+
+def test_a_card_too_small_for_the_bf16_embedding_tables_spills_instead_of_refusing(
+    monkeypatch,
+) -> None:
+    """Gemma 4 E2B keeps 2.77B parameters in bf16 embeddings, ~5.5 GB beside the body.
+
+    No 8 GB card holds both, and without a budget accelerate answers with a refusal
+    rather than a placement, so the run never starts.
+    """
+    import transformers
+
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(transformers, "AutoModelForCausalLM", _recording_loader(seen))
+
+    _load_model(Path("base"), "bfloat16", "cuda", load_in_4bit=True, torch_module=_card())
+
+    budget = seen["max_memory"]
+    assert "device_map" not in seen
+    assert budget[0] == "5.7GiB"
+    assert float(budget["cpu"].removesuffix("GiB")) > 0
+    assert seen["quantization_config"].llm_int8_enable_fp32_cpu_offload is True
+
+
+def test_a_quantised_load_without_a_card_asks_for_no_budget(monkeypatch) -> None:
+    import transformers
+
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(transformers, "AutoModelForCausalLM", _recording_loader(seen))
+
+    _load_model(
+        Path("base"), "bfloat16", "cuda", load_in_4bit=True, torch_module=_card(present=False)
+    )
+
+    assert "max_memory" not in seen
+    assert seen["device_map"] == "auto"
+    assert seen["quantization_config"].llm_int8_enable_fp32_cpu_offload is False
+
+
+def test_the_host_budget_is_read_from_the_machine_not_a_container_limit(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """sysconf said 7.3 GiB on a 15 GiB box, and that budget spilled the tables to disk."""
+    meminfo = tmp_path / "meminfo"
+    meminfo.write_text("MemTotal:       15728640 kB\nMemFree:  1024 kB\n", encoding="utf-8")
+    monkeypatch.setattr(alpha_adapt, "HOST_MEMINFO", meminfo)
+
+    assert alpha_adapt._host_ram_gib() == pytest.approx(15.0, abs=1e-6)
+
+
+def test_a_wrapped_projection_is_reached_through_all_linear() -> None:
+    """Gemma 4 names every projection ``linear`` inside its own clippable block, so
+    peft finds no ``q_proj`` to wrap and refuses the run instead of skipping it."""
+
+    class _Clippable:
+        def __init__(self) -> None:
+            self.linear = torch.nn.Linear(2, 2)
+
+    class _Wrapped:
+        def __init__(self) -> None:
+            self.q_proj = _Clippable()
+
+        def named_modules(self):
+            yield "", object()
+            yield "model.language_model.layers.0.self_attn.q_proj", self.q_proj
+            yield "model.language_model.layers.0.self_attn.q_proj.linear", self.q_proj.linear
+
+    assert _lora_targets(_Wrapped()) == "all-linear"
+
+
+def test_one_wrapped_projection_condemns_the_set_a_plain_tower_does_not_rescue() -> None:
+    """Gemma 4's tower keeps plain projections, so a single plain match proves nothing."""
+
+    class _Clippable(torch.nn.Linear):
+        def __init__(self) -> None:
+            super().__init__(2, 2)
+
+    class _Mixed:
+        def __init__(self) -> None:
+            self.tower = torch.nn.Linear(2, 2)
+            self.wrapped = _Clippable()
+
+        def named_modules(self):
+            yield "", object()
+            yield "model.vision_tower.layers.0.q_proj", self.tower
+            yield "model.language_model.layers.0.q_proj", self.wrapped
+
+    assert _lora_targets(_Mixed()) == "all-linear"
+
+
+def test_a_base_that_names_its_projections_keeps_the_pinned_targets() -> None:
+    class _Plain:
+        def __init__(self) -> None:
+            self.q_proj = torch.nn.Linear(2, 2)
+            self.down_proj = torch.nn.Linear(2, 2)
+
+        def named_modules(self):
+            yield "", object()
+            yield "model.layers.0.self_attn.q_proj", self.q_proj
+            yield "model.layers.0.mlp.down_proj", self.down_proj
+
+    assert _lora_targets(_Plain()) == list(TARGET_MODULES)
 
 
 def test_half_precision_steps_are_scaled_and_fp32_ones_are_not() -> None:

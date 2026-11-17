@@ -43,6 +43,13 @@ class Action(StrEnum):
     WRITE_RECIPE = "write_recipe"
     MANAGE_PEOPLE = "manage_people"
     VIEW_TRACES = "view_traces"
+    ANCHOR_AUDIT = "anchor_audit"
+    ADVISE_COMPUTE = "advise_compute"
+    ATTACH_COMPUTE = "attach_compute"
+    VERIFY_ARTIFACT = "verify_artifact"
+    AUDIT_DATASET = "audit_dataset"
+    CLOSE_BUDGET_PERIOD = "close_budget_period"
+    EXPORT_SPEND = "export_spend"
 
 
 ANYONE: frozenset[str] = frozenset()
@@ -73,6 +80,18 @@ ACTION_ROLES: dict[Action, frozenset[str]] = {
     Action.DECIDE_POLICY: frozenset({"program_lead", "legal"}),
     Action.WRITE_BRIEF: frozenset({"program_lead", "ml_lead"}),
     Action.WRITE_RECIPE: frozenset({"ml_lead", "program_lead"}),
+    # Anchoring is the ledger's own integrity operation, so it sits with the two
+    # roles that answer for evidence rather than with whoever runs the platform.
+    Action.ANCHOR_AUDIT: frozenset({"security", "compliance"}),
+    # Reading what a corpus needs is open to anyone signed in; deciding which
+    # machine the platform will use is the infra engineer's call, and it is
+    # recorded as such.
+    Action.ADVISE_COMPUTE: ANYONE,
+    Action.ATTACH_COMPUTE: frozenset({"infra_engineer"}),
+    Action.VERIFY_ARTIFACT: frozenset({"ml_lead", "security", "infra_engineer"}),
+    Action.AUDIT_DATASET: frozenset({"data_owner", "compliance", "ml_lead"}),
+    Action.CLOSE_BUDGET_PERIOD: frozenset({"program_lead", "compliance"}),
+    Action.EXPORT_SPEND: frozenset({"program_lead", "compliance"}),
     Action.MANAGE_PEOPLE: frozenset({"program_lead", "engineering_manager"}),
     Action.VIEW_TRACES: frozenset({"ml_lead", "program_lead", "compliance", "domain_expert"}),
 }
