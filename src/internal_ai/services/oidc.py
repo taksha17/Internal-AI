@@ -39,9 +39,13 @@ ENV_ISSUER = "INTERNAL_AI_OIDC_ISSUER"
 ENV_CLIENT_ID = "INTERNAL_AI_OIDC_CLIENT_ID"
 ENV_CLIENT_SECRET = "INTERNAL_AI_OIDC_CLIENT_SECRET"
 ENV_REDIRECT_URI = "INTERNAL_AI_OIDC_REDIRECT_URI"
+ENV_API_CLIENT_ID = "INTERNAL_AI_OIDC_API_CLIENT_ID"
 
 STATE_SECONDS = 5 * 60
 """How long a started sign-in may sit before its callback is refused."""
+
+DOCUMENT_SECONDS = 5 * 60
+"""How long a discovery document or key set is reused before asking again."""
 
 CLOCK_SKEW_SECONDS = 60
 """What a provider's clock may be behind this machine's before a token fails."""
@@ -60,6 +64,16 @@ class OidcConfig:
     client_id: str
     redirect_uri: str
     client_secret: str = ""
+    api_client_id: str = ""
+
+    @property
+    def api_audience(self) -> str:
+        """The audience a token for the JSON API is issued to.
+
+        A directory that registers the console and the API separately names the
+        second one here; an install with one registration uses the same client.
+        """
+        return self.api_client_id or self.client_id
 
     @classmethod
     def configured(cls) -> OidcConfig | None:
@@ -87,7 +101,13 @@ class OidcConfig:
             raise OidcDenied(
                 "the identity provider is only half configured; set " + ", ".join(missing)
             )
-        return cls(issuer=issuer, client_id=client_id, redirect_uri=redirect, client_secret=secret)
+        return cls(
+            issuer=issuer,
+            client_id=client_id,
+            redirect_uri=redirect,
+            client_secret=secret,
+            api_client_id=os.environ.get(ENV_API_CLIENT_ID, "").strip(),
+        )
 
     def validated(self) -> OidcConfig:
         """Refuse a provider address that cannot be verified over a private path."""
@@ -111,6 +131,7 @@ class OidcConfig:
             "client_id": self.client_id,
             "redirect_uri": self.redirect_uri,
             "public_client": not self.client_secret,
+            "api_audience": self.api_audience,
         }
 
 
@@ -139,6 +160,15 @@ def fetch_json(url: str) -> dict[str, Any]:
     return document
 
 
+_DOCUMENTS: dict[str, tuple[float, dict[str, Any]]] = {}
+"""Discovery documents and key sets already read, with when they go stale.
+
+A console reads these once per sign-in and could not care; the JSON API checks a
+token on every call, and two round trips per call is a tax the provider does not
+need. Five minutes keeps a rotated key visible quickly enough to matter.
+"""
+
+
 class OidcClient:
     """One sign-in against one configured provider.
 
@@ -162,10 +192,23 @@ class OidcClient:
 
     # ---------------------------------------------------------- discovery
 
+    def _document(self, url: str) -> dict[str, Any]:
+        if self._fetch is not fetch_json:
+            # A reader handed in by a test is a statement about what this client
+            # should see, so it is not second-guessed by a cache.
+            return self._fetch(url)
+        now = self.clock()
+        remembered = _DOCUMENTS.get(url)
+        if remembered is not None and remembered[0] > now:
+            return remembered[1]
+        document = fetch_json(url)
+        _DOCUMENTS[url] = (now + DOCUMENT_SECONDS, document)
+        return document
+
     def discovery(self) -> Discovery:
         if self._discovery is not None:
             return self._discovery
-        document = self._fetch(self.config.issuer + "/.well-known/openid-configuration")
+        document = self._document(self.config.issuer + "/.well-known/openid-configuration")
         issuer = str(document.get("issuer", ""))
         if issuer != self.config.issuer:
             raise OidcDenied(
@@ -191,7 +234,7 @@ class OidcClient:
     def keys(self) -> dict[str, dict[str, Any]]:
         if self._keys:
             return self._keys
-        document = self._fetch(self.discovery().jwks_uri)
+        document = self._document(self.discovery().jwks_uri)
         published = document.get("keys")
         if not isinstance(published, list):
             raise OidcDenied("the identity provider published no key set")
@@ -267,8 +310,16 @@ class OidcClient:
 
     # -------------------------------------------------------------- token
 
-    def verify(self, id_token: str, nonce: str) -> dict[str, Any]:
-        """Check a token's key, signature and claims, and return what it states."""
+    def verify(
+        self, id_token: str, nonce: str | None, *, audience: str | None = None
+    ) -> dict[str, Any]:
+        """Check a token's key, signature and claims, and return what it states.
+
+        `nonce` is the browser's half of a sign-in and is None for a token a
+        script presents: there was no browser request for it to answer. The
+        signature, issuer, audience and time are checked either way, and the
+        subject still has to be linked to a person.
+        """
         parts = id_token.split(".")
         if len(parts) != 3:
             raise OidcDenied("the id token is not a signed JWT")
@@ -291,22 +342,29 @@ class OidcClient:
             )
         signing_input = f"{parts[0]}.{parts[1]}".encode("ascii")
         verify_rsa(key, algorithm, signing_input, _b64url_decode(parts[2]))
-        self.check_claims(payload, nonce)
+        self.check_claims(payload, nonce, audience=audience)
         return payload
 
-    def check_claims(self, payload: dict[str, Any], nonce: str) -> None:
+    def check_claims(
+        self, payload: dict[str, Any], nonce: str | None, *, audience: str | None = None
+    ) -> None:
         """Every claim this install relies on, checked against configuration."""
         issuer = payload.get("iss")
         if issuer != self.config.issuer:
             raise OidcDenied(
                 f"the id token was issued by {issuer or 'nobody'}, not {self.config.issuer}"
             )
-        audience = payload.get("aud")
-        audiences = [audience] if isinstance(audience, str) else list(audience or [])
-        if self.config.client_id not in audiences:
+        expected = audience or self.config.client_id
+        audiences_claimed = payload.get("aud")
+        audiences = (
+            [audiences_claimed]
+            if isinstance(audiences_claimed, str)
+            else list(audiences_claimed or [])
+        )
+        if expected not in audiences:
             raise OidcDenied("the id token was issued for another client")
         authorized = payload.get("azp")
-        if authorized is not None and authorized != self.config.client_id:
+        if authorized is not None and authorized != expected:
             raise OidcDenied("the id token was authorized for another party")
         now = self.clock()
         expires = payload.get("exp")
@@ -320,9 +378,10 @@ class OidcClient:
         not_before = payload.get("nbf")
         if isinstance(not_before, int | float) and not_before > now + CLOCK_SKEW_SECONDS:
             raise OidcDenied("the id token is not valid yet")
-        sent = payload.get("nonce")
-        if not nonce or not isinstance(sent, str) or not hmac.compare_digest(sent, nonce):
-            raise OidcDenied("the id token answers a different sign-in request")
+        if nonce is not None:
+            sent = payload.get("nonce")
+            if not isinstance(sent, str) or not hmac.compare_digest(sent, nonce):
+                raise OidcDenied("the id token answers a different sign-in request")
         subject = payload.get("sub")
         if not isinstance(subject, str) or not subject.strip():
             raise OidcDenied("the id token names no subject")
