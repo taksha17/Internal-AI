@@ -118,10 +118,7 @@ class RedisCache:
         return None if value is None else str(value)
 
     def set(self, key: str, value: str, ttl_seconds: int) -> None:
-        if ttl_seconds:
-            self.client.setex(key, ttl_seconds, value)
-        else:
-            self.client.set(key, value)
+        self.client.set(key, value, ex=ttl_seconds or None)
 
     def delete(self, key: str) -> None:
         self.client.delete(key)
