@@ -330,6 +330,7 @@ you. Every message below is what the platform actually printed.
 | `tokenizer train` twice | `tokenizer for ds_… is frozen; train it on a new dataset version` | a tokenizer is pinned to its dataset version |
 | `train run` before a frozen eval set | `training waits for a frozen eval set of questions a domain expert filed` | you cannot grade yourself with questions you wrote |
 | `train run` on too small a corpus | `35078 tokens and 209152 parameters are below 20 tokens per parameter` | the floor, and it does not move |
+| promote a leaking adapter | `membership advantage 1.00 is above the 0.05 ceiling: the adapter repeats training spans it does not repeat from held-out text, so promoting it would serve its training data` | extraction probes are scored with the report; the ceiling is held by the gate |
 
 ## Where those rules live
 

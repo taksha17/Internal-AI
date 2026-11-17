@@ -12,6 +12,11 @@ from internal_ai.data.records import Record
 from internal_ai.data.splits import contamination_report
 from internal_ai.data.transforms import PII_PATTERNS
 from internal_ai.domain import AuditOutcome, EvalReport, EvalSet, GateType, ModelVersion
+from internal_ai.evals.extraction import (
+    EXTRACTION_ADVANTAGE_CEILING,
+    EXTRACTION_KIND,
+    score_extraction,
+)
 from internal_ai.evals.metrics import token_f1
 from internal_ai.ids import content_hash, file_hash, new_id, now_iso
 from internal_ai.services import governance
@@ -433,6 +438,7 @@ def evaluate_alpha(
     )
     keyword_rate = round(keyword_cited / total, 6) if total else 0.0
     keyword_answered = _mean_overlap(keyword_overlaps)
+    extraction = _score_extraction(platform, model, eval_set, answers)
     if cited > base_cited:
         verdict = (
             f"the adapter kept {cited} of {total} citations and its un-adapted base kept "
@@ -484,6 +490,24 @@ def evaluate_alpha(
     }
     metrics = {"citation_pass_rate": rate, "answer_f1": answered}
     baseline_metrics = {"citation_pass_rate": base_rate, "answer_f1": base_answered}
+    per_case: dict[str, Any] = {
+        "citation_pass_rate": {
+            "candidate": kept,
+            "baseline": base_kept,
+            "keyword": keyword_kept,
+        },
+        "answer_f1": {
+            "candidate": overlaps,
+            "baseline": base_overlaps,
+            "keyword": keyword_overlaps,
+        },
+    }
+    extraction_note = ""
+    if extraction is not None:
+        extraction_metrics, extraction_per_case, extraction_check, extraction_note = extraction
+        checks["extraction"] = extraction_check
+        metrics.update(extraction_metrics)
+        per_case.update(extraction_per_case)
     passed = all(bool(check.get("passed")) for check in checks.values())
     eval_report = EvalReport(
         id=new_id("rep"),
@@ -492,18 +516,7 @@ def evaluate_alpha(
         created_at=now_iso(),
         metrics=metrics,
         baseline_metrics=baseline_metrics,
-        per_case={
-            "citation_pass_rate": {
-                "candidate": kept,
-                "baseline": base_kept,
-                "keyword": keyword_kept,
-            },
-            "answer_f1": {
-                "candidate": overlaps,
-                "baseline": base_overlaps,
-                "keyword": keyword_overlaps,
-            },
-        },
+        per_case=per_case,
         checks=checks,
         passed=passed,
         notes=(
@@ -519,7 +532,8 @@ def evaluate_alpha(
             "; the answers themselves overlapped their reference spans at extractive F1 "
             f"{answered:.2f} against the base's {base_answered:.2f} and a keyword search's "
             f"{keyword_answered:.2f}, which a citation count alone cannot say"
-        ),
+        )
+        + extraction_note,
     )
     platform.store.add_eval_report(eval_report)
     platform.audit.record(
@@ -536,6 +550,92 @@ def evaluate_alpha(
         },
     )
     return eval_report
+
+
+def _extraction_texts(platform: Platform, model: ModelVersion) -> tuple[Any, str]:
+    """Training and held-out payloads, or the reason they cannot be compared."""
+    dataset_id = str((model.dataset_ids or [""])[0])
+    rows = platform.store.dataset_records(dataset_id) if dataset_id else []
+    train = [str(row["payload"]) for row in rows if row.get("split") == "train"]
+    heldout = [
+        str(row["payload"]) for row in rows if row.get("split") and row.get("split") != "train"
+    ]
+    if not train or not heldout:
+        return None, (
+            "the corpus has no train and held-out split to compare, so a verbatim "
+            "span proves nothing about memorisation"
+        )
+    return (train, heldout), ""
+
+
+def _score_extraction(
+    platform: Platform, model: ModelVersion, eval_set: EvalSet, answers: list[str]
+) -> tuple[dict[str, float], dict[str, Any], dict[str, Any], str] | None:
+    """The extraction section, or None when the set asks no extraction questions.
+
+    Variants are ordinary items with kind "extraction" and a shared group: the
+    runner answers them like any other question, so the staging protocol does
+    not change. An extraction item that names no group is refused rather than
+    scored as unanswered, so a malformed probe cannot dilute the mean.
+    """
+    indexed = [
+        (index, item)
+        for index, item in enumerate(eval_set.items)
+        if str(item.get("kind") or "") == EXTRACTION_KIND
+    ]
+    if not indexed:
+        return None
+    order: list[str] = []
+    grouped: dict[str, list[str]] = {}
+    for index, item in indexed:
+        key = str(item.get("group") or "")
+        if not key:
+            raise PermissionError(
+                f"extraction item {index} names no paraphrase group; a variant "
+                "that belongs to nothing cannot be scored"
+            )
+        if key not in grouped:
+            grouped[key] = []
+            order.append(key)
+        grouped[key].append(answers[index])
+    texts, missing = _extraction_texts(platform, model)
+    if texts is None:
+        check = {
+            "passed": False,
+            "groups": len(order),
+            "membership_advantage": 0.0,
+            "note": missing,
+        }
+        return {}, {}, check, f"; extraction could not be measured: {missing}"
+    scores = score_extraction([grouped[key] for key in order], texts[0], texts[1])
+    ceiling = EXTRACTION_ADVANTAGE_CEILING
+    report_metrics = {
+        "paraphrase_consistency": round(scores.consistency, 6),
+        "membership_advantage": round(scores.advantage, 6),
+        "verbatim_span_rate": round(scores.verbatim, 6),
+    }
+    report_per_case = {
+        "paraphrase_consistency": {"candidate": list(scores.per_consistency)},
+        "membership_advantage": {"candidate": list(scores.per_advantage)},
+    }
+    report_check = {
+        "passed": scores.advantage <= ceiling,
+        "groups": scores.groups,
+        "membership_advantage": round(scores.advantage, 6),
+        "paraphrase_consistency": round(scores.consistency, 6),
+        "verbatim_span_rate": round(scores.verbatim, 6),
+        "ceiling": ceiling,
+        "note": (
+            f"the adapter repeats training spans at advantage {scores.advantage:.2f} "
+            f"against the {ceiling:.2f} ceiling"
+        ),
+    }
+    return (
+        report_metrics,
+        report_per_case,
+        report_check,
+        f"; extraction advantage {scores.advantage:.2f}",
+    )
 
 
 def serve_alpha(platform: Platform, model_id: str, runner_dir: Path) -> Path:

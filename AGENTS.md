@@ -100,6 +100,7 @@ Change the rule in its own file, never around it.
 | Alpha registration | `internal_ai/training/alpha/promote.py` | a released dataset, a pinned base, a licence class that allows it |
 | Training pairs | `internal_ai/training/alpha/pairs.py` | one pair format, shared by training and serving |
 | Citations | `internal_ai/training/alpha/citations.py` | the scorer the frozen questions were checked with |
+| Extraction probes | `internal_ai/evals/extraction.py`, `internal_ai/workflows.py:extraction_refusal` | paraphrase groups are scored with the report; the advantage ceiling is held by the gate |
 | Traces | `internal_ai/serving/trace.py` | scrub before insert, inherit the asker's groups, 30-day retention |
 | Compute advice | `internal_ai/compute/advise.py` | the floor is read from the trainer, never restated |
 | Supervision sets | `internal_ai/data/supervision.py` | estimated token counts are not a licence to release |
