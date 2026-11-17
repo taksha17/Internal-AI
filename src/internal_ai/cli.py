@@ -811,12 +811,14 @@ def cmd_data_build_tree(args: argparse.Namespace) -> int:
 def cmd_ask(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         from internal_ai.agentic import AgenticSearcher
+        from internal_ai.policy import read_policy
         from internal_ai.services.build import served_embedder, written_answer
         from internal_ai.serving.service import Principal
 
         principal = Principal(
             user_id=args.user,
             groups=frozenset(args.groups.split(",")) if args.groups else frozenset({"engineering"}),
+            read_policy=read_policy(platform.policy),
         )
         searcher = AgenticSearcher(
             platform.store,

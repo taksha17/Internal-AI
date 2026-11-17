@@ -1,9 +1,14 @@
-"""Which human roles may take which action.
+"""Which human roles may take which action, and on which records.
 
 The map is the specification. An action mapped to `ANYONE` is open to every
 signed-in person; every other action names the roles that may take it. Gate
 decisions are checked against the roles the gate itself requires, so they are
 not in the map.
+
+A role answers whether a person may take the action at all. When the caller
+names a record, `services/attributes.py` answers whether they may take it on
+that one, and `require` asks both: an attribute rule kept in a second call is a
+rule a caller can forget to make.
 """
 
 from __future__ import annotations
@@ -13,6 +18,7 @@ from enum import StrEnum
 from internal_ai.audit import AuditLog
 from internal_ai.domain import AuditOutcome
 from internal_ai.services.actor import Actor
+from internal_ai.services.attributes import ReadPolicy, Resource
 
 
 class Action(StrEnum):
@@ -103,11 +109,27 @@ class PermissionDenied(PermissionError):
     pass
 
 
-def allowed(actor: Actor, action: Action) -> bool:
+def allowed(
+    actor: Actor,
+    action: Action,
+    resource: Resource | None = None,
+    policy: ReadPolicy | None = None,
+) -> bool:
+    """May this actor take this action -- and, when one is named, on this record.
+
+    The role and the attributes are one answer rather than two questions a
+    caller has to remember to ask in order. A caller that names no record gets
+    the role answer alone, which is what every button on a page needs.
+    """
     if actor.kind != "human":
         return False
     roles = ACTION_ROLES[action]
-    return not roles or bool(actor.roles & roles)
+    if roles and not (actor.roles & roles):
+        return False
+    if resource is None:
+        return True
+    grants = policy or ReadPolicy.strict()
+    return grants.allows(actor.groups, resource.sensitivity, resource.acl)
 
 
 def reason(action: Action) -> str:
@@ -118,21 +140,82 @@ def reason(action: Action) -> str:
     return "needs " + " or ".join(sorted(roles))
 
 
-def deny(audit: AuditLog, actor: Actor, action: str, subject: str, why: str) -> PermissionDenied:
+def attribute_reason(resource: Resource, policy: ReadPolicy) -> str:
+    """Why one record is out of reach, in the words shown next to it.
+
+    The two refusals are not the same refusal: a class nobody granted is a policy
+    decision, while an unreadable record of a readable class is the record's own
+    ACL talking. A message that blurred them would send a person to the wrong
+    administrator.
+    """
+    if resource.data_class not in policy.grants:
+        return f"needs a group granted {resource.data_class} {resource.kind} material"
+    groups = ", ".join(sorted(resource.acl)) or "none"
+    return f"needs one of the groups this {resource.kind} belongs to ({groups})"
+
+
+def deny(
+    audit: AuditLog,
+    actor: Actor,
+    action: str,
+    subject: str,
+    why: str,
+    attribute: dict[str, object] | None = None,
+) -> PermissionDenied:
     """Record a refusal and return the error for the caller to raise."""
+    details: dict[str, object] = {
+        "action": action,
+        "reason": why,
+        "authenticated": actor.authenticated,
+    }
+    if attribute is not None:
+        # Which half refused: the role or the record. Without it a reviewer cannot
+        # tell a person who lacks the capability from one reading another group's data.
+        details["attribute"] = attribute
     audit.record(
         actor=actor.id,
         actor_kind=actor.kind,
         action="console.denied",
         subject=subject or action,
         outcome=AuditOutcome.DENIED,
-        details={"action": action, "reason": why, "authenticated": actor.authenticated},
+        details=details,
     )
     return PermissionDenied(why)
 
 
-def require(audit: AuditLog, actor: Actor, action: Action, subject: str = "") -> None:
-    if not allowed(actor, action):
-        raise deny(
-            audit, actor, str(action), subject, f"{action.replace('_', ' ')} {reason(action)}"
-        )
+def require(
+    audit: AuditLog,
+    actor: Actor,
+    action: Action,
+    subject: str = "",
+    resource: Resource | None = None,
+    policy: ReadPolicy | None = None,
+) -> None:
+    """Refuse unless the role and, when a record is named, its attributes allow it.
+
+    The two refusals read differently on purpose: the first names the roles the
+    action needs, the second names the class of the record and the kind of thing
+    it is, and never a document id or its content.
+    """
+    label = str(action).replace("_", " ")
+    roles = ACTION_ROLES[action]
+    if actor.kind != "human" or (roles and not (actor.roles & roles)):
+        raise deny(audit, actor, str(action), subject, f"{label} {reason(action)}")
+    if resource is None:
+        return
+    grants = policy or ReadPolicy.strict()
+    if grants.allows(actor.groups, resource.sensitivity, resource.acl):
+        return
+    raise deny(
+        audit,
+        actor,
+        str(action),
+        subject,
+        f"{label} {attribute_reason(resource, grants)}",
+        attribute={
+            "kind": resource.kind,
+            "class": resource.data_class,
+            "acl": sorted(resource.acl),
+            "groups": sorted(actor.groups),
+        },
+    )

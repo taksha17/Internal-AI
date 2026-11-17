@@ -5,6 +5,17 @@
 {% block content %}
 {{ m.page_head("Policy decisions", "Open questions from the PRD. A proposal opens a policy gate; once a second person approves it, confirm it to make it current.") }}
 <p class="tabs"><a href="/console/admin/people">People</a><a href="/console/admin/policy" class="active">Policy</a><a href="/console/admin/budget">Budget</a></p>
+{% if grants %}
+<section class="card">
+  <h2>What a person may read now</h2>
+  <p class="muted">P7 decides this list, and the same answer is checked whenever a page or an answer reads a record. A class that is not listed is unreadable by everyone. A record can also carry an ACL, which needs one of the reader's groups in it; the platform-admins group is the only one that skips that.</p>
+  {% call m.data_table([("Data class",), ("Groups that may read it",)]) %}
+    {% for grant in grants %}
+    <tr><td><strong>{{ grant.class }}</strong></td><td>{{ grant.groups }}</td></tr>
+    {% endfor %}
+  {% endcall %}
+</section>
+{% endif %}
 {% for row in decisions %}
 {% set decision = row.decision %}
 <section class="card">

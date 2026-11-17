@@ -30,6 +30,7 @@ from internal_ai.data.suggest import label_columns
 from internal_ai.data.tree import is_text_file
 from internal_ai.domain import AuditOutcome, GateRequest, GateStatus, GateType
 from internal_ai.ids import new_id, now_iso
+from internal_ai.policy import read_policy
 from internal_ai.services import governance
 from internal_ai.services.actor import Actor
 from internal_ai.services.jobs import JobRunner
@@ -644,7 +645,7 @@ def dataset_view(platform: Platform, actor: Actor, dataset_id: str) -> dict[str,
     dataset = platform.store.get_dataset(dataset_id)
     if dataset is None:
         raise KeyError(f"unknown dataset: {dataset_id}")
-    principal = actor.principal()
+    principal = actor.principal(read_policy=read_policy(platform.policy))
     rows = platform.store.dataset_records(dataset_id)
     visible = [row for row in rows if principal.can_read(row["acl"], row["sensitivity"])]
     splits: dict[str, int] = {}
@@ -1702,7 +1703,7 @@ def ask(
     result = searcher.search(
         question.strip()[:500],
         dataset_id,
-        actor.principal(),
+        actor.principal(read_policy=read_policy(platform.policy)),
         max_steps=max(1, min(max_steps, 8)),
         actor=actor.id,
     )
