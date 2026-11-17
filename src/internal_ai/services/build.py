@@ -1500,6 +1500,38 @@ def set_guardrail_policy(platform: Platform, actor: Actor, model_id: str, policy
     return platform.store.get_model(model_id) or model
 
 
+def set_install_extraction_policy(platform: Platform, actor: Actor, policy: str) -> str:
+    """The whole install's rule for extraction-shaped traffic.
+
+    Warn answers a burst and says so; refuse withholds it. Either way the
+    counts reach the audit event, which is everything the install is allowed
+    to keep about who asked what. Checked before it is written, because an
+    install default of a misspelt policy would fail every answer at request
+    time instead of here.
+    """
+    from internal_ai.serving.extraction import (
+        INSTALL_EXTRACTION_POLICY_KEY,
+        check_extraction_policy,
+        configured_install_extraction_policy,
+    )
+
+    require(platform.audit, actor, Action.SET_EXTRACTION_POLICY, INSTALL_EXTRACTION_POLICY_KEY)
+    chosen = policy.strip()
+    if chosen:
+        check_extraction_policy(chosen)
+    before = configured_install_extraction_policy(platform.store)
+    platform.store.kv_set(INSTALL_EXTRACTION_POLICY_KEY, chosen)
+    after = configured_install_extraction_policy(platform.store)
+    platform.audit.record(
+        actor=actor.id,
+        actor_kind=actor.kind,
+        action="serving.extraction_default_set",
+        subject=INSTALL_EXTRACTION_POLICY_KEY,
+        details={"before": before, "after": after, "follows_environment": not chosen},
+    )
+    return after
+
+
 def set_install_guardrail_policy(platform: Platform, actor: Actor, policy: str) -> str:
     """The whole install's rule for flagged text. Empty hands it back to the environment.
 

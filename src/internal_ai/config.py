@@ -11,8 +11,10 @@ from internal_ai.dialects import ENV_DATABASE_URL
 ENV_HOME = "INTERNAL_AI_HOME"
 ENV_OFFLINE = "INTERNAL_AI_OFFLINE"
 ENV_GUARDRAIL_POLICY = "INTERNAL_AI_GUARDRAIL_POLICY"
+ENV_EXTRACTION_POLICY = "INTERNAL_AI_EXTRACTION_POLICY"
 DEFAULT_HOME = "var"
 DEFAULT_GUARDRAIL_POLICY = "warn"
+DEFAULT_EXTRACTION_POLICY = "warn"
 _OFFLINE_OFF = frozenset({"0", "false", "off", "no"})
 
 
@@ -24,6 +26,16 @@ def offline_mode() -> bool:
     """
     flag = os.environ.get(ENV_OFFLINE, "1").strip().lower()
     return flag not in _OFFLINE_OFF
+
+
+def installed_extraction_policy() -> str:
+    """What the install does with extraction-shaped traffic when nobody chose.
+
+    Warn and answer, unless an operator says otherwise through the console.
+    """
+    return os.environ.get(ENV_EXTRACTION_POLICY, DEFAULT_EXTRACTION_POLICY).strip() or (
+        DEFAULT_EXTRACTION_POLICY
+    )
 
 
 def installed_guardrail_policy() -> str:

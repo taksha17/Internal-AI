@@ -21,6 +21,12 @@ from internal_ai.data.shards import released_rows
 from internal_ai.data.tokenizer import Tokenizer
 from internal_ai.domain import ModelVersion
 from internal_ai.ids import new_id
+from internal_ai.serving.extraction import (
+    EXTRACTION_REFUSE,
+    ExtractionMonitor,
+    check_extraction_policy,
+    configured_install_extraction_policy,
+)
 from internal_ai.serving.guardrails import (
     GUARDRAIL_REFUSE,
     configured_install_policy,
@@ -107,6 +113,7 @@ def create_serving_app(
         app.state.retrieval = RetrievalService(platform.store, platform.audit, platform.blobs)
         app.state.embedders: dict[str, TorchEmbedder] = {}
         app.state.tokenizers: dict[str, Any] = {}
+        app.state.extraction_monitor = ExtractionMonitor()
         try:
             yield
         finally:
@@ -196,6 +203,50 @@ def create_serving_app(
                 detail={"error": "no model has a passing frozen report", "reasons": reasons},
             )
         raise HTTPException(status_code=404, detail="no embedding model is registered")
+
+    def extraction_refusal(
+        principal: Principal,
+        model: ModelVersion,
+        endpoint: str,
+        question: str,
+        finding: dict[str, Any],
+        received_at: float,
+    ) -> None:
+        """Refuse extraction-shaped traffic the way the guardrail refuses flagged text.
+
+        The audit event carries counts, never content; the trace carries the
+        scrubbed question and the failure name, like every other refusal.
+        """
+        from internal_ai.serving.trace import FAILURE_EXTRACTION, record_trace
+
+        platform = get_platform()
+        latency = (time.monotonic() - received_at) * 1000
+        details = {
+            "extraction_suspect": True,
+            "extraction_similar": finding["similar"],
+            "extraction_window": finding["window"],
+            "model_id": model.id,
+        }
+        log_request(platform.audit, principal, endpoint, 422, latency, details, question=question)
+        record_trace(
+            platform.store,
+            platform.audit,
+            principal,
+            endpoint=endpoint,
+            model_id=model.id,
+            question=question,
+            answer="",
+            latency_ms=latency,
+            status_code=422,
+            failure=FAILURE_EXTRACTION,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "answer withheld by extraction guardrail",
+                "similar_questions": finding["similar"],
+            },
+        )
 
     def served_by(name: str, principal: Principal) -> ModelVersion:
         """The model this request is answered by. A named one is never swapped.
@@ -438,6 +489,23 @@ def create_serving_app(
             model = in_service_model(principal)
             hits = [AskHit(item.path, item.line) for item in request.hits]
             excerpts = [item.text for item in request.hits]
+            extraction_monitor: ExtractionMonitor = app.state.extraction_monitor
+            extraction_finding = extraction_monitor.observe(principal.user_id, request.question)
+            try:
+                extraction_rule = check_extraction_policy(
+                    configured_install_extraction_policy(get_platform().store)
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+            if extraction_finding["suspect"] and extraction_rule == EXTRACTION_REFUSE:
+                extraction_refusal(
+                    principal,
+                    model,
+                    "/v1/answer",
+                    request.question,
+                    extraction_finding,
+                    started,
+                )
             try:
                 generator = answer_adapter(get_platform(), model)
             except PermissionError as exc:
@@ -487,6 +555,8 @@ def create_serving_app(
                 "model": result.model,
                 "guardrail_policy": policy,
                 "guardrail_violations": guardrail_violations,
+                "extraction_suspect": extraction_finding["suspect"],
+                "extraction_similar": extraction_finding["similar"],
             }
             citations = [{"path": item.path, "line": item.line} for item in request.hits]
             if policy == GUARDRAIL_REFUSE and guardrail_violations:
@@ -548,6 +618,10 @@ def create_serving_app(
                 "mismatches": list(result.mismatches),
                 "latency_ms": round(latency, 3),
                 "guardrail_violations": guardrail_violations,
+                "extraction_warning": {
+                    "suspect": extraction_finding["suspect"],
+                    "similar_questions": extraction_finding["similar"],
+                },
             }
 
     @app.post("/v1/chat/completions")
@@ -615,6 +689,24 @@ def create_serving_app(
         dataset_id = model.dataset_ids[0] if model.dataset_ids else ""
         if not dataset_id:
             raise HTTPException(status_code=400, detail="no dataset bound to the model")
+        checked_at = time.monotonic()
+        extraction_monitor: ExtractionMonitor = app.state.extraction_monitor
+        extraction_finding = extraction_monitor.observe(principal.user_id, question)
+        try:
+            extraction_rule = check_extraction_policy(
+                configured_install_extraction_policy(get_platform().store)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        if extraction_finding["suspect"] and extraction_rule == EXTRACTION_REFUSE:
+            extraction_refusal(
+                principal,
+                model,
+                "/v1/chat/completions",
+                question,
+                extraction_finding,
+                checked_at,
+            )
         retrieval: RetrievalService = app.state.retrieval
         rows = retrieval.corpus(dataset_id)
         started = time.monotonic()
@@ -700,6 +792,8 @@ def create_serving_app(
                 "model": result.model,
                 "guardrail_policy": policy,
                 "guardrail_violations": violations,
+                "extraction_suspect": extraction_finding["suspect"],
+                "extraction_similar": extraction_finding["similar"],
                 "stream": request.stream,
                 "model_id": model.id,
                 "stream_outcome": outcome,
@@ -793,6 +887,10 @@ def create_serving_app(
                 "citation_passed": result.passed,
                 "mismatches": list(result.mismatches),
                 "guardrail_violations": violations,
+                "extraction_warning": {
+                    "suspect": extraction_finding["suspect"],
+                    "similar_questions": extraction_finding["similar"],
+                },
             }
 
         def frame(payload: dict[str, Any]) -> str:

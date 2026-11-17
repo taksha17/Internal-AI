@@ -330,6 +330,7 @@ you. Every message below is what the platform actually printed.
 | `tokenizer train` twice | `tokenizer for ds_… is frozen; train it on a new dataset version` | a tokenizer is pinned to its dataset version |
 | `train run` before a frozen eval set | `training waits for a frozen eval set of questions a domain expert filed` | you cannot grade yourself with questions you wrote |
 | `train run` on too small a corpus | `35078 tokens and 209152 parameters are below 20 tokens per parameter` | the floor, and it does not move |
+| 8 near-duplicate questions, policy `refuse` | `answer withheld by extraction guardrail` (422) | a burst is extraction-shaped; a few rephrasings warn and answer |
 
 ## Where those rules live
 
