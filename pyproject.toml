@@ -26,6 +26,7 @@ dev = [
     "pytest-cov>=6.0",
     "ruff>=0.7",
     "openai>=1.40",
+    "cryptography>=42",
 ]
 train = ["torch>=2.4"]
 alpha = [
@@ -39,6 +40,7 @@ alpha = [
 ]
 
 postgres = ["psycopg[binary]>=3.2"]
+oidc = ["cryptography>=42"]
 redis = ["redis>=5.0"]
 
 [build-system]

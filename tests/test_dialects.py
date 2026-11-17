@@ -283,7 +283,7 @@ def test_every_table_of_the_schema_reaches_the_server() -> None:
     import re as _re
 
     names = set(_re.findall(r"CREATE TABLE IF NOT EXISTS (\w+)", SCHEMA))
-    assert len(names) == 34
+    assert len(names) == 35
 
     ddl = postgres_schema(SCHEMA)
     missing = sorted(name for name in names if name not in ddl)
@@ -293,7 +293,7 @@ def test_every_table_of_the_schema_reaches_the_server() -> None:
 def test_the_generated_schema_is_statement_terminated() -> None:
     ddl = postgres_schema(SCHEMA)
 
-    assert ddl.count("CREATE TABLE") == 34
+    assert ddl.count("CREATE TABLE") == 35
     assert not ddl.strip().endswith(";\n\n")
     assert "END;" in ddl
 
@@ -338,7 +338,7 @@ def test_a_semicolon_inside_a_literal_or_comment_does_not_split() -> None:
 def test_the_generated_schema_splits_into_its_parts() -> None:
     statements = split_statements(postgres_schema(SCHEMA))
 
-    assert sum(1 for s in statements if s.startswith("CREATE TABLE")) == 34
+    assert sum(1 for s in statements if s.startswith("CREATE TABLE")) == 35
     assert sum(1 for s in statements if "audit_events_append_only" in s) >= 1
 
 
