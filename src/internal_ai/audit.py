@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,9 @@ from internal_ai.domain import AuditEvent, AuditOutcome
 from internal_ai.ids import content_hash, new_id, now_iso
 from internal_ai.signing import ANCHOR_UNSIGNED, Anchor, AuditSigner, SigningRefused
 from internal_ai.store import Store
+
+CHECKED_AT = "audit_checked_at"
+CHECKED_OK = "audit_checked_ok"
 
 
 @dataclass(slots=True)
@@ -165,6 +169,25 @@ class AuditLog:
         )
         return self.store.append_audit(event)
 
+    def check_due(self, interval_hours: float = 24.0) -> bool:
+        """Whether enough time has passed since the last full check to run another.
+
+        There is no daemon here, so the schedule is whatever opens the platform: a
+        cron entry runs `audit check`, and this decides whether that run walks the
+        chain or says it is too soon. An unreadable stamp is due, because a stamp
+        nobody can parse is not evidence that a check happened.
+        """
+        if interval_hours <= 0:
+            return True
+        last = self.store.kv_get(CHECKED_AT, "")
+        if not last:
+            return True
+        try:
+            then = datetime.fromisoformat(last)
+        except ValueError:
+            return True
+        return datetime.now(UTC) - then >= timedelta(hours=interval_hours)
+
     def verify(self) -> AuditVerification:
         previous_hash = ""
         checked = 0
@@ -185,6 +208,8 @@ class AuditLog:
             previous_hash = event.hash
         result = self._check_anchor({event.seq: event for event in chain}, checked)
         self._health = result
+        self.store.kv_set(CHECKED_AT, now_iso())
+        self.store.kv_set(CHECKED_OK, "1" if result.ok else "0")
         return result
 
     def _check_anchor(self, by_seq: dict[int, AuditEvent], checked: int) -> AuditVerification:

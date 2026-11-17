@@ -44,6 +44,22 @@ def test_a_tampered_chain_is_alerted_when_the_platform_opens(tmp_path: Path) -> 
         reopened.close()
 
 
+def test_a_check_is_due_until_one_has_run(tmp_path: Path) -> None:
+    with Platform.create(root=tmp_path, llm_kind="scripted") as platform:
+        platform.audit.verify()
+
+        assert not platform.audit.check_due(24.0)
+        assert platform.audit.check_due(0.0)
+        assert platform.store.kv_get("audit_checked_ok", "") == "1"
+
+
+def test_an_unreadable_stamp_is_due(tmp_path: Path) -> None:
+    with Platform.create(root=tmp_path, llm_kind="scripted") as platform:
+        platform.store.kv_set("audit_checked_at", "last tuesday")
+
+        assert platform.audit.check_due(24.0), "a stamp nobody can parse proves nothing"
+
+
 def test_a_clean_install_raises_no_integrity_alert(tmp_path: Path) -> None:
     with Platform.create(root=tmp_path, llm_kind="scripted") as platform:
         platform.audit.record(actor="a", action="test.one", subject="x")

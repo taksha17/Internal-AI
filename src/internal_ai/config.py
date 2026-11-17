@@ -54,6 +54,11 @@ class Settings:
     lineage_dir: Path
 
     @property
+    def redis_url(self) -> str:
+        """The shared cache, when an install has one; empty means process-local."""
+        return os.environ.get("INTERNAL_AI_REDIS_URL", "").strip()
+
+    @property
     def database_url(self) -> str:
         """Where the control-plane database lives.
 

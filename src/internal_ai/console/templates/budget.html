@@ -24,5 +24,28 @@
   <p class="small"><a href="/console/gates/new?gate_type=budget_increase&amp;subject=global:global">Request a budget increase</a></p>
 </form>
 {% endif %}
+{% if can("close_budget_period") %}
+<form method="post" action="/console/admin/budget/close" class="stack card">
+  {{ m.csrf_field() }}
+  <h2>Close a period</h2>
+  <p class="muted">Closing freezes the spend between two timestamps so a chargeback has one number per scope. A closed window is not reopened; a correction is a new period.</p>
+  <label>Starts at <input type="text" name="starts_at" placeholder="2026-11-10T00:00:00+00:00" required></label>
+  <label>Ends at <input type="text" name="ends_at" placeholder="2026-11-17T00:00:00+00:00" required></label>
+  <button type="submit">Close period</button>
+</form>
+{% endif %}
+{% call m.data_table([("Period",), ("Closed",), ("Scopes", true), ("Total", true), ("Export",)]) %}
+  {% for period in periods %}
+  <tr>
+    <td>{{ period.starts_at }} .. {{ period.ends_at }}</td>
+    <td>{{ period.closed_at }} <span class="muted small">{{ period.closed_by }}</span></td>
+    <td class="num">{{ period.totals | length }}</td>
+    <td class="num">${{ "%.4f" % (period.totals.values() | map(attribute="usd") | sum) }}</td>
+    <td>{% if can("export_spend") %}<a href="/console/admin/budget/periods/{{ period.starts_at }}.csv">CSV</a>{% else %}<span class="muted small">needs program_lead or compliance</span>{% endif %}</td>
+  </tr>
+  {% else %}
+  {{ m.empty_row(5, "No closed periods", "A period is closed to freeze what a window cost before it is billed.", "#set-limit", "Set a limit") }}
+  {% endfor %}
+{% endcall %}
 {% for gate in gates %}<div class="card">{{ m.gate_box(gate) }}</div>{% endfor %}
 {% endblock %}

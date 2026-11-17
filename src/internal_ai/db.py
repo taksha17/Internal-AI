@@ -132,6 +132,17 @@ CREATE TABLE IF NOT EXISTS budget_limits (
     PRIMARY KEY (scope, key)
 );
 
+CREATE TABLE IF NOT EXISTS budget_periods (
+    id TEXT PRIMARY KEY,
+    project TEXT NOT NULL,
+    starts_at TEXT NOT NULL,
+    ends_at TEXT NOT NULL,
+    closed_at TEXT NOT NULL,
+    closed_by TEXT NOT NULL,
+    totals TEXT NOT NULL DEFAULT '{}',
+    UNIQUE (project, starts_at)
+);
+
 CREATE TABLE IF NOT EXISTS spend_records (
     id TEXT PRIMARY KEY,
     scope TEXT NOT NULL,

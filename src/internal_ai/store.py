@@ -673,6 +673,29 @@ class Store:
         ).fetchone()
         return float(row["total"])
 
+    def lock_budget_limit(self, scope: BudgetScope, key: str) -> None:
+        """Wait for the limit row's writer on a server; a no-op on sqlite.
+
+        sqlite's `BEGIN IMMEDIATE` already excludes every other writer, so there is
+        nothing to wait for. A server takes only the rows it writes, which means two
+        reservations can read the same committed total and both fit inside the cap.
+        This is the row lock that makes the second one wait.
+        """
+        if getattr(self.conn, "is_sqlite", True):
+            return
+        self.conn.execute(
+            "SELECT limit_usd FROM budget_limits WHERE scope = ? AND key = ? FOR UPDATE",
+            (str(scope), key),
+        )
+
+    def lock_reservations(self, group_id: str) -> None:
+        """The same wait for a hold being settled, so it cannot be settled twice."""
+        if getattr(self.conn, "is_sqlite", True):
+            return
+        self.conn.execute(
+            "SELECT id FROM spend_reservations WHERE group_id = ? FOR UPDATE", (group_id,)
+        )
+
     def reservation_rows(self, group_id: str) -> list[sqlite3.Row]:
         return self.conn.execute(
             "SELECT * FROM spend_reservations WHERE group_id = ? ORDER BY scope",
@@ -681,6 +704,49 @@ class Store:
 
     def delete_spend_reservations(self, group_id: str) -> None:
         self.conn.execute("DELETE FROM spend_reservations WHERE group_id = ?", (group_id,))
+
+    def add_budget_period(
+        self,
+        *,
+        period_id: str,
+        project: str,
+        starts_at: str,
+        ends_at: str,
+        closed_at: str,
+        closed_by: str,
+        totals: str,
+    ) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO budget_periods (id, project, starts_at, ends_at, closed_at,
+                                        closed_by, totals)
+            VALUES (?,?,?,?,?,?,?)
+            """,
+            (period_id, project, starts_at, ends_at, closed_at, closed_by, totals),
+        )
+
+    def budget_period(self, project: str, starts_at: str) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT * FROM budget_periods WHERE project = ? AND starts_at = ?",
+            (project, starts_at),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def list_budget_periods(self, project: str) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT * FROM budget_periods WHERE project = ? ORDER BY starts_at DESC",
+            (project,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def spend_between(self, starts_at: str, ends_at: str) -> list[dict[str, Any]]:
+        """Every spend row in a window, for a close and for a chargeback export."""
+        rows = self.conn.execute(
+            "SELECT * FROM spend_records WHERE created_at >= ? AND created_at < ? "
+            "ORDER BY scope, key, created_at",
+            (starts_at, ends_at),
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def expire_spend_reservations(self, now: str) -> None:
         self.conn.execute("DELETE FROM spend_reservations WHERE expires_at <= ?", (now,))

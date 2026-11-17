@@ -31,6 +31,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from internal_ai import brief
 from internal_ai.artifacts import ArtifactDenied
+from internal_ai.budget import BudgetPeriodError
 from internal_ai.console import find as finder
 from internal_ai.console import inbox, lists
 from internal_ai.context import Platform
@@ -93,6 +94,7 @@ HARNESS_WINDOW_TOKENS = 8192
 
 REFUSALS = (
     ArtifactDenied,
+    BudgetPeriodError,
     AuthenticationError,
     PermissionError,
     GateError,
@@ -2686,7 +2688,58 @@ def mount_console(
             for gate in ctx.platform.store.list_gates()
             if str(gate.gate_type) == str(GateType.BUDGET_INCREASE)
         ]
-        return render(ctx, "budget.html", budget=ctx.platform.budget.all_status(), gates=gates)
+        return render(
+            ctx,
+            "budget.html",
+            budget=ctx.platform.budget.all_status(),
+            gates=gates,
+            periods=ctx.platform.budget.periods(),
+        )
+
+    @app.post("/console/admin/budget/close", include_in_schema=False)
+    async def budget_close(request: Request) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        starts_at = form.get("starts_at", "").strip()
+        ends_at = form.get("ends_at", "").strip()
+        return await act(
+            ctx,
+            "/console/admin/budget",
+            lambda: governance.close_budget_period(ctx.platform, ctx.actor, starts_at, ends_at),
+            lambda period: (
+                f"{period['starts_at']} .. {period['ends_at']} closed, billing "
+                f"${period['billed_usd']:.4f} across {len(period['totals'])} scopes"
+            ),
+        )
+
+    @app.get("/console/admin/budget/periods/{starts_at}.csv", include_in_schema=False)
+    def budget_export_csv(request: Request, starts_at: str) -> Response:
+        ctx = context(request)
+        try:
+            export = governance.budget_export(ctx.platform, ctx.actor, starts_at)
+        except REFUSALS as exc:
+            flash(ctx, "error", message(exc))
+            return redirect("/console/admin/budget")
+        lines = ["scope,key,amount_usd,agent,task_id,job_id,created_at"]
+        for row in export["rows"]:
+            lines.append(
+                ",".join(
+                    _csv_cell(row[field])
+                    for field in ("scope", "key", "amount_usd", "agent", "task_id", "job_id")
+                )
+                + ","
+                + _csv_cell(row["created_at"])
+            )
+        body = "\n".join(lines) + "\n"
+        return Response(
+            body,
+            media_type="text/csv",
+            headers={
+                "content-disposition": (
+                    f'attachment; filename="spend-{starts_at.replace(":", "").replace("+", "")}.csv"'
+                )
+            },
+        )
 
     @app.post("/console/admin/budget", include_in_schema=False)
     async def budget_set(request: Request) -> Response:
@@ -2707,6 +2760,14 @@ def mount_console(
                 f"{result['scope']}:{result['key']} limit set to ${result['limit_usd']:.2f}"
             ),
         )
+
+
+def _csv_cell(value: Any) -> str:
+    """One CSV field: quoted when it carries a comma, a quote or a newline."""
+    text = str(value)
+    if any(char in text for char in ',"\n'):
+        return '"' + text.replace('"', '""') + '"'
+    return text
 
 
 def _next_step(job: dict[str, Any]) -> tuple[str, str] | None:

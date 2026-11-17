@@ -10,6 +10,7 @@ from internal_ai.agent import AgentRuntime
 from internal_ai.alerts import AlertEngine
 from internal_ai.audit import AuditLog
 from internal_ai.budget import BudgetManager
+from internal_ai.cache import Cache, build_cache
 from internal_ai.config import Settings
 from internal_ai.engine import EngineConfig, Orchestrator
 from internal_ai.gates import GateService
@@ -29,6 +30,7 @@ class Platform:
     gates: GateService
     budget: BudgetManager
     tools: ToolRegistry
+    cache: Cache
     runtime: AgentRuntime
     orchestrator: Orchestrator
     policy: PolicyRegistry
@@ -75,6 +77,9 @@ class Platform:
 
         policy = PolicyRegistry(store, gates)
         policy.seed()
+        # A configured cache that cannot be served refuses here, before a request
+        # could be answered with a session the operator believes is revoked.
+        cache = build_cache(settings.redis_url)
         return cls(
             settings=settings,
             store=store,
@@ -85,6 +90,7 @@ class Platform:
             gates=gates,
             budget=budget,
             tools=tools,
+            cache=cache,
             runtime=runtime,
             orchestrator=orchestrator,
             policy=policy,

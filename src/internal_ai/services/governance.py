@@ -252,6 +252,38 @@ def set_budget_limit(
     return {"scope": str(resolved), "key": key, "limit_usd": limit_usd}
 
 
+def close_budget_period(platform: Platform, actor: Actor, starts_at: str, ends_at: str) -> dict:
+    """Close a spend window. A closed period is what a chargeback is quoted from."""
+    require(platform.audit, actor, Action.CLOSE_BUDGET_PERIOD, starts_at)
+    period = platform.budget.close_period(starts_at, ends_at, closed_by=actor.id)
+    platform.audit.record(
+        actor=actor.id,
+        actor_kind=actor.kind,
+        action="budget.period_closed",
+        subject=starts_at,
+        details={
+            "ends_at": ends_at,
+            "billed_usd": period["billed_usd"],
+            "scopes": len(period["totals"]),
+        },
+    )
+    return period
+
+
+def budget_export(platform: Platform, actor: Actor, starts_at: str) -> dict:
+    """The spend rows behind a closed period, read by whoever pays the bill."""
+    require(platform.audit, actor, Action.EXPORT_SPEND, starts_at)
+    export = platform.budget.export_period(starts_at)
+    platform.audit.record(
+        actor=actor.id,
+        actor_kind=actor.kind,
+        action="budget.exported",
+        subject=starts_at,
+        details={"rows": len(export["rows"])},
+    )
+    return export
+
+
 def kill_switch_state(platform: Platform) -> dict[str, Any]:
     return {
         "engaged": platform.budget.kill_switch_engaged(),

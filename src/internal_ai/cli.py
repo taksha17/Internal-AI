@@ -252,6 +252,28 @@ def cmd_audit_verify(args: argparse.Namespace) -> int:
         return 0 if result.ok else 1
 
 
+def cmd_audit_check(args: argparse.Namespace) -> int:
+    """The entry a scheduler runs: verify when due, say so when it is not."""
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        if not platform.audit.check_due(args.interval_hours):
+            print(
+                f"not due: last check {platform.store.kv_get('audit_checked_at', 'never')}, "
+                f"interval {args.interval_hours:g}h"
+            )
+            return 0
+        # Two schedulers can fire at once; the second waits for the stamp instead of
+        # walking a chain the first is already walking.
+        if not platform.cache.acquire("audit-check", 600):
+            print("another audit check is running")
+            return 0
+        try:
+            result = platform.audit.verify()
+        finally:
+            platform.cache.release("audit-check")
+        _print(result.to_dict())
+        return 0 if result.ok else 1
+
+
 def cmd_audit_anchor(args: argparse.Namespace) -> int:
     with Platform.create(root=args.root, llm_kind=args.llm) as platform:
         actor = Actor.asserted(platform.store, args.actor)
@@ -299,6 +321,33 @@ def cmd_budget_set(args: argparse.Namespace) -> int:
             platform, actor, scope, args.key, args.limit, gate_id=args.gate_id
         )
         print(f"{scope}:{args.key} limit set to ${args.limit:.2f}")
+    return 0
+
+
+def cmd_budget_close(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        actor = _actor(platform, args, args.actor, "program_lead")
+        try:
+            period = governance.close_budget_period(platform, actor, args.start, args.end)
+        except (PermissionError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(
+            f"{period['starts_at']} .. {period['ends_at']} closed, billing "
+            f"${period['billed_usd']:.4f} across {len(period['totals'])} scopes"
+        )
+    return 0
+
+
+def cmd_budget_export(args: argparse.Namespace) -> int:
+    with Platform.create(root=args.root, llm_kind=args.llm) as platform:
+        actor = _actor(platform, args, args.actor, "program_lead")
+        try:
+            export = governance.budget_export(platform, actor, args.start)
+        except (PermissionError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        _print(export)
     return 0
 
 
@@ -1319,6 +1368,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     audit_verify = audit_sub.add_parser("verify")
     audit_verify.set_defaults(func=cmd_audit_verify)
+    audit_check = audit_sub.add_parser("check", help="verify on a schedule; no-op when not due")
+    audit_check.add_argument("--interval-hours", type=float, default=24.0)
+    audit_check.set_defaults(func=cmd_audit_check)
 
     budget = sub.add_parser("budget", help="budgets and kill switches")
     budget_sub = budget.add_subparsers(dest="budget_command", required=True)
@@ -1331,6 +1383,15 @@ def build_parser() -> argparse.ArgumentParser:
     budget_set.add_argument("--actor", default=None)
     budget_set.add_argument("--gate-id", default=None, help="approved budget_increase gate")
     budget_set.set_defaults(func=cmd_budget_set)
+    budget_close = budget_sub.add_parser("close", help="freeze a period's spend")
+    budget_close.add_argument("--start", required=True, help="period start, ISO timestamp")
+    budget_close.add_argument("--end", required=True, help="period end, ISO timestamp")
+    budget_close.add_argument("--actor", default=None)
+    budget_close.set_defaults(func=cmd_budget_close)
+    budget_export = budget_sub.add_parser("export", help="rows behind a closed period")
+    budget_export.add_argument("--start", required=True)
+    budget_export.add_argument("--actor", default=None)
+    budget_export.set_defaults(func=cmd_budget_export)
     kill = budget_sub.add_parser("kill")
     kill.add_argument("--actor", default=None)
     kill.add_argument("--release", action="store_true")
