@@ -7,6 +7,8 @@ the install depends on when Redis is *not* there.
 
 from __future__ import annotations
 
+import os
+import uuid
 from typing import Any
 
 import pytest
@@ -14,6 +16,7 @@ from conftest import enroll
 
 from internal_ai import cache
 from internal_ai.cache import CacheDenied, MemoryCache, RedisCache, build_cache
+from internal_ai.context import Platform
 from internal_ai.services.identity import IdentityService
 
 
@@ -23,7 +26,7 @@ class FakeRedis:
     def __init__(self) -> None:
         self.values: dict[str, str] = {}
         self.expiries: dict[str, int] = {}
-        self.setex_calls: list[tuple[str, int, str]] = []
+        self.expiring_sets: list[tuple[str, str, int | None]] = []
 
     def get(self, key: str) -> str | None:
         return self.values.get(key)
@@ -32,6 +35,7 @@ class FakeRedis:
         if nx and key in self.values:
             return None
         self.values[key] = value
+        self.expiring_sets.append((key, value, ex))
         if ex:
             self.expiries[key] = ex
         return True
@@ -101,7 +105,7 @@ def test_the_redis_path_sets_an_expiry_through_a_fake_client() -> None:
     shared.set("session:abc", "1", 60)
     shared.delete("session:abc")
 
-    assert client.setex_calls == [("session:abc", 60, "1")]
+    assert client.expiring_sets[-1] == ("session:abc", "1", 60)
     assert shared.get("session:abc") is None
 
 
@@ -137,19 +141,22 @@ def test_a_shared_cache_throttles_signing_in_across_services(platform, enroll_pe
     """Two services, one cache: the counter is the part that has to be shared."""
     first = IdentityService(platform)
     second = IdentityService(platform)
+    # A shared counter outlives a test run, so each run needs its own name and client.
+    nobody = f"nobody-{uuid.uuid4().hex[:10]}"
+    client = f"10.0.0.{uuid.uuid4().int % 250}"
 
     # A username that does not exist has no account row to lock, so the shared
     # counter is the only thing standing between one client and endless attempts.
     for _ in range(5):
         with pytest.raises(PermissionError, match="unknown account or wrong password"):
-            second.authenticate("nobody", "wrong-password", client="10.0.0.9")
+            second.authenticate(nobody, "wrong-password", client=client)
 
     with pytest.raises(PermissionError, match="too many failed attempts from this client"):
-        first.authenticate("nobody", "wrong-password", client="10.0.0.9")
+        first.authenticate(nobody, "wrong-password", client=client)
 
     # A real person from a different address never touched that counter.
-    other = enroll_person(platform, "Bo Lead", ["ml_lead"])
-    actor = first.authenticate(other.name, "correct-horse-battery", client="10.0.0.10")
+    other = enroll_person(platform, f"Bo Lead {uuid.uuid4().hex[:6]}", ["ml_lead"])
+    actor = first.authenticate(other.name, "correct-horse-battery", client=client + "-other")
     assert actor.id == other.id
 
 
@@ -199,11 +206,16 @@ def cache_key(token: str) -> str:
     return token_hash(token)
 
 
-def test_the_platform_has_a_cache_even_with_nothing_configured(platform) -> None:
-    assert platform.cache.get("missing") is None
-    platform.cache.set("present", "1", 10)
-    assert platform.cache.get("present") == "1"
-    assert isinstance(platform.cache, cache.MemoryCache)
+REDIS_URL = os.environ.get("INTERNAL_AI_REDIS_URL", "")
+
+
+def test_the_platform_has_a_cache_even_with_nothing_configured(platform, monkeypatch) -> None:
+    monkeypatch.delenv(cache.ENV_REDIS_URL, raising=False)
+    assert isinstance(build_cache(""), cache.MemoryCache)
+    local = build_cache("")
+    local.set("present", "1", 10)
+    assert local.get("present") == "1"
+    assert local.get("missing") is None
 
 
 def test_an_enrolled_person_can_still_sign_in(platform) -> None:
@@ -212,3 +224,50 @@ def test_an_enrolled_person_can_still_sign_in(platform) -> None:
     actor = IdentityService(platform).authenticate(person.name, "correct-horse-battery")
 
     assert actor.authenticated
+
+
+@pytest.mark.skipif(not REDIS_URL, reason="needs a running Redis named by INTERNAL_AI_REDIS_URL")
+def test_the_shared_cache_serves_a_real_server() -> None:
+    """The fake above proves the calls; this proves the calls are the right ones."""
+    shared = build_cache(REDIS_URL)
+    key = f"internal-ai-test:{uuid.uuid4().hex}"
+    shared.delete(key)
+
+    shared.set(key, "1", 30)
+    assert shared.get(key) == "1"
+    assert shared.incr(key, 30) == 2
+    assert shared.acquire(f"lock-{key}", 30) is True
+    assert shared.acquire(f"lock-{key}", 30) is False
+    shared.release(f"lock-{key}")
+    assert shared.acquire(f"lock-{key}", 30) is True
+    shared.release(f"lock-{key}")
+    shared.delete(key)
+    assert shared.get(key) is None
+
+
+@pytest.mark.skipif(not REDIS_URL, reason="needs a running Redis named by INTERNAL_AI_REDIS_URL")
+def test_two_platforms_share_a_revocation_through_a_real_server(
+    tmp_path, monkeypatch, enroll_person
+) -> None:
+    """Two processes, one Redis: a session ended in one is refused in the other."""
+    key = f"internal-ai-test:{uuid.uuid4().hex}"
+    monkeypatch.setenv(cache.ENV_REDIS_URL, REDIS_URL)
+
+    with Platform.create(root=tmp_path, llm_kind="scripted") as one:
+        assert isinstance(one.cache, RedisCache), "the environment did not reach the platform"
+        person = enroll_person(one, "Ari Lead", ["ml_lead"])
+        session = IdentityService(one).start_session(person)
+        IdentityService(one).end_session(session.token)
+        assert one.cache.get(f"revoked:{_digest(session.token)}") == "1"
+        one.cache.set(key, "shared", 30)
+
+        with Platform.create(root=tmp_path, llm_kind="scripted") as two:
+            assert two.cache.get(key) == "shared", "the second platform did not share the server"
+            assert IdentityService(two).resume_session(session.token) is None
+            two.cache.delete(key)
+
+
+def _digest(token: str) -> str:
+    from internal_ai.services.identity import token_hash
+
+    return token_hash(token)

@@ -381,6 +381,18 @@ CREATE TABLE IF NOT EXISTS accounts (
     rotated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS external_identities (
+    issuer TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    person_id TEXT NOT NULL REFERENCES people(id),
+    email TEXT NOT NULL DEFAULT '',
+    linked_at TEXT NOT NULL,
+    linked_by TEXT NOT NULL,
+    PRIMARY KEY (issuer, subject)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_external_identities_person
+    ON external_identities(issuer, person_id);
+
 CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY,
     person_id TEXT NOT NULL REFERENCES people(id),

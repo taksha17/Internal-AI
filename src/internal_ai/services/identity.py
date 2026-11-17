@@ -295,6 +295,177 @@ class IdentityService:
             details={"reason": why, "client": client},
         )
 
+    # --------------------------------------------- identities from a provider
+
+    def identities_for(self, person_id: str) -> list[dict[str, Any]]:
+        """The provider subjects bound to one person."""
+        rows = self.store.conn.execute(
+            "SELECT issuer, subject, email, linked_at, linked_by FROM external_identities"
+            " WHERE person_id = ? ORDER BY issuer",
+            (person_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def linked_person(self, issuer: str, subject: str) -> str | None:
+        row = self.store.conn.execute(
+            "SELECT person_id FROM external_identities WHERE issuer = ? AND subject = ?",
+            (issuer, subject),
+        ).fetchone()
+        return row["person_id"] if row else None
+
+    def link_identity(
+        self,
+        person_id: str,
+        issuer: str,
+        subject: str,
+        by: Actor,
+        email: str = "",
+    ) -> None:
+        """Bind one subject from a provider to one person here.
+
+        The binding is the whole of the trust decision: a token whose subject is
+        not in this table signs nobody in, and a subject already bound to someone
+        else cannot be moved by signing in again.
+        """
+        require(self.audit, by, Action.MANAGE_PEOPLE, person_id)
+        issuer = issuer.strip()
+        subject = subject.strip()
+        if not issuer or not subject:
+            raise ValueError("a link needs both the issuer and the subject the provider reports")
+        person = self.person(person_id)
+        if person is None:
+            raise KeyError(f"unknown person: {person_id}")
+        if person["placeholder"]:
+            raise ValueError(
+                f"{person['name']} is a placeholder identity; replace them with a real person "
+                "before linking an identity provider account"
+            )
+        if self.account(person["id"]) is None:
+            raise ValueError(f"{person['name']} has no account to sign in to")
+        taken = self.linked_person(issuer, subject)
+        if taken is not None and taken != person["id"]:
+            raise ValueError(
+                f"that subject from {issuer} is already linked to another person ({taken})"
+            )
+        own = self.store.conn.execute(
+            "SELECT subject FROM external_identities WHERE issuer = ? AND person_id = ?",
+            (issuer, person["id"]),
+        ).fetchone()
+        if own is not None and own["subject"] != subject:
+            raise ValueError(
+                f"{person['name']} is already linked to subject {own['subject']} from {issuer}; "
+                "unlink it first"
+            )
+        if own is None:
+            self.store.conn.execute(
+                "INSERT INTO external_identities (issuer, subject, person_id, email, linked_at,"
+                " linked_by) VALUES (?,?,?,?,?,?)",
+                (issuer, subject, person["id"], email.strip(), now_iso(), by.id),
+            )
+        self.audit.record(
+            actor=by.id,
+            actor_kind="human",
+            action="account.identity_linked",
+            subject=person["id"],
+            details={"issuer": issuer, "subject": subject, "email": email.strip()},
+        )
+
+    def unlink_identity(self, person_id: str, issuer: str, by: Actor) -> None:
+        require(self.audit, by, Action.MANAGE_PEOPLE, person_id)
+        cursor = self.store.conn.execute(
+            "DELETE FROM external_identities WHERE person_id = ? AND issuer = ?",
+            (person_id, issuer.strip()),
+        )
+        if cursor.rowcount == 0:
+            raise KeyError(f"{person_id} has no identity from {issuer}")
+        self.end_all_sessions(person_id)
+        self.store.conn.execute(
+            "UPDATE api_tokens SET revoked = 1 WHERE person_id = ?", (person_id,)
+        )
+        self.audit.record(
+            actor=by.id,
+            actor_kind="human",
+            action="account.identity_unlinked",
+            subject=person_id,
+            details={"issuer": issuer, "sessions_revoked": True},
+        )
+
+    def sign_in_with_identity(
+        self, claims: dict[str, Any], client: str = "", record_sign_in: bool = True
+    ) -> Actor:
+        """Turn a verified set of claims into the actor they belong to.
+
+        Called only with claims an `OidcClient` has already verified. The subject
+        must already be linked to a person: a provider that mints a new subject
+        for someone, or an address book that changes a name, cannot sign in as
+        anybody until an administrator links the new subject.
+        """
+        issuer = str(claims.get("iss", ""))
+        subject = str(claims.get("sub", ""))
+        person_id = self.linked_person(issuer, subject)
+        if person_id is None:
+            self._failed(f"{issuer}#{subject}", client, "the subject is not linked to a person")
+            raise AuthenticationError(
+                "this identity is not linked to a person here yet; ask an administrator to "
+                f"link subject {subject} from {issuer}"
+            )
+        person = self.person(person_id)
+        account = self.account(person_id)
+        if person is None or account is None:
+            self._failed(person_id, client, "the linked person has no account")
+            raise AuthenticationError("this identity is linked to a person with no account")
+        if account["disabled"]:
+            self._failed(person_id, client, "account disabled")
+            raise AuthenticationError("this account is disabled")
+        if person["placeholder"]:
+            self._failed(person_id, client, "placeholder identity")
+            raise AuthenticationError("placeholder identities cannot sign in")
+        email = str(claims.get("email", "")).strip()
+        if email:
+            # Keep what the directory last told us, but never blank a link because
+            # this particular token left the optional claim out.
+            self.store.conn.execute(
+                "UPDATE external_identities SET email = ? WHERE issuer = ? AND subject = ?"
+                " AND email <> ?",
+                (email, issuer, subject, email),
+            )
+        if account["must_change_password"]:
+            # The provider is the credential now, so the pending change of a
+            # password this person will never type is cleared rather than left
+            # standing as a warning they cannot act on.
+            self.store.conn.execute(
+                "UPDATE accounts SET must_change_password = 0 WHERE person_id = ?", (person_id,)
+            )
+            self.audit.record(
+                actor=person_id,
+                actor_kind="human",
+                action="account.password_change_waived",
+                subject=person_id,
+                details={"method": "oidc", "issuer": issuer},
+            )
+        if record_sign_in:
+            # A script presenting a provider token on every call is authenticated
+            # by the binding, not by a sign-in; only the browser flow records one.
+            self.audit.record(
+                actor=person_id,
+                actor_kind="human",
+                action="account.signed_in",
+                subject=person_id,
+                details={"client": client, "method": "oidc", "issuer": issuer},
+            )
+        return Actor.from_person(person, authenticated=True)
+
+    def rotate_session(self, token: str, actor: Actor) -> Session:
+        """Replace the session behind a cookie with a fresh one for this actor.
+
+        A token that existed before sign-in is ended here, so a cookie planted on
+        the browser earlier cannot become a signed-in session by waiting for
+        someone to authenticate in that browser.
+        """
+        if token:
+            self.end_session(token)
+        return self.start_session(actor)
+
     def actor_for(self, person_id: str) -> Actor | None:
         person = self.person(person_id)
         account = self.account(person_id) if person else None
