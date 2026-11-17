@@ -55,6 +55,7 @@ class Artifact:
             "digest": self.digest,
             "files": len(self.files),
             "size": self.size,
+            "prefix": self.prefix,
         }
         if self.signature:
             record["signature"] = self.signature
@@ -311,6 +312,9 @@ def artifact_from_card(card: dict[str, object]) -> Artifact | None:
         digest=digest,
         files=(),
         size=int(entry.get("size") or 0),
+        # Without the prefix, rebuilding fetches from the wrong place: a tokenizer
+        # stored under `tokenizers/` is not under `artifacts/`.
+        prefix=str(entry.get("prefix") or DEFAULT_PREFIX),
         signature=str(entry.get("signature") or ""),
         key_id=str(entry.get("key_id") or ""),
     )

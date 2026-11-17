@@ -1016,12 +1016,21 @@ def mount_console(
             for task in tasks
         }
         history = {task.id: ctx.platform.store.task_events(task.id) for task in tasks}
+        attempts = [
+            {**step, "task": task.id}
+            for task in tasks
+            for step in ctx.platform.store.steps_for(task.id)
+        ]
         return render(
             ctx,
             "plan.html",
             tasks=tasks,
             moves=moves,
             history=history,
+            attempts=attempts,
+            # An open step is a process that died inside a call. It is shown because
+            # the next run is what turns it into an `abandoned` row and a queue entry.
+            unfinished=ctx.platform.store.unfinished_steps(),
             report=ctx.platform.orchestrator.status_report(),
         )
 
@@ -2731,14 +2740,11 @@ def mount_console(
                 + _csv_cell(row["created_at"])
             )
         body = "\n".join(lines) + "\n"
+        stamp = starts_at.replace(":", "").replace("+", "")
         return Response(
             body,
             media_type="text/csv",
-            headers={
-                "content-disposition": (
-                    f'attachment; filename="spend-{starts_at.replace(":", "").replace("+", "")}.csv"'
-                )
-            },
+            headers={"content-disposition": f'attachment; filename="spend-{stamp}.csv"'},
         )
 
     @app.post("/console/admin/budget", include_in_schema=False)

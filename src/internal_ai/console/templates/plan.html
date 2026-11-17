@@ -50,4 +50,18 @@
   {{ m.empty_row(5, "No tasks yet", "Submit a goal above; the plan waits for a lead to approve it.", "#plan", "Submit a goal") }}
   {% endfor %}
 {% endcall %}
+<section class="card">
+  <h2>Attempts</h2>
+  <p class="muted">Every dispatch writes a step before the agent runs, so an attempt that never returned is a row rather than a guess. The next run abandons it and queues the task again.</p>
+  {% if unfinished %}
+  <p class="callout">{{ unfinished | length }} attempt{{ "s" if unfinished | length != 1 else "" }} opened and never closed: {% for step in unfinished %}{{ step.task_id }} attempt {{ step.attempt }} since {{ step.started_at }}{% if not loop.last %}, {% endif %}{% endfor %}. Run the orchestrator to resume them.</p>
+  {% endif %}
+  {% call m.data_table([("Task",), ("Attempt", true), ("Agent",), ("State",), ("Started",), ("Finished",), ("Summary",)]) %}
+    {% for step in attempts %}
+    <tr><td>{{ step.task }}</td><td class="num">{{ step.attempt }}</td><td>{{ step.agent }}</td><td>{{ m.status_badge(step.state) }}</td><td>{{ step.started_at }}</td><td>{{ step.finished_at or "unfinished" }}</td><td>{{ step.summary }}</td></tr>
+    {% else %}
+    {{ m.empty_row(7, "No attempts yet", "An attempt is written when the orchestrator dispatches a task for a role agent.", "#plan", "Submit a goal") }}
+    {% endfor %}
+  {% endcall %}
+</section>
 {% endblock %}

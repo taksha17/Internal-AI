@@ -56,7 +56,7 @@ class Platform:
         )
         gates = GateService(store)
         budget = BudgetManager(store, project=project)
-        tools = ToolRegistry(audit, settings.workspace_dir, settings.artifacts_dir)
+        tools = ToolRegistry(audit, settings.workspace_dir, settings.artifacts_dir, store=store)
         tools.set_web_gate_check(lambda gate_id: approved_web_allowlist(store, gate_id))
         adapter = llm or build_adapter(llm_kind)
         runtime = AgentRuntime(store, audit, tools, budget, adapter)

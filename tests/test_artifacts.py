@@ -243,6 +243,6 @@ def test_the_artifact_dataclass_carries_what_a_card_needs(tmp_path: Path) -> Non
 
     payload = artifact.to_dict()
 
-    assert set(payload) == {"manifest", "digest", "files", "size"}
+    assert set(payload) == {"manifest", "digest", "files", "size", "prefix"}
     assert payload["files"] == 3
     assert isinstance(artifact, Artifact)

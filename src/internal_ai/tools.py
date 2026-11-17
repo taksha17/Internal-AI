@@ -6,20 +6,32 @@ the audit log, so tool use is reviewable after the fact.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import urllib.request
 from collections.abc import Callable
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
+
+if TYPE_CHECKING:
+    from internal_ai.store import Store
 
 from internal_ai.audit import AuditLog
 from internal_ai.domain import AuditOutcome, Capability, RoleSpec
+from internal_ai.ids import new_id
 
 
 class ToolDenied(PermissionError):
     pass
+
+
+# Which task a call belongs to, set by the orchestrator around the agent's turn. A
+# context variable rather than a parameter so the agent's four invoke sites do not
+# each have to carry an id they never look at.
+CURRENT_TASK: ContextVar[str | None] = ContextVar("internal_ai_tool_task", default=None)
 
 
 FETCH_TIMEOUT_S = 10.0
@@ -66,10 +78,20 @@ class Tool:
 
 
 class ToolRegistry:
-    def __init__(self, audit: AuditLog, workspace_dir: Path, artifacts_dir: Path) -> None:
+    def __init__(
+        self,
+        audit: AuditLog,
+        workspace_dir: Path,
+        artifacts_dir: Path,
+        store: Store | None = None,
+    ) -> None:
         self.audit = audit
         self.workspace_dir = workspace_dir
         self.artifacts_dir = artifacts_dir
+        # Without a store the registry cannot remember a call, which is what a tool
+        # used outside a task gets; refusing instead would break every caller that
+        # only wants to run one tool.
+        self.store = store
         self._web_gate_check: Callable[[str], list[str]] | None = None
         self._tools: dict[str, Tool] = {}
         self._register_builtin()
@@ -145,7 +167,20 @@ class ToolRegistry:
             raise ToolDenied(
                 f"role {role.name} lacks capability {tool.capability} for tool {tool_name}"
             )
+        replay = self._prior_call(tool, args)
+        if replay is not None:
+            self.audit.record(
+                actor=actor or role.name,
+                action=f"tool.replayed.{tool_name}",
+                subject=tool_name,
+                outcome=AuditOutcome.SUCCESS,
+                actor_kind="agent",
+                inputs={"args": args},
+                details={"task_id": CURRENT_TASK.get()},
+            )
+            return replay
         result = tool.handler(**args)
+        self._remember_call(tool, args, result)
         self.audit.record(
             actor=actor or role.name,
             action=f"tool.{tool_name}",
@@ -156,6 +191,50 @@ class ToolRegistry:
             details={"result_type": type(result).__name__},
         )
         return result
+
+    def _call_key(self, tool: Tool, args: dict[str, Any]) -> tuple[str, str] | None:
+        """The key a side effect is remembered by, or None when nothing is remembered.
+
+        Only a tool that changes something is deduplicated, and only inside a task:
+        a read must always see the current state, and a call outside a task has no
+        attempt whose retry it could be duplicating.
+        """
+        task_id = CURRENT_TASK.get()
+        if self.store is None or not task_id or not tool.side_effecting:
+            return None
+        body = json.dumps(args, sort_keys=True, default=str, separators=(",", ":"))
+        return task_id, hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+    def _prior_call(self, tool: Tool, args: dict[str, Any]) -> Any:
+        key = self._call_key(tool, args)
+        if key is None:
+            return None
+        assert self.store is not None
+        row = self.store.tool_call(key[0], tool.name, key[1])
+        if row is None:
+            return None
+        if row["state"] != "done":
+            raise ToolDenied(
+                f"{tool.name} was started for this task and never finished; the task has to "
+                "be resumed before the call is retried, or its side effect runs twice"
+            )
+        return json.loads(row["result"])
+
+    def _remember_call(self, tool: Tool, args: dict[str, Any], result: Any) -> None:
+        key = self._call_key(tool, args)
+        if key is None:
+            return
+        assert self.store is not None
+        row = self.store.tool_call(key[0], tool.name, key[1])
+        payload = json.dumps(result, sort_keys=True, default=str)
+        if row is None:
+            call_id = new_id("tcl")
+            self.store.begin_tool_call(
+                call_id=call_id, task_id=key[0], tool_name=tool.name, args_hash=key[1]
+            )
+        else:
+            call_id = row["id"]
+        self.store.finish_tool_call(call_id, state="done", result=payload)
 
     def _write_artifact(self, name: str, content: str, kind: str = "text") -> str:
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)

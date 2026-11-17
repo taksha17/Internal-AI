@@ -760,6 +760,81 @@ class Store:
 
     # ----------------------------------------------------------------- runs
 
+    def tool_call(self, task_id: str, tool_name: str, args_hash: str) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT * FROM tool_calls WHERE task_id = ? AND tool_name = ? AND args_hash = ?",
+            (task_id, tool_name, args_hash),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def begin_tool_call(
+        self, *, call_id: str, task_id: str, tool_name: str, args_hash: str
+    ) -> None:
+        """Claim a side-effecting call before it runs, so a crash is not invisible."""
+        self.conn.execute(
+            """
+            INSERT INTO tool_calls (id, task_id, tool_name, args_hash, state, result, created_at)
+            VALUES (?,?,?,?,'running','',?)
+            """,
+            (call_id, task_id, tool_name, args_hash, now_iso()),
+        )
+
+    def finish_tool_call(self, call_id: str, *, state: str, result: str) -> None:
+        self.conn.execute(
+            "UPDATE tool_calls SET state = ?, result = ?, finished_at = ? WHERE id = ?",
+            (state, result, now_iso(), call_id),
+        )
+
+    def open_step(self, *, task_id: str, attempt: int, agent: str, step_id: str) -> dict[str, Any]:
+        """Write the step before the work starts, so a crash leaves a record of it.
+
+        A row that exists before the call is the difference between "this attempt
+        never finished" and "nobody knows whether it ran".
+        """
+        stamp = now_iso()
+        self.conn.execute(
+            """
+            INSERT INTO plan_steps (id, task_id, attempt, agent, state, started_at,
+                                    summary, cost_usd, metadata)
+            VALUES (?,?,?,?,?,?,'',0,'{}')
+            """,
+            (step_id, task_id, attempt, agent, "running", stamp),
+        )
+        return {
+            "id": step_id,
+            "task_id": task_id,
+            "attempt": attempt,
+            "agent": agent,
+            "state": "running",
+            "started_at": stamp,
+        }
+
+    def close_step(
+        self, step_id: str, *, state: str, summary: str = "", cost_usd: float = 0.0
+    ) -> None:
+        self.conn.execute(
+            "UPDATE plan_steps SET state = ?, finished_at = ?, summary = ?, cost_usd = ? "
+            "WHERE id = ?",
+            (state, now_iso(), summary, cost_usd, step_id),
+        )
+
+    def step(self, step_id: str) -> dict[str, Any] | None:
+        row = self.conn.execute("SELECT * FROM plan_steps WHERE id = ?", (step_id,)).fetchone()
+        return dict(row) if row is not None else None
+
+    def steps_for(self, task_id: str) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT * FROM plan_steps WHERE task_id = ? ORDER BY attempt, started_at", (task_id,)
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def unfinished_steps(self) -> list[dict[str, Any]]:
+        """Steps that were opened and never closed: the list a resume has to explain."""
+        rows = self.conn.execute(
+            "SELECT * FROM plan_steps WHERE state = 'running' ORDER BY started_at"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
     def record_run(self, run: RunSummary) -> RunSummary:
         self.conn.execute(
             """

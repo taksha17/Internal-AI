@@ -132,6 +132,33 @@ CREATE TABLE IF NOT EXISTS budget_limits (
     PRIMARY KEY (scope, key)
 );
 
+CREATE TABLE IF NOT EXISTS plan_steps (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES tasks(id),
+    attempt INTEGER NOT NULL,
+    agent TEXT NOT NULL,
+    state TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    summary TEXT NOT NULL DEFAULT '',
+    cost_usd REAL NOT NULL DEFAULT 0,
+    metadata TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_plan_steps_task ON plan_steps(task_id, attempt);
+CREATE INDEX IF NOT EXISTS idx_plan_steps_state ON plan_steps(state);
+
+CREATE TABLE IF NOT EXISTS tool_calls (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    args_hash TEXT NOT NULL,
+    state TEXT NOT NULL,
+    result TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    finished_at TEXT,
+    UNIQUE (task_id, tool_name, args_hash)
+);
+
 CREATE TABLE IF NOT EXISTS budget_periods (
     id TEXT PRIMARY KEY,
     project TEXT NOT NULL,
