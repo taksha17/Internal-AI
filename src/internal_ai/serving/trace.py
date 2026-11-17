@@ -38,7 +38,13 @@ RETENTION_DAYS = 30
 FAILURE_CITATION = "citation_mismatch"
 FAILURE_GUARDRAIL = "guardrail_block"
 FAILURE_EMPTY = "no_evidence"
-FAILURES: tuple[str, ...] = (FAILURE_CITATION, FAILURE_GUARDRAIL, FAILURE_EMPTY)
+FAILURE_EXTRACTION = "extraction_suspect"
+FAILURES: tuple[str, ...] = (
+    FAILURE_CITATION,
+    FAILURE_GUARDRAIL,
+    FAILURE_EMPTY,
+    FAILURE_EXTRACTION,
+)
 
 
 @dataclass(slots=True)

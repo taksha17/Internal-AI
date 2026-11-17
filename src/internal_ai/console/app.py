@@ -77,6 +77,10 @@ from internal_ai.services.triage import (
     sft_example_from_trace,
     triage_view,
 )
+from internal_ai.serving.extraction import (
+    INSTALL_EXTRACTION_POLICY_KEY,
+    configured_install_extraction_policy,
+)
 from internal_ai.serving.guardrails import INSTALL_POLICY_KEY, configured_install_policy
 from internal_ai.serving.service import out_of_service
 from internal_ai.serving.trace import trace_quarantine_state
@@ -2098,6 +2102,11 @@ def mount_console(
             cost_gate_usd=build.TRAINING_COST_GATE_USD,
             install_policy=configured_install_policy(platform.store),
             install_stored_policy=platform.store.kv_get(INSTALL_POLICY_KEY, "") or "",
+            install_extraction_policy=configured_install_extraction_policy(platform.store),
+            install_extraction_stored_policy=platform.store.kv_get(
+                INSTALL_EXTRACTION_POLICY_KEY, ""
+            )
+            or "",
         )
 
     @app.get("/console/models/bases", include_in_schema=False)
@@ -2291,6 +2300,19 @@ def mount_console(
                 f"flagged answers now {policy} across the install, for every model that "
                 "does not choose its own policy"
             ),
+        )
+
+    @app.post("/console/models/extraction-default", include_in_schema=False)
+    async def extraction_default(request: Request) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        return await act(
+            ctx,
+            "/console/models",
+            lambda: build.set_install_extraction_policy(
+                ctx.platform, ctx.actor, form.get("policy", "")
+            ),
+            lambda policy: f"extraction-shaped questions now {policy} across the install",
         )
 
     @app.post("/console/models/{model_id}/guardrail-policy", include_in_schema=False)

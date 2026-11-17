@@ -342,6 +342,7 @@ you. Every message below is what the platform actually printed.
 | `answer` after the adapter changed on disk | `… does not match artifact …: 1 changed, 0 missing or moved` | a passing check expires after `INTERNAL_AI_REVERIFY_SECONDS` (15 minutes); tampering is caught without a restart |
 | `train run` before a frozen eval set | `training waits for a frozen eval set of questions a domain expert filed` | you cannot grade yourself with questions you wrote |
 | `train run` on too small a corpus | `35078 tokens and 209152 parameters are below 20 tokens per parameter` | the floor, and it does not move |
+| 8 near-duplicate questions, policy `refuse` | `answer withheld by extraction guardrail` (422) | a burst is extraction-shaped; a few rephrasings warn and answer |
 | promote a leaking adapter | `membership advantage 1.00 is above the 0.05 ceiling: the adapter repeats training spans it does not repeat from held-out text, so promoting it would serve its training data` | extraction probes are scored with the report; the ceiling is held by the gate |
 
 ## Where those rules live
