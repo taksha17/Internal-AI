@@ -390,7 +390,9 @@ class IdentityService:
             details={"issuer": issuer, "sessions_revoked": True},
         )
 
-    def sign_in_with_identity(self, claims: dict[str, Any], client: str = "") -> Actor:
+    def sign_in_with_identity(
+        self, claims: dict[str, Any], client: str = "", record_sign_in: bool = True
+    ) -> Actor:
         """Turn a verified set of claims into the actor they belong to.
 
         Called only with claims an `OidcClient` has already verified. The subject
@@ -441,13 +443,16 @@ class IdentityService:
                 subject=person_id,
                 details={"method": "oidc", "issuer": issuer},
             )
-        self.audit.record(
-            actor=person_id,
-            actor_kind="human",
-            action="account.signed_in",
-            subject=person_id,
-            details={"client": client, "method": "oidc", "issuer": issuer},
-        )
+        if record_sign_in:
+            # A script presenting a provider token on every call is authenticated
+            # by the binding, not by a sign-in; only the browser flow records one.
+            self.audit.record(
+                actor=person_id,
+                actor_kind="human",
+                action="account.signed_in",
+                subject=person_id,
+                details={"client": client, "method": "oidc", "issuer": issuer},
+            )
         return Actor.from_person(person, authenticated=True)
 
     def rotate_session(self, token: str, actor: Actor) -> Session:

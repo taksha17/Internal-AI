@@ -172,7 +172,10 @@ a password of at least 12 characters before the account can act.
 An install that should sign in through a directory sets
 `INTERNAL_AI_OIDC_ISSUER`, `INTERNAL_AI_OIDC_CLIENT_ID` and
 `INTERNAL_AI_OIDC_REDIRECT_URI` (and `INTERNAL_AI_OIDC_CLIENT_SECRET` for a
-confidential client), plus the `oidc` extra for key verification. The sign-in
+confidential client), plus the `oidc` extra for key verification. The JSON API
+accepts the same provider's tokens as a bearer credential
+(`INTERNAL_AI_OIDC_API_CLIENT_ID` names the audience it expects), under exactly
+the capability checks a personal token gets. The sign-in
 page then offers the provider as well as the password form. Signing in never
 creates an account: an administrator links the provider's subject to a person on
 the people page first, and that link is what a verified token is checked against.
