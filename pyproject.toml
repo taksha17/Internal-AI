@@ -39,6 +39,7 @@ alpha = [
 ]
 
 postgres = ["psycopg[binary]>=3.2"]
+oidc = ["cryptography>=42"]
 redis = ["redis>=5.0"]
 
 [build-system]

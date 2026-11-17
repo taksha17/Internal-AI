@@ -49,6 +49,7 @@ from internal_ai.services import (
     compute_advice,
     conversions,
     governance,
+    oidc,
     webfetch,
 )
 from internal_ai.services.actor import Actor
@@ -500,12 +501,30 @@ def mount_console(
 
     # ------------------------------------------------------------ sign-in
 
+    def configured_provider() -> tuple[oidc.OidcConfig | None, str]:
+        """The provider this install signs in through, and what is wrong if nothing is.
+
+        A half-written configuration is reported rather than treated as absent:
+        an administrator who set an issuer meant to sign in through it.
+        """
+        try:
+            return oidc.OidcConfig.configured(), ""
+        except oidc.OidcDenied as exc:
+            return None, str(exc)
+
     def signin_page(request: Request, error: str = "", status_code: int = 200) -> HTMLResponse:
         token = secrets.token_urlsafe(24)
+        provider, provider_error = configured_provider()
         response = templates.TemplateResponse(
             request,
             "signin.html",
-            {"signin_csrf": token, "error": error, "actor": None, "flashes": []},
+            {
+                "signin_csrf": token,
+                "error": error or provider_error,
+                "actor": None,
+                "flashes": [],
+                "oidc": provider.to_dict() if provider else None,
+            },
             status_code=status_code,
         )
         response.set_cookie(
@@ -526,6 +545,73 @@ def mount_console(
     @app.get("/console/signin", include_in_schema=False)
     def signin_form(request: Request) -> Response:
         return signin_page(request)
+
+    @app.get("/console/signin/oidc", include_in_schema=False)
+    async def oidc_start(request: Request) -> Response:
+        provider, provider_error = configured_provider()
+        if provider is None:
+            return signin_page(request, provider_error or "no identity provider is configured", 503)
+        state, nonce = oidc.new_state()
+        try:
+            url, verifier = await run_in_threadpool(oidc.OidcClient(provider).begin, state, nonce)
+        except oidc.OidcDenied as exc:
+            return signin_page(request, message(exc), 502)
+        # The state is the only thing tying the callback back to this browser, so
+        # it is single use and lives in the shared cache when there is one: a
+        # second console process has to be able to read it.
+        get_platform().cache.set(
+            f"oidc:state:{state}",
+            json.dumps({"nonce": nonce, "verifier": verifier}),
+            oidc.STATE_SECONDS,
+        )
+        return RedirectResponse(url, status_code=303)
+
+    @app.get("/console/signin/oidc/callback", include_in_schema=False)
+    async def oidc_callback(
+        request: Request, code: str = "", state: str = "", error: str = ""
+    ) -> Response:
+        provider, provider_error = configured_provider()
+        if provider is None:
+            return signin_page(request, provider_error or "no identity provider is configured", 503)
+        if error:
+            # The provider's own text is remote and is not repeated on this page.
+            return signin_page(request, "the identity provider refused the sign-in", 401)
+        client_id = request.client.host if request.client else "unknown"
+        if not limiter.allow(client_id):
+            return signin_page(request, "too many sign-in attempts; wait a few minutes", 429)
+        platform = get_platform()
+        key = f"oidc:state:{state}" if state else ""
+        pending = platform.cache.get(key) if key else None
+        if not pending:
+            return signin_page(
+                request, "this sign-in link has expired or was already used; start again", 400
+            )
+        platform.cache.delete(key)
+        identity = IdentityService(platform)
+        try:
+            remembered = json.loads(pending)
+            claims = await run_in_threadpool(
+                oidc.OidcClient(provider).complete,
+                code,
+                str(remembered["verifier"]),
+                str(remembered["nonce"]),
+            )
+            actor = await run_in_threadpool(identity.sign_in_with_identity, claims, client_id)
+        except (KeyError, oidc.OidcDenied, ValueError) as exc:
+            return signin_page(request, message(exc), 401)
+        except AuthenticationError as exc:
+            return signin_page(request, str(exc), 401)
+        session = identity.rotate_session(request.cookies.get(SESSION_COOKIE, ""), actor)
+        response = redirect("/console/home")
+        response.set_cookie(
+            SESSION_COOKIE,
+            session.token,
+            httponly=True,
+            samesite="strict",
+            secure=secure_cookies,
+            path="/console",
+        )
+        return response
 
     @app.post("/console/signin", include_in_schema=False)
     async def signin(request: Request) -> Response:
@@ -552,7 +638,7 @@ def mount_console(
             )
         except AuthenticationError as exc:
             return signin_page(request, str(exc), 401)
-        session = identity.start_session(actor)
+        session = identity.rotate_session(request.cookies.get(SESSION_COOKIE, ""), actor)
         response = redirect(
             "/console/password" if session.must_change_password else "/console/home"
         )
@@ -2523,11 +2609,16 @@ def mount_console(
         ctx = context(request)
         table = people_rows(ctx, q, role, sort, dir, page)
         accounts = {item["person_id"]: item for item in ctx.identity.list_accounts()}
+        provider, _ = configured_provider()
         return render(
             ctx,
             "people.html",
             people=table.rows,
             accounts=accounts,
+            identities={
+                person["id"]: ctx.identity.identities_for(person["id"]) for person in table.rows
+            },
+            oidc_issuer=provider.issuer if provider else "",
             roles=[item.name for item in all_roles()],
             one_time=None,
             table=table,
@@ -2538,11 +2629,16 @@ def mount_console(
     def one_time_page(ctx: Ctx, person_id: str, password: str) -> HTMLResponse:
         table = people_rows(ctx)
         accounts = {item["person_id"]: item for item in ctx.identity.list_accounts()}
+        provider, _ = configured_provider()
         return render(
             ctx,
             "people.html",
             people=table.rows,
             accounts=accounts,
+            identities={
+                person["id"]: ctx.identity.identities_for(person["id"]) for person in table.rows
+            },
+            oidc_issuer=provider.issuer if provider else "",
             roles=[item.name for item in all_roles()],
             one_time={"person": person_id, "password": password},
             table=table,
@@ -2613,6 +2709,32 @@ def mount_console(
             flash(ctx, "error", message(exc))
             return redirect("/console/admin/people")
         raise HTTPException(status_code=400, detail="unknown account step")
+
+    @app.post("/console/admin/people/{person_id}/identity", include_in_schema=False)
+    async def people_identity(request: Request, person_id: str) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        step = form.get("step", "")
+        issuer = form.get("issuer", "").strip()
+        try:
+            if step == "link":
+                await run_in_threadpool(
+                    ctx.identity.link_identity,
+                    person_id,
+                    issuer,
+                    form.get("subject", ""),
+                    ctx.actor,
+                    form.get("email", ""),
+                )
+                flash(ctx, "ok", f"{person_id} can now sign in through {issuer}")
+            elif step == "unlink":
+                await run_in_threadpool(ctx.identity.unlink_identity, person_id, issuer, ctx.actor)
+                flash(ctx, "ok", f"{person_id} can no longer sign in through {issuer}")
+            else:
+                raise HTTPException(status_code=400, detail="unknown identity step")
+        except REFUSALS as exc:
+            flash(ctx, "error", message(exc))
+        return redirect("/console/admin/people")
 
     @app.get("/console/account", include_in_schema=False)
     def account_page(request: Request) -> Response:

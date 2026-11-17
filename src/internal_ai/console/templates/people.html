@@ -50,6 +50,21 @@
         <button type="submit" name="step" value="{{ 'enable' if account.disabled else 'disable' }}" class="link">{{ "Enable" if account.disabled else "Disable" }}</button>
       </form>
       {% endif %}
+      <details><summary>Identity provider account</summary>
+        {% for link in identities.get(person.id, []) %}
+        <form method="post" action="/console/admin/people/{{ person.id }}/identity" class="inline-form">{{ m.csrf_field() }}
+          <input type="hidden" name="issuer" value="{{ link.issuer }}">
+          <span class="muted small">{{ link.issuer }}, {{ link.subject }}</span>
+          <button type="submit" name="step" value="unlink" class="link">Unlink</button>
+        </form>
+        {% endfor %}
+        <form method="post" action="/console/admin/people/{{ person.id }}/identity" class="stack">{{ m.csrf_field() }}
+          <label>Issuer <input type="text" name="issuer" value="{{ oidc_issuer }}" required></label>
+          <label>Subject <input type="text" name="subject" required></label>
+          <label>Email <input type="email" name="email"></label>
+          <button type="submit" name="step" value="link">Link</button>
+        </form>
+      </details>
     </td>
     {% endif %}
   </tr>
