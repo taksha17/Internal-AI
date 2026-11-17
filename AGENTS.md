@@ -210,6 +210,12 @@ cross-site` and a named foreign origin are refused. Treat a regression here as
 a safety bug. The failure text is identical for an unknown account and a wrong
 password.
 
+One cookie is deliberately not `Strict`: the OIDC state cookie, which a
+provider's cross-site top-level redirect has to carry back. It is `HttpOnly`,
+scoped to `/console/signin/oidc`, and must equal the browser half of the cached
+state, so a callback link minted in one browser cannot sign another one in.
+Changing it to `Strict` breaks the redirect; removing it reopens login CSRF.
+
 The kill switch sits on every signed-in page and needs a typed reason.
 Engaging is immediate; releasing needs a different person.
 

@@ -441,7 +441,7 @@ section[id] { scroll-margin-top: calc(var(--masthead-h) + 1rem); }
 .chain-line.live b { color: var(--s-accent-on-night); }
 .blink { width: 0.34rem; height: 0.34rem; border-radius: 50%; background: var(--s-accent-on-night); animation: pulse 2s ease-in-out infinite; flex: none; }
 .meter { margin-top: 0.55rem; height: 6px; border-radius: var(--pill); background: var(--c-console-line); overflow: hidden; }
-.meter i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--s-accent-on-night), var(--s-highlight)); }
+.meter i { display: block; height: 100%; width: 62%; border-radius: inherit; background: linear-gradient(90deg, var(--s-accent-on-night), var(--s-highlight)); }
 .mini-foot { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.4rem; font-family: var(--font-mono); font-size: 0.62rem; color: var(--c-console-ink-muted); }
 .console-audit { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem 0.6rem; font-family: var(--font-mono); font-size: 0.72rem; color: var(--c-console-ink-muted); }
 .console-audit span { white-space: nowrap; }
@@ -525,7 +525,9 @@ html.js .tagline-word:not(.visible) { opacity: 0; transform: translateY(0.5em); 
   box-shadow: var(--s-lift-sm); overflow: hidden;
   transition: border-color var(--beat) ease, transform var(--beat) ease, box-shadow var(--beat) ease;
 }
+@media (hover: hover) {
 .bento-card:hover { border-color: var(--c-card-line-hover); transform: translateY(-3px); box-shadow: var(--s-lift); }
+}
 .bento-card.span-2 { grid-column: span 2; }
 .bento-card.lead { background:
   radial-gradient(120% 130% at 100% 0%, var(--s-highlight-wash), transparent 55%),
@@ -553,7 +555,7 @@ html.js .tagline-word:not(.visible) { opacity: 0; transform: translateY(0.5em); 
 
 .pipeline { margin-top: auto; padding-top: 1.25rem; }
 .pipe-bar { display: block; height: 8px; border-radius: var(--pill); background: var(--s-bg-wash); border: 1px solid var(--s-line); overflow: hidden; }
-.pipe-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--s-accent), var(--s-highlight)); }
+.pipe-bar i { display: block; height: 100%; width: 80%; background: linear-gradient(90deg, var(--s-accent), var(--s-highlight)); }
 .pipe-foot { display: block; margin-top: 0.55rem; font-size: 0.64rem; letter-spacing: 0.04em; color: var(--s-ink-muted); }
 .pipe-foot .dot { color: var(--s-accent); margin: 0 0.2rem; }
 
@@ -588,7 +590,9 @@ html.js .tagline-word:not(.visible) { opacity: 0; transform: translateY(0.5em); 
   transition: border-color var(--beat) ease, transform var(--beat) ease, box-shadow var(--beat) ease;
 }
 .benefit-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--s-highlight), transparent 70%); opacity: 0; transition: opacity 260ms var(--ease-out-expo); }
+@media (hover: hover) {
 .benefit-card:hover { border-color: var(--c-card-line-hover); transform: translateY(-3px); box-shadow: var(--s-lift); }
+}
 .benefit-card:hover::before { opacity: 1; }
 .benefit-icon { width: var(--c-benefit-icon-size); height: var(--c-benefit-icon-size); display: grid; place-items: center; color: var(--c-card-icon-ink); background: var(--s-accent-wash); border-radius: 10px; margin-bottom: 1rem; transition: background 260ms var(--ease-out-expo), color 260ms var(--ease-out-expo); }
 .benefit-card:hover .benefit-icon { background: var(--s-accent); color: var(--s-on-accent); }
@@ -600,7 +604,9 @@ html.js .tagline-word:not(.visible) { opacity: 0; transform: translateY(0.5em); 
 /* ---------- Steps ---------- */
 .steps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
 .step { background: var(--s-bg-card); border: 1px solid var(--s-line); border-radius: var(--radius); padding: 1.6rem 1.45rem; transition: border-color var(--beat) ease, transform var(--beat) ease, box-shadow var(--beat) ease; }
+@media (hover: hover) {
 .step:hover { border-color: var(--c-card-line-hover); transform: translateY(-3px); box-shadow: var(--s-lift); }
+}
 .step-top { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.9rem; }
 .step-number { font-family: var(--font-mono); font-size: var(--c-step-number-size); font-weight: var(--weight-bold); line-height: 1; color: color-mix(in srgb, var(--s-accent) 32%, transparent); }
 .step-line { flex: 1; height: 1px; background: linear-gradient(90deg, var(--s-line-strong), transparent); }
