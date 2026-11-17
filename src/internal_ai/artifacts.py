@@ -18,6 +18,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -245,10 +248,31 @@ def missing(path: Path, files: tuple[ArtifactFile, ...]) -> list[str]:
     return [item.name for item in files if not (root / item.name).exists()]
 
 
-# Paths already checked in this process, keyed by resolved path and manifest digest.
-# Hashing a hundred-megabyte adapter on every request would cost more than the
-# guarantee is worth, so a restart is when a silently edited directory is caught.
-_VERIFIED: set[tuple[str, str]] = set()
+# Seconds a passing check is trusted before the bytes are hashed again.
+DEFAULT_REVERIFY_SECONDS = 900
+ENV_REVERIFY_SECONDS = "INTERNAL_AI_REVERIFY_SECONDS"
+
+# Paths already checked in this process, keyed by resolved path and manifest
+# digest, with the monotonic time of the passing check. Hashing a
+# hundred-megabyte adapter on every request would cost more than the guarantee
+# is worth, so a pass is trusted until it expires; a restart only clears early
+# what time would clear anyway.
+_VERIFIED: dict[tuple[str, str], float] = {}
+_VERIFIED_LOCK = threading.Lock()
+
+
+def _reverify_after() -> float:
+    """How long a passing check is trusted; a broken value means the default."""
+    raw = os.environ.get(ENV_REVERIFY_SECONDS, "").strip()
+    if not raw:
+        return float(DEFAULT_REVERIFY_SECONDS)
+    try:
+        value = float(raw)
+    except ValueError:
+        return float(DEFAULT_REVERIFY_SECONDS)
+    if value < 0:
+        return float(DEFAULT_REVERIFY_SECONDS)
+    return value
 
 
 def require_intact(
@@ -276,8 +300,11 @@ def require_intact(
     path = Path(model_path or "")
     resolved = str(path.resolve()) if path.exists() else str(path)
     token = (resolved, artifact.digest)
-    if token in _VERIFIED:
-        return
+    now = time.monotonic()
+    with _VERIFIED_LOCK:
+        checked_at = _VERIFIED.get(token)
+        if checked_at is not None and now - checked_at < _reverify_after():
+            return
     broken = verify(path, artifact.files) if path.exists() else []
     absent = (
         missing(path, artifact.files) if path.exists() else [item.name for item in artifact.files]
@@ -287,12 +314,14 @@ def require_intact(
             f"{path} does not match artifact {artifact.digest}: "
             f"{len(broken)} changed, {len(absent)} missing or moved"
         )
-    _VERIFIED.add(token)
+    with _VERIFIED_LOCK:
+        _VERIFIED[token] = time.monotonic()
 
 
 def forget_verified() -> None:
     """Drop the verification cache; a test that tampers twice needs the second check."""
-    _VERIFIED.clear()
+    with _VERIFIED_LOCK:
+        _VERIFIED.clear()
 
 
 def has_manifest(card: dict[str, object]) -> bool:

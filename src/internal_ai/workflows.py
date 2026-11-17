@@ -15,6 +15,7 @@ from internal_ai.data.records import Record, Source
 from internal_ai.data.splits import SplitResult, make_splits
 from internal_ai.data.tokenizer import Tokenizer, coverage_report, train_tokenizer
 from internal_ai.domain import AuditOutcome, DatasetVersion, ModelVersion
+from internal_ai.evals.extraction import EXTRACTION_ADVANTAGE_CEILING
 from internal_ai.ids import content_hash, new_id, now_iso
 from internal_ai.training.classifier import ClassifierConfig, ClassifierOutcome
 from internal_ai.training.embedder import TorchEmbedder
@@ -883,6 +884,29 @@ def confidence_refusal(report: Any) -> str | None:
     return None
 
 
+def extraction_refusal(report: Any) -> str | None:
+    """A model that repeats its training text does not serve it, whatever else passed.
+
+    The extraction probes are scored with the report, but the ceiling is held
+    here, beside the margin and the confidence bar: the check carries the
+    measurement, the gate carries the refusal, so the figures are named rather
+    than buried in a failed report. A report from a set with no extraction
+    probes carries no advantage to judge, which is not a refusal.
+    """
+    metrics = report.metrics or {}
+    if "membership_advantage" not in metrics:
+        return None
+    advantage = float(metrics["membership_advantage"])
+    if advantage > EXTRACTION_ADVANTAGE_CEILING:
+        return (
+            f"membership advantage {advantage:.2f} is above the "
+            f"{EXTRACTION_ADVANTAGE_CEILING:.2f} ceiling: the adapter repeats "
+            "training spans it does not repeat from held-out text, so promoting "
+            "it would serve its training data"
+        )
+    return None
+
+
 def promote_model(
     platform: Platform,
     model_id: str,
@@ -905,6 +929,10 @@ def promote_model(
             )
     if not gate_approved:
         raise PermissionError("model promotion requires an approved model_promotion gate (FR-15)")
+    newest = platform.store.list_eval_reports(model_id)
+    refusal = extraction_refusal(newest[-1]) if newest else None
+    if refusal is not None:
+        raise PermissionError(refusal)
     report = latest_frozen_pass(platform, model_id)
     if report is None:
         raise PermissionError(

@@ -55,8 +55,8 @@ def rows(platform: Platform) -> list[dict[str, Any]]:
 def verify(platform: Platform, actor: Actor, model_id: str) -> dict[str, Any]:
     """Re-check one model's directory against its card, signature first.
 
-    ``forget_verified`` matters here: the loader caches a pass for the life of the
-    process, and an operator asking now wants the answer now.
+    ``forget_verified`` matters here: the loader caches a pass until it expires,
+    and an operator asking now wants the answer now.
     """
     require(platform.audit, actor, Action.VERIFY_ARTIFACT, model_id)
     model = platform.store.get_model(model_id)

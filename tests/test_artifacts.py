@@ -246,3 +246,39 @@ def test_the_artifact_dataclass_carries_what_a_card_needs(tmp_path: Path) -> Non
     assert set(payload) == {"manifest", "digest", "files", "size", "prefix"}
     assert payload["files"] == 3
     assert isinstance(artifact, Artifact)
+
+
+def test_a_stale_verification_is_rechecked_without_a_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    blobs = LocalBlobStore(tmp_path / "objects")
+    adapter = _adapter(tmp_path)
+    stored = store_artifact(blobs, adapter)
+    card = {"artifact": stored.to_dict()}
+    forget_verified()
+    monkeypatch.setenv("INTERNAL_AI_REVERIFY_SECONDS", "0")
+    require_intact(blobs, adapter, card)
+
+    (adapter / "adapter_model.bin").write_bytes(b"changed after the check")
+
+    with pytest.raises(ArtifactDenied, match="does not match artifact"):
+        require_intact(blobs, adapter, card)
+
+
+def test_a_broken_ttl_falls_back_to_the_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    blobs = LocalBlobStore(tmp_path / "objects")
+    adapter = _adapter(tmp_path)
+    stored = store_artifact(blobs, adapter)
+    card = {"artifact": stored.to_dict()}
+    forget_verified()
+    monkeypatch.setenv("INTERNAL_AI_REVERIFY_SECONDS", "not-a-number")
+    require_intact(blobs, adapter, card)
+
+    (adapter / "adapter_model.bin").write_bytes(b"changed after the check")
+    require_intact(blobs, adapter, card)
+
+    forget_verified()
+    with pytest.raises(ArtifactDenied, match="does not match artifact"):
+        require_intact(blobs, adapter, card)
