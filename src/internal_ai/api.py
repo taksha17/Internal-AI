@@ -9,19 +9,21 @@ body or query parameter can name the actor.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from internal_ai.context import Platform
 from internal_ai.engine import PlanError
 from internal_ai.gates import GateError
-from internal_ai.services import governance, oidc
+from internal_ai.services import governance, oidc, scim
 from internal_ai.services.actor import Actor
 from internal_ai.services.identity import AuthenticationError, IdentityService
 from internal_ai.services.jobs import JobRunner
@@ -112,6 +114,17 @@ REFUSALS = (
 )
 
 
+async def scim_body(request: Request) -> dict[str, Any]:
+    """A SCIM request body, refused in SCIM's own words when it is not one."""
+    try:
+        payload = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise scim.ScimBadRequest("the request body is not JSON") from exc
+    if not isinstance(payload, dict):
+        raise scim.ScimBadRequest("the request body must be a JSON object")
+    return payload
+
+
 def create_app(
     root: Path | None = None,
     llm_kind: str = "auto",
@@ -136,6 +149,7 @@ def create_app(
         description="Orchestration, gates, budgets, lineage and audit for the in-house LLM build.",
         lifespan=lifespan,
     )
+    app.add_exception_handler(scim.ScimError, scim.error_response)
     key = api_key or os.environ.get("INTERNAL_AI_API_KEY", "")
 
     def get_platform() -> Platform:
@@ -229,6 +243,113 @@ def create_app(
     @app.get("/me")
     def me(actor: Actor = Depends(require_person)) -> dict[str, Any]:
         return actor.to_dict()
+
+    def require_scim(authorization: str | None = Header(default=None)) -> scim.ScimService:
+        """The directory's bearer token, and the service it authenticates.
+
+        A person's credential is refused here on purpose. `manage_people` lets an
+        administrator edit the roster by hand; it does not make that person's
+        token a directory's word, and accepting one would let any administrator
+        provision an account through a surface built for a machine.
+        """
+        platform = get_platform()
+        config = scim.ScimConfig.configured()
+        if config is None:
+            raise scim.ScimError("SCIM provisioning is not configured on this install", status=503)
+        scheme, _, token = (authorization or "").partition(" ")
+        if scheme.lower() != "bearer" or not config.matches(token.strip()):
+            raise scim.refuse(platform, "the SCIM bearer token was missing or wrong")
+        return scim.ScimService(platform, config)
+
+    @app.get("/scim/v2/ServiceProviderConfig")
+    def scim_service_provider_config(
+        _: scim.ScimService = Depends(require_scim),
+    ) -> JSONResponse:
+        return JSONResponse(scim.service_provider_config(), media_type=scim.SCIM_JSON)
+
+    @app.get("/scim/v2/Users")
+    def scim_list_users(
+        filter_: str = Query(default="", alias="filter"),
+        startIndex: int = 1,
+        count: int = 100,
+        service: scim.ScimService = Depends(require_scim),
+    ) -> JSONResponse:
+        users = service.list_users(filter_)
+        start = max(startIndex, 1) - 1
+        page = users[start : start + max(0, min(count, 200))]
+        return JSONResponse(
+            {
+                "schemas": [scim.LIST_SCHEMA],
+                "totalResults": len(users),
+                "startIndex": start + 1,
+                "itemsPerPage": len(page),
+                "Resources": page,
+            },
+            media_type=scim.SCIM_JSON,
+        )
+
+    @app.post("/scim/v2/Users", status_code=201)
+    async def scim_create_user(
+        request: Request, service: scim.ScimService = Depends(require_scim)
+    ) -> JSONResponse:
+        resource = service.create_user(await scim_body(request))
+        return JSONResponse(resource, status_code=201, media_type=scim.SCIM_JSON)
+
+    @app.get("/scim/v2/Users/{user_id}")
+    def scim_get_user(
+        user_id: str, service: scim.ScimService = Depends(require_scim)
+    ) -> JSONResponse:
+        return JSONResponse(service.user_resource(user_id), media_type=scim.SCIM_JSON)
+
+    @app.put("/scim/v2/Users/{user_id}")
+    async def scim_replace_user(
+        user_id: str, request: Request, service: scim.ScimService = Depends(require_scim)
+    ) -> JSONResponse:
+        resource = service.replace_user(user_id, await scim_body(request))
+        return JSONResponse(resource, media_type=scim.SCIM_JSON)
+
+    @app.delete("/scim/v2/Users/{user_id}", status_code=204)
+    def scim_delete_user(
+        user_id: str, service: scim.ScimService = Depends(require_scim)
+    ) -> Response:
+        service.delete_user(user_id)
+        return Response(status_code=204)
+
+    @app.get("/scim/v2/Groups")
+    def scim_list_groups(service: scim.ScimService = Depends(require_scim)) -> JSONResponse:
+        groups = service.list_groups()
+        return JSONResponse(
+            {
+                "schemas": [scim.LIST_SCHEMA],
+                "totalResults": len(groups),
+                "startIndex": 1,
+                "itemsPerPage": len(groups),
+                "Resources": groups,
+            },
+            media_type=scim.SCIM_JSON,
+        )
+
+    @app.get("/scim/v2/Groups/{name:path}")
+    def scim_get_group(
+        name: str, service: scim.ScimService = Depends(require_scim)
+    ) -> JSONResponse:
+        return JSONResponse(service.group_resource(name), media_type=scim.SCIM_JSON)
+
+    @app.put("/scim/v2/Groups/{name:path}")
+    async def scim_replace_group(
+        name: str, request: Request, service: scim.ScimService = Depends(require_scim)
+    ) -> JSONResponse:
+        payload = await scim_body(request)
+        raw = payload.get("members", [])
+        if not isinstance(raw, list):
+            raise scim.ScimBadRequest("members must be a list")
+        members: list[str] = []
+        for item in raw:
+            value = item.get("value") if isinstance(item, dict) else item
+            if not value:
+                raise scim.ScimBadRequest("every member needs a value")
+            members.append(str(value))
+        return JSONResponse(service.set_members(name, members), media_type=scim.SCIM_JSON)
 
     @app.get("/tasks")
     def list_tasks(

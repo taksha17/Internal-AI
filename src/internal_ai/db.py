@@ -359,7 +359,9 @@ CREATE TABLE IF NOT EXISTS people (
     roles TEXT NOT NULL DEFAULT '',
     groups TEXT NOT NULL DEFAULT '',
     placeholder INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    external_id TEXT NOT NULL DEFAULT '',
+    scim_managed INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS source_tombstones (
@@ -548,6 +550,18 @@ def init_db(conn: Any) -> None:
     }
     if "expires_at" not in token_columns:
         conn.execute("ALTER TABLE api_tokens ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''")
+    person_columns = {row["name"] for row in conn.execute("PRAGMA table_info(people)").fetchall()}
+    if "external_id" not in person_columns:
+        conn.execute("ALTER TABLE people ADD COLUMN external_id TEXT NOT NULL DEFAULT ''")
+    if "scim_managed" not in person_columns:
+        conn.execute("ALTER TABLE people ADD COLUMN scim_managed INTEGER NOT NULL DEFAULT 0")
+    # Created after the column work: on an install from before this slice the
+    # schema script runs first, and an index over a column that does not exist
+    # yet is an error rather than something IF NOT EXISTS would skip.
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_people_external_id"
+        " ON people(external_id) WHERE external_id <> ''"
+    )
     source_columns = {
         row["name"] for row in conn.execute("PRAGMA table_info(data_sources)").fetchall()
     }
@@ -584,6 +598,10 @@ def init_db(conn: Any) -> None:
 def _init_db_server(conn: Any) -> None:
     for statement in split_statements(postgres_schema(SCHEMA)):
         conn.execute(statement)
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_people_external_id"
+        " ON people(external_id) WHERE external_id <> ''"
+    )
     conn.execute(
         "INSERT INTO schema_meta(key, value) VALUES(?, ?) "
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value",

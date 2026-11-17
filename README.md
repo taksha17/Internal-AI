@@ -180,6 +180,18 @@ page then offers the provider as well as the password form. Signing in never
 creates an account: an administrator links the provider's subject to a person on
 the people page first, and that link is what a verified token is checked against.
 
+An install whose directory also provisions its people points the provider at
+`/scim/v2` and sets `INTERNAL_AI_SCIM_TOKEN` (the bearer token the provider
+presents) and `INTERNAL_AI_SCIM_GROUP_ROLES`, a JSON object of directory group to
+the role names that group is worth. Roles come only from that mapping: a group
+the owner did not map is refused rather than creating an account with no roles,
+and a mapping that names a role this install does not have is refused when it is
+read. Provisioning creates the person and an account with no usable password, so
+the subject link above is still what lets them sign in; deprovisioning disables
+the account and ends its sessions and personal tokens, and is refused when it
+would leave the install with no enabled program lead. `PATCH` is not
+implemented, as `/scim/v2/ServiceProviderConfig` states.
+
 `serve` binds to loopback only. Reaching it from another machine needs
 `--allow-remote` together with `--ssl-certfile` and `--ssl-keyfile`; without TLS
 it refuses to start rather than expose a control plane over plain HTTP.
