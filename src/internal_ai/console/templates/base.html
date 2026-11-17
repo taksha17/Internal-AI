@@ -78,6 +78,9 @@
     </details>
   </div>
 </header>
+{% if not audit_health.ok %}
+<p class="refusal" role="alert">The audit chain is broken at event {{ audit_health.broken_at_seq }}: {{ audit_health.reason }}. Nothing else in this console should be trusted until it is explained. <a href="/console/audit">Open the audit log</a>.</p>
+{% endif %}
 {% endif %}
 <main id="main" tabindex="-1">
   {% for kind, text in flashes %}

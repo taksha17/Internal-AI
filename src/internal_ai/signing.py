@@ -135,7 +135,12 @@ def load_signer(path: Path) -> AuditSigner:
             f"{path} does not exist; run `internal-ai audit key` to create one before "
             "anchoring, because a key that is recreated later cannot verify older anchors"
         )
-    key = path.read_bytes().strip()
+    # Not ``.strip()``: a random key can contain a space or a newline byte, and
+    # stripping it turns the key into a different key -- the anchors then verify
+    # against nothing and the failure looks like tampering.
+    key = path.read_bytes()
+    if key.endswith(b"\n"):
+        key = key[:-1]
     return AuditSigner(key, _key_id(key))
 
 

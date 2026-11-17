@@ -6,6 +6,8 @@ pointing at an event that is gone, and a person without the role trying to ancho
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import stat
 from collections.abc import Iterator
@@ -54,6 +56,17 @@ def test_a_key_is_written_once_and_never_replaced(tmp_path: Path) -> None:
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     with pytest.raises(SigningRefused, match="refusing to replace"):
         signing.create_key(path)
+
+
+def test_a_key_with_space_bytes_survives_a_round_trip(tmp_path: Path) -> None:
+    """A random key can contain 0x20 or 0x0a; trimming it would change the key."""
+    path = tmp_path / "odd.key"
+    path.write_bytes(b"  key-with-spaces-and-a-newline\n  " + b"x" * 8)
+
+    expected = b"  key-with-spaces-and-a-newline\n  " + b"x" * 8
+    loaded = signing.load_signer(path)
+
+    assert loaded.sign(b"message") == hmac.new(expected, b"message", hashlib.sha256).hexdigest()
 
 
 def test_an_install_without_a_key_cannot_anchor(tmp_path: Path) -> None:

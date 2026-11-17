@@ -21,6 +21,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from internal_ai.signing import AuditSigner
 from internal_ai.storage import BlobStore, StorageDenied
 
 MANIFEST_NAME = "manifest.jsonl"
@@ -45,14 +46,57 @@ class Artifact:
     files: tuple[ArtifactFile, ...]
     size: int
     prefix: str = DEFAULT_PREFIX
+    signature: str = ""
+    key_id: str = ""
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        record: dict[str, object] = {
             "manifest": self.manifest_key,
             "digest": self.digest,
             "files": len(self.files),
             "size": self.size,
         }
+        if self.signature:
+            record["signature"] = self.signature
+            record["key_id"] = self.key_id
+        return record
+
+
+def signature_message(digest: str) -> bytes:
+    """What a signature covers: the identity, not the listing.
+
+    The listing is already hashed into the digest, so a signature over the digest
+    covers every file name and hash; the domain prefix stops this value being
+    reused as a signature over an audit head.
+    """
+    return f"artifact:{digest}".encode()
+
+
+def verify_signature(artifact: Artifact, signer: AuditSigner | None) -> None:
+    """Refuse an artifact whose stored signature does not match its digest.
+
+    Without a key there is nothing to check against -- the hashes still catch an
+    edited file, they cannot catch a manifest rewritten together with its files by
+    someone who can write to the bucket. That is what the signature adds, and an
+    install that has no key says so rather than pretending.
+    """
+    if not artifact.signature:
+        return
+    if signer is None:
+        raise ArtifactDenied(
+            f"artifact {artifact.digest} is signed with key {artifact.key_id or 'unknown'}, "
+            "and this install has no signing key configured to check it"
+        )
+    if artifact.key_id and artifact.key_id != signer.key_id:
+        raise ArtifactDenied(
+            f"artifact {artifact.digest} was signed with key {artifact.key_id}, "
+            f"this install holds {signer.key_id}"
+        )
+    if not signer.verify(signature_message(artifact.digest), artifact.signature):
+        raise ArtifactDenied(
+            f"artifact {artifact.digest} does not match its signature: the manifest was "
+            "rewritten after it was signed"
+        )
 
 
 def collect(path: Path) -> tuple[ArtifactFile, ...]:
@@ -126,6 +170,7 @@ def store_artifact(
     path: Path,
     *,
     prefix: str = DEFAULT_PREFIX,
+    signer: AuditSigner | None = None,
 ) -> Artifact:
     files = collect(path)
     digest = artifact_digest(files)
@@ -134,12 +179,15 @@ def store_artifact(
         payload = (root / item.name).read_bytes() if root.is_dir() else root.read_bytes()
         blobs.put(payload, prefix=_file_prefix(prefix, digest, item.name))
     manifest = blobs.put(manifest_bytes(files), prefix=f"{prefix}/{digest}")
+    signature = signer.sign(signature_message(digest)) if signer is not None else ""
     return Artifact(
         manifest_key=manifest.key,
         digest=digest,
         files=files,
         size=sum(item.size for item in files),
         prefix=prefix,
+        signature=signature,
+        key_id=signer.key_id if signer is not None else "",
     )
 
 
@@ -206,6 +254,7 @@ def require_intact(
     blobs: BlobStore | None,
     model_path: str | Path,
     card: dict[str, object],
+    signer: AuditSigner | None = None,
 ) -> None:
     """Refuse a path that no longer matches the manifest its card records.
 
@@ -219,6 +268,10 @@ def require_intact(
     artifact = read_card_artifact(blobs, card)
     if artifact is None:
         return
+    # Before the cache: an HMAC over the digest is cheap, and the cache is keyed by
+    # path and digest, so a card that swaps its signature would otherwise skip the
+    # one check that exists for exactly that swap.
+    verify_signature(artifact, signer)
     path = Path(model_path or "")
     resolved = str(path.resolve()) if path.exists() else str(path)
     token = (resolved, artifact.digest)
@@ -258,6 +311,8 @@ def artifact_from_card(card: dict[str, object]) -> Artifact | None:
         digest=digest,
         files=(),
         size=int(entry.get("size") or 0),
+        signature=str(entry.get("signature") or ""),
+        key_id=str(entry.get("key_id") or ""),
     )
 
 
@@ -266,9 +321,14 @@ def read_card_artifact(blobs: BlobStore, card: dict[str, object]) -> Artifact | 
     if artifact is None:
         return None
     files = read_manifest(blobs, artifact.manifest_key)
+    # The signature lives on the card, not in the manifest being checked, so it has
+    # to be carried across or the one check that catches a rewritten manifest would
+    # silently see an unsigned artifact.
     return Artifact(
         manifest_key=artifact.manifest_key,
         digest=artifact.digest,
         files=files,
         size=sum(item.size for item in files),
+        signature=artifact.signature,
+        key_id=artifact.key_id,
     )

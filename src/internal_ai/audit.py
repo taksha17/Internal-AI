@@ -75,6 +75,17 @@ class AuditLog:
         self.store = store
         self.signer = signer
         self.anchor_dir = anchor_dir
+        self._health: AuditVerification | None = None
+
+    def health(self) -> AuditVerification:
+        """The last verification, without walking the chain again.
+
+        A page render cannot afford a full scan, and a result from a moment ago is
+        what a banner needs: this is an integrity signal, not a live audit.
+        """
+        if self._health is None:
+            self._health = self.verify()
+        return self._health
 
     def anchors(self) -> list[Anchor]:
         """Every anchor on disk, oldest first -- the files are the evidence."""
@@ -172,7 +183,9 @@ class AuditLog:
                     False, checked, event.seq, "hash mismatch: event was modified"
                 )
             previous_hash = event.hash
-        return self._check_anchor({event.seq: event for event in chain}, checked)
+        result = self._check_anchor({event.seq: event for event in chain}, checked)
+        self._health = result
+        return result
 
     def _check_anchor(self, by_seq: dict[int, AuditEvent], checked: int) -> AuditVerification:
         """Compare the newest anchor with the chain, and verify its signature if we can.

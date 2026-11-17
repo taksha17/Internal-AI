@@ -124,7 +124,7 @@ def register_alpha(
     digest = tree_hash(adapter_path) if adapter_path.is_dir() else file_hash(adapter_path)
     # The digest names the artifact; the stored manifest is what lets another
     # install rebuild it and check every file, which a path to this machine cannot.
-    artifact = store_artifact(platform.blobs, adapter_path)
+    artifact = store_artifact(platform.blobs, adapter_path, signer=platform.audit.signer)
     card = alpha_card(
         base,
         RECIPE,

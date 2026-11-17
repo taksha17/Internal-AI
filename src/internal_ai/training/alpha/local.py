@@ -180,7 +180,7 @@ def answer_adapter(platform: Platform, model: ModelVersion) -> LLMAdapter:
     # registration loads silently and answers differently, so it is checked before
     # anything is read from it.
     try:
-        require_intact(platform.blobs, model.path, model.card)
+        require_intact(platform.blobs, model.path, model.card, signer=platform.audit.signer)
     except ArtifactDenied as exc:
         raise PermissionError(str(exc)) from exc
     adapter_path = Path(model.path or "")

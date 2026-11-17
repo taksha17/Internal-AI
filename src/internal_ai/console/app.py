@@ -458,6 +458,7 @@ def mount_console(
             "attention": waiting.count,
             "can": lambda action: allowed(ctx.actor, Action(action)),
             "why": lambda action: reason(Action(action)),
+            "audit_health": platform.audit.health().to_dict(),
         }
         values.update(data)
         return templates.TemplateResponse(ctx.request, name, values, status_code=status_code)

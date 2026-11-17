@@ -7,6 +7,7 @@ from pathlib import Path
 
 from internal_ai import signing
 from internal_ai.agent import AgentRuntime
+from internal_ai.alerts import AlertEngine
 from internal_ai.audit import AuditLog
 from internal_ai.budget import BudgetManager
 from internal_ai.config import Settings
@@ -60,6 +61,18 @@ class Platform:
         orchestrator = Orchestrator(
             store, audit, gates, budget, runtime, config=engine_config or EngineConfig()
         )
+        # Verified once at open: a chain that is already broken is something the
+        # operator has to see before it records a day of work on top of it.
+        health = audit.verify()
+        if not health.ok:
+            AlertEngine(store, audit, budget).raise_alert(
+                "audit_integrity",
+                "critical",
+                "audit_events",
+                f"the audit chain is broken at #{health.broken_at_seq}: {health.reason}",
+                {"broken_at_seq": health.broken_at_seq, "checked": health.checked},
+            )
+
         policy = PolicyRegistry(store, gates)
         policy.seed()
         return cls(

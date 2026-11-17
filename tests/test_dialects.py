@@ -376,6 +376,26 @@ def test_a_sqlite_transaction_still_opens_immediately(tmp_path: Path) -> None:
         conn.close()
 
 
+def test_no_statement_uses_a_sqlite_only_date_function() -> None:
+    """`strftime` lives in SQL and in Python; only the Python one is portable.
+
+    SQLite's `strftime()` has no equivalent in a server query, so a call site that
+    reaches SQL has to be found before a cluster does. The only place it is used
+    now is a console label, which is Python's own formatter.
+    """
+    source = Path(__file__).resolve().parents[1] / "src" / "internal_ai"
+    allowed = {Path("console/app.py"), Path("console/lists.py")}
+    offenders = [
+        path.relative_to(source)
+        for path in source.rglob("*.py")
+        if "strftime(" in path.read_text(encoding="utf-8")
+        and path.relative_to(source) not in allowed
+    ]
+
+    assert offenders == [], f"strftime outside a Python label: {offenders}"
+    assert "strftime" not in postgres_schema(SCHEMA)
+
+
 def test_the_home_variable_still_decides_where_the_file_goes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
