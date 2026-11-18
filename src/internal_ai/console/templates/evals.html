@@ -20,6 +20,9 @@
 <section class="card">
   <h2>{{ row.set.name }} v{{ row.set.version }} {{ m.status_badge("frozen" if row.set.frozen else "open") }}</h2>
   <p class="muted small">{{ row.set.id }}, {{ row.leakage['items'] }} questions over {{ row.leakage.relevant_documents }} documents{% if row.set.frozen %}, frozen, approved by {{ row.set.approved_by }}{% endif %}</p>
+  {% if row.set.artifact and row.set.artifact.key %}
+  <p class="muted small">write-once, retained until {{ row.set.artifact.retain_until[:10] }}, {{ row.set.artifact.sha256[:12] }}</p>
+  {% endif %}
   {% if row.leakage.passed %}
   <p>Leakage check passed: every answer is in the held-out test split.</p>
   {% else %}

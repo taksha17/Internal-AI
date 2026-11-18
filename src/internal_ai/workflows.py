@@ -492,7 +492,7 @@ def evaluate_embedding_model(
     from internal_ai.brief import load as load_brief
     from internal_ai.evals.harness import EvalHarness
 
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     eval_set = platform.store.get_eval_set(eval_set_id)
     if eval_set is None:
         raise KeyError(f"unknown eval set: {eval_set_id}")
@@ -1275,7 +1275,7 @@ def evaluate_classifier_model(
     counts = label_counts(labelled)
     majority_label = max(counts, key=lambda label: (counts[label], label))
     majority_baseline = [majority_label] * len(truth)
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     outcome = harness.evaluate_classifier(predictions, truth, actor=actor)
     baseline_outcome = harness.evaluate_classifier(majority_baseline, truth, actor=actor)
     per_class = _per_class_report(predictions, truth, sorted(counts))
