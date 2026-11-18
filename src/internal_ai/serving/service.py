@@ -22,6 +22,7 @@ from typing import Any
 import numpy as np
 
 from internal_ai.audit import AuditLog
+from internal_ai.data.records import version_admits
 from internal_ai.data.shards import released_rows
 from internal_ai.domain import AuditOutcome, ModelVersion
 from internal_ai.evals.metrics import bm25_scores
@@ -395,14 +396,26 @@ class RetrievalService:
             self._cache[dataset_id] = (key, vectors)
         return vectors
 
-    def visible_indexes(self, rows: list[dict[str, Any]], principal: Principal) -> list[int]:
+    def _version_acl(self, dataset_id: str) -> list[str]:
+        dataset = self.store.get_dataset(dataset_id)
+        return list(dataset.acl) if dataset is not None else []
+
+    def visible_indexes(
+        self,
+        rows: list[dict[str, Any]],
+        principal: Principal,
+        version_acl: list[str] | None = None,
+    ) -> list[int]:
         """The rows this principal may read, by every filter at once.
 
         Another tenant's rows never reach the cached matrix, a class nobody
-        granted is never ranked, and the record's own ACL is the last gate. Both
-        retrieval paths call this one function, so a filter cannot be added to
-        the dense path and forgotten in the keyword one.
+        granted is never ranked, the version's own groups are a ceiling a later
+        edit of a row cannot raise, and the record's own ACL is the last gate.
+        Both retrieval paths call this one function, so a filter cannot be added
+        to the dense path and forgotten in the keyword one.
         """
+        if not version_admits(principal.groups, version_acl or []):
+            return []
         return [index for index, row in enumerate(rows) if principal.can_read_row(row)]
 
     def search(
@@ -416,7 +429,7 @@ class RetrievalService:
         rows = self.corpus(dataset_id)
         if not rows:
             return []
-        visible = self.visible_indexes(rows, principal)
+        visible = self.visible_indexes(rows, principal, self._version_acl(dataset_id))
         hits: list[RetrievalHit] = []
         # A search nobody may run is still a search: it is recorded with no hits
         # and its tenant, so a reviewer can tell an empty corpus from a caller
@@ -477,7 +490,7 @@ class RetrievalService:
         rows = self.corpus(dataset_id)
         if not rows:
             return []
-        visible = self.visible_indexes(rows, principal)
+        visible = self.visible_indexes(rows, principal, self._version_acl(dataset_id))
         hits: list[RetrievalHit] = []
         if visible:
             scores = bm25_scores(query, [rows[index]["payload"] for index in visible])

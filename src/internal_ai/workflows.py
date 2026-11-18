@@ -11,7 +11,7 @@ from typing import Any
 
 from internal_ai.context import Platform
 from internal_ai.data.pipeline import DataPipeline, PipelineConfig
-from internal_ai.data.records import Record, Source
+from internal_ai.data.records import Record, Source, version_acl
 from internal_ai.data.splits import SplitResult, make_splits
 from internal_ai.data.tokenizer import Tokenizer, coverage_report, train_tokenizer
 from internal_ai.domain import AuditOutcome, DatasetVersion, ModelVersion
@@ -1383,6 +1383,7 @@ def build_tree_corpus(
         },
         stats={"steps": [{"step": "ingest_tree", **index.stats()}]},
         released=False,
+        acl=version_acl(records),
     )
     platform.store.add_dataset(dataset)
     platform.store.add_dataset_records(dataset.id, [record.to_row() for record in records])

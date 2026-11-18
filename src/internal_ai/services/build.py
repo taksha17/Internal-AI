@@ -25,7 +25,7 @@ from internal_ai.data.inventory import (
     leave_out,
     target_escapes,
 )
-from internal_ai.data.records import ROW_SUFFIXES, choose_columns
+from internal_ai.data.records import ROW_SUFFIXES, choose_columns, version_admits
 from internal_ai.data.suggest import label_columns
 from internal_ai.data.tree import is_text_file
 from internal_ai.domain import AuditOutcome, GateRequest, GateStatus, GateType
@@ -657,7 +657,10 @@ def dataset_view(platform: Platform, actor: Actor, dataset_id: str) -> dict[str,
         tenant=platform.settings.tenant or DEFAULT_TENANT,
     )
     rows = platform.store.dataset_records(dataset_id)
-    visible = [row for row in rows if principal.can_read_row(row)]
+    if not version_admits(principal.groups, dataset.acl):
+        visible = []
+    else:
+        visible = [row for row in rows if principal.can_read_row(row)]
     splits: dict[str, int] = {}
     for row in rows:
         splits[row.get("split") or "unassigned"] = (

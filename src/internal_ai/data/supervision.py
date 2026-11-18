@@ -7,7 +7,7 @@ from typing import Any
 
 from internal_ai.context import Platform
 from internal_ai.data.pipeline import _git_commit
-from internal_ai.data.records import Record
+from internal_ai.data.records import Record, version_acl
 from internal_ai.data.tokenizer import Tokenizer
 from internal_ai.domain import DatasetVersion
 from internal_ai.evals.harness import EvalHarness, EvalOutcome
@@ -121,6 +121,7 @@ def ingest_supervision(
             **(lineage or {}),
         },
         stats={"kind": "supervision"},
+        acl=version_acl(records),
     )
     platform.store.add_dataset(dataset)
     platform.store.add_dataset_records(dataset_id, records)

@@ -9,6 +9,7 @@ from typing import Any
 
 from internal_ai.alerts import AlertEngine
 from internal_ai.context import Platform
+from internal_ai.data.records import version_acl
 from internal_ai.domain import DatasetVersion
 from internal_ai.ids import content_hash, new_id, now_iso
 from internal_ai.services.actor import Actor
@@ -131,6 +132,7 @@ def export_feedback(platform: Platform, actor: Actor) -> DatasetVersion:
         },
         stats={"kind": "feedback", "training_data": False, "token_count_kind": "measured"},
         released=False,
+        acl=version_acl(records),
     )
     platform.store.add_dataset(dataset)
     platform.store.add_dataset_records(dataset_id, records)

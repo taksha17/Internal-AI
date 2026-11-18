@@ -279,7 +279,9 @@ you only want the data and training stages.
   every artifact back to the commit and dataset that produced it.
 - **Data plane.** Ingestion, exact and near-duplicate removal, PII and secret
   scrubbing, quality and language filters, immutable dataset versions, a
-  tokenizer trained from scratch, and leakage-safe splits.
+  tokenizer trained from scratch, and leakage-safe splits. A released version
+  carries the groups its records named, and retrieval will not admit a group
+  that version does not.
 - **Training.** A from-scratch transformer that records its commit, config,
   dataset hash and seed; checkpoints and resumes; caps cost; streams metrics;
   and stops itself on divergence or a loss spike.

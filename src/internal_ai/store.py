@@ -898,8 +898,8 @@ class Store:
             """
             INSERT INTO datasets (id, name, version, content_hash, record_count, token_count,
                                   created_at, lineage, stats, released, path, parent_version,
-                                  tenant)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                  tenant, acl)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 dataset.id,
@@ -915,6 +915,7 @@ class Store:
                 dataset.path,
                 dataset.parent_version,
                 dataset.tenant,
+                _json(dataset.acl),
             ),
         )
         return dataset
@@ -1061,6 +1062,7 @@ class Store:
             path=row["path"],
             parent_version=row["parent_version"],
             tenant=_tenant(row),
+            acl=_loads(row["acl"], []),
         )
 
     # ---------------------------------------------------------------- models

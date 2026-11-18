@@ -9,7 +9,13 @@ from pathlib import Path
 from typing import Any
 
 from internal_ai.audit import AuditLog
-from internal_ai.data.records import EXCLUDED_SENSITIVITY, Record, Source, ingest_source
+from internal_ai.data.records import (
+    EXCLUDED_SENSITIVITY,
+    Record,
+    Source,
+    ingest_source,
+    version_acl,
+)
 from internal_ai.data.shards import Shard, write_shard
 from internal_ai.data.transforms import (
     deduplicate,
@@ -284,6 +290,7 @@ class DataPipeline:
             released=False,
             parent_version=None,
             tenant=_one_tenant(sources),
+            acl=version_acl(records),
         )
         self.store.add_dataset(dataset)
         self.store.add_dataset_records(dataset.id, [record.to_row() for record in records])
@@ -299,6 +306,7 @@ class DataPipeline:
                 "records": dataset.record_count,
                 "tokens": dataset.token_count,
                 "token_count_kind": token_count_kind,
+                "acl": dataset.acl,
                 "lineage_coverage": "100%",
             },
         )
@@ -525,6 +533,7 @@ class DataPipeline:
             released=False,
             parent_version=dataset.id,
             tenant=dataset.tenant,
+            acl=version_acl(fresh),
         )
         before = self.store.get_dataset(dataset_id)
         self.store.add_dataset(created)
@@ -591,6 +600,7 @@ class DataPipeline:
             released=False,
             parent_version=dataset.id,
             tenant=dataset.tenant,
+            acl=version_acl(scrubbed),
         )
         parent_rows = {
             row["record_key"]: row["payload"] for row in self.store.dataset_records(dataset_id)
