@@ -491,7 +491,8 @@ one that claims less:
 - The sandbox is subprocess-level. Container isolation with a network policy is
   still open.
 - The scheduler runs jobs locally. Slurm and Kubernetes are integration points,
-  not finished backends.
+  not finished backends. A GPU job names a device label, and the label picks the
+  resource, the image and the collective. An unknown label is refused.
 
 ## Contributing
 
