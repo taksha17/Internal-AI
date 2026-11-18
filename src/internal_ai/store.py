@@ -1139,8 +1139,8 @@ class Store:
         self.conn.execute(
             """
             INSERT INTO eval_sets (id, name, version, frozen, created_at, approved_by,
-                                   content_hash, path, items)
-            VALUES (?,?,?,?,?,?,?,?,?)
+                                   content_hash, path, items, artifact)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 eval_set.id,
@@ -1152,6 +1152,7 @@ class Store:
                 eval_set.content_hash,
                 eval_set.path,
                 _json(eval_set.items),
+                _json(eval_set.artifact),
             ),
         )
         return eval_set
@@ -1168,10 +1169,15 @@ class Store:
             ).fetchall()
         ]
 
-    def freeze_eval_set(self, eval_set_id: str, approved_by: str) -> None:
+    def freeze_eval_set(
+        self,
+        eval_set_id: str,
+        approved_by: str,
+        artifact: dict[str, Any] | None = None,
+    ) -> None:
         self.conn.execute(
-            "UPDATE eval_sets SET frozen = 1, approved_by = ? WHERE id = ?",
-            (approved_by, eval_set_id),
+            "UPDATE eval_sets SET frozen = 1, approved_by = ?, artifact = ? WHERE id = ?",
+            (approved_by, _json(artifact or {}), eval_set_id),
         )
 
     @staticmethod
@@ -1186,6 +1192,7 @@ class Store:
             content_hash=row["content_hash"],
             path=row["path"],
             items=_loads(row["items"], []),
+            artifact=_loads(row["artifact"], {}) if "artifact" in set(row.keys()) else {},
         )
 
     # ---------------------------------------------------------- eval reports

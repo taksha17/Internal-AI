@@ -115,7 +115,7 @@ def test_the_memorization_probe_is_deterministic_and_lands_on_a_report(platform)
     second = memorization_probe(steps=8)
     assert first == second
     assert isinstance(first["memorization"]["passed"], bool)
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     report = harness.record_report(
         "mdl_probe",
         "evs_probe",

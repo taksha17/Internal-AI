@@ -899,7 +899,7 @@ def create_eval_set(
         raise ValueError("no eval questions could be derived from this dataset; try the title mode")
     for item in items:
         item["dataset_id"] = dataset_id
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     existing = [item for item in platform.store.list_eval_sets() if item.name == name]
     version = max((item.version for item in existing), default=0) + 1
     return harness.create_eval_set(name, items, version=version, actor=actor.id)
@@ -953,7 +953,7 @@ def file_customer_questions(
         },
     ]
     version = max((item.version for item in named), default=0) + 1
-    return EvalHarness(platform.store, platform.audit).create_eval_set(
+    return EvalHarness(platform.store, platform.audit, platform.blobs).create_eval_set(
         name, items, version=version, actor=actor.id
     )
 
@@ -1030,7 +1030,7 @@ def freeze_eval_set(platform: Platform, actor: Actor, eval_set_id: str) -> Any:
 
     require(platform.audit, actor, Action.FREEZE_EVAL_SET, eval_set_id)
     _require_gate(platform, actor, GateType.EVAL_SET_FREEZE, eval_set_id, "freeze_eval_set")
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     return harness.freeze_eval_set(eval_set_id, actor.id, gate_approved=True)
 
 
@@ -1042,7 +1042,9 @@ def edit_eval_set(platform: Platform, actor: Actor, eval_set_id: str) -> None:
     if eval_set is None:
         raise KeyError(f"unknown eval set: {eval_set_id}")
     if eval_set.frozen:
-        EvalHarness(platform.store, platform.audit).write_to_frozen_set(eval_set_id, actor.id)
+        EvalHarness(platform.store, platform.audit, platform.blobs).write_to_frozen_set(
+            eval_set_id, actor.id
+        )
     raise ValueError("eval sets are not edited; create a new version instead")
 
 

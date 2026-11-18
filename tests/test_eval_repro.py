@@ -22,7 +22,7 @@ class HashEmbedder:
 
 
 def test_two_evals_of_the_fixture_return_the_same_recall(platform) -> None:
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     eval_set = EvalSet(
         id="evs_repro",
         name="repro",
@@ -60,7 +60,7 @@ def test_the_builder_cannot_record_their_own_report(platform) -> None:
             card={"registered_by": "ppl_mo"},
         )
     )
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     outcome = harness.evaluate_retrieval(
         HashEmbedder(),
         EvalSet(

@@ -1157,7 +1157,7 @@ def cmd_eval_create(args: argparse.Namespace) -> int:
         from internal_ai.evals.harness import EvalHarness
 
         items = json.loads(Path(args.file).read_text(encoding="utf-8"))
-        harness = EvalHarness(platform.store, platform.audit)
+        harness = EvalHarness(platform.store, platform.audit, platform.blobs)
         eval_set = harness.create_eval_set(args.name, items, version=args.version)
         _print({"eval_set_id": eval_set.id, "items": len(items), "frozen": eval_set.frozen})
     return 0
@@ -1169,7 +1169,7 @@ def cmd_eval_freeze(args: argparse.Namespace) -> int:
 
         actor = _actor(platform, args, args.by, "")
         require(platform.audit, actor, Action.FREEZE_EVAL_SET, args.id)
-        harness = EvalHarness(platform.store, platform.audit)
+        harness = EvalHarness(platform.store, platform.audit, platform.blobs)
         gate_approved = _gate_ok(platform, args.gate_id, GateType.EVAL_SET_FREEZE, args.id)
         try:
             eval_set = harness.freeze_eval_set(args.id, actor.id, gate_approved)
@@ -1192,7 +1192,7 @@ def cmd_eval_derive(args: argparse.Namespace) -> int:
         from internal_ai.workflows import derive_eval_items
 
         items = derive_eval_items(platform, args.dataset_id, count=args.count, mode=args.mode)
-        harness = EvalHarness(platform.store, platform.audit)
+        harness = EvalHarness(platform.store, platform.audit, platform.blobs)
         eval_set = harness.create_eval_set(args.name, items, version=args.version)
         _print({"eval_set_id": eval_set.id, "items": len(items), "frozen": eval_set.frozen})
     return 0

@@ -96,6 +96,7 @@ Change the rule in its own file, never around it.
 | Spend | `internal_ai/budget.py` | every new spend path calls `record_spend` or `check`; bypassing it is a bug |
 | Datasets | `internal_ai/data/` | released versions are immutable; a change is a new version with a new hash and lineage entry |
 | Promotion | `internal_ai/workflows.py:promote_model` | a passing eval report against a frozen set and an approved `model_promotion` gate |
+| Frozen eval sets | `evals/harness.py`, `storage.py` | a freeze writes a retention-locked object named by the content hash; scoring re-reads it and refuses a hash that moved |
 | Gates | `internal_ai/gates.py`, `GateType` in `domain.py` | a new type plus the roles that may decide it |
 | Base models | `internal_ai/training/alpha/pin.py` | a licence class and an allowlist entry, never an unchecked pin |
 | Provenance mode | `internal_ai/training/provenance.py`, policy item `P6` | the mode reads only a decided policy; `scratch_only` refuses every load |
