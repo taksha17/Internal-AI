@@ -95,6 +95,7 @@ Change the rule in its own file, never around it.
 | Task states | `internal_ai/store.py:ALLOWED_TRANSITIONS` | the map entry is the specification |
 | Spend | `internal_ai/budget.py` | every new spend path calls `record_spend` or `check`; bypassing it is a bug |
 | Datasets | `internal_ai/data/` | released versions are immutable; a change is a new version with a new hash and lineage entry. JSONL and Parquet shards of one version share the canonical content hash in `data/shards.py`. The version carries the groups its records named, and retrieval will not admit a group the version does not |
+| Connectors | `internal_ai/data/connectors.py` | a record arrives with its ACL, or the source is refused; a remote that cannot report one is refused |
 | Promotion | `internal_ai/workflows.py:promote_model` | a passing eval report against a frozen set and an approved `model_promotion` gate |
 | Frozen eval sets | `evals/harness.py`, `storage.py` | a freeze writes a retention-locked object named by the content hash; scoring re-reads it and refuses a hash that moved |
 | Gates | `internal_ai/gates.py`, `GateType` in `domain.py` | a new type plus the roles that may decide it |

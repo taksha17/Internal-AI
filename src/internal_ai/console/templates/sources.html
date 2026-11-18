@@ -7,6 +7,26 @@
   {% if can("register_source") %}<a href="#inspect" class="button primary">Inspect a path</a>{% endif %}
 {% endcall %}
 <p class="muted small">Approved folders: {% for root in roots %}<code>{{ root }}</code> {% endfor %}</p>
+{% if can("register_source") %}
+<section class="card stack">
+  <h2>Read a connector</h2>
+  <p class="card-sub">A git working tree reports the groups you name. SharePoint, Confluence and an ERP refuse until an account can report each document's own ACL. Nothing read here is ingested.</p>
+  <form method="post" action="/console/sources/connector" class="stack">
+    {{ m.csrf_field() }}
+    <label>Kind
+      <select name="kind">
+        <option value="git">git</option>
+        <option value="sharepoint">sharepoint</option>
+        <option value="confluence">confluence</option>
+        <option value="erp">erp</option>
+      </select>
+    </label>
+    <label>Path <input type="text" name="path" required></label>
+    <label>Groups <input type="text" name="acl" placeholder="legal, finance"></label>
+    <button type="submit">Preview</button>
+  </form>
+</section>
+{% endif %}
 
 <div class="grid" id="inspect">
   <section class="card stack">

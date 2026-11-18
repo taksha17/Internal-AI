@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from internal_ai.context import Platform
+from internal_ai.data.connectors import pull
 from internal_ai.data.extract import DOCUMENT_SUFFIXES, document_text
 from internal_ai.data.inventory import (
     SECRET_PATTERNS,
@@ -533,6 +534,33 @@ def list_sources(platform: Platform) -> list[dict[str, Any]]:
         "SELECT * FROM data_sources ORDER BY created_at, id"
     ).fetchall()
     return [_source_dict(platform, row) for row in rows]
+
+
+def preview_connector(
+    platform: Platform,
+    actor: Actor,
+    kind: str,
+    path: str,
+    acl: list[str] | None,
+    cursor: str = "",
+) -> dict[str, Any]:
+    """Read a connector and report how many records came back, never their text.
+
+    The ACL check happens inside the connector. A refusal here means the source
+    was not read into a dataset.
+    """
+    require(platform.audit, actor, Action.REGISTER_SOURCE, kind)
+    rows, digest = pull(kind, path, acl, cursor)
+    groups = sorted({group for row in rows for group in (row.acl or ())})
+    platform.audit.record(
+        actor=actor.id,
+        actor_kind=actor.kind,
+        action="connector.preview",
+        subject=kind,
+        outcome=AuditOutcome.SUCCESS,
+        details={"records": len(rows), "cursor": digest[:16], "groups": groups},
+    )
+    return {"kind": kind.strip().lower(), "records": len(rows), "cursor": digest, "groups": groups}
 
 
 def _source_dict(platform: Platform, row: Any) -> dict[str, Any]:
