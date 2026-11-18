@@ -23,6 +23,7 @@ from typing import Any, Protocol
 from internal_ai.audit import AuditLog
 from internal_ai.budget import BudgetManager
 from internal_ai.compute.lanes import Lane, lane_for
+from internal_ai.compute.runtimes import runtime_for
 from internal_ai.domain import AuditOutcome
 from internal_ai.ids import new_id, now_iso
 from internal_ai.sandbox import Sandbox
@@ -356,7 +357,9 @@ class KubernetesBackend:
     ) -> None:
         self.namespace = namespace
         self.image = image
-        self.runtime_class = runtime_class
+        # None and "" are the proof-cluster path: no RuntimeClass at all.
+        # Any other name has to be one this install will place.
+        self.runtime_class = runtime_for(runtime_class).name if runtime_class else None
         self.run_as_user = run_as_user
 
     def object_name(self, job: Job) -> str:

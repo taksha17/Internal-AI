@@ -84,14 +84,11 @@
   <p class="small">Attaching a backend {{ why("attach_compute") }}.</p>
   {% endif %}
   <p class="muted">Device lane: <strong>{{ lane or "none" }}</strong>. A GPU job names one of these labels. An unknown label is refused.</p>
-  <table>
-    <thead><tr><th>Label</th><th>Image</th><th>Precision</th><th>Collective</th></tr></thead>
-    <tbody>
+  {% call m.data_table([("Label",), ("Image",), ("Precision",), ("Collective",)]) %}
       {% for item in lanes %}
       <tr><td><code>{{ item.label }}</code></td><td><code>{{ item.image }}</code></td><td>{{ item.precisions }}</td><td>{{ item.collective }}</td></tr>
       {% endfor %}
-    </tbody>
-  </table>
+  {% endcall %}
   {% if can("attach_compute") %}
   <form method="post" action="/console/compute/lane" class="toolbar">
     {{ m.csrf_field() }}
@@ -99,6 +96,25 @@
       <select name="label">
         {% for item in lanes %}
         <option value="{{ item.label }}"{{ ' selected' if lane == item.label else '' }}>{{ item.vendor }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Select</button>
+  </form>
+  {% endif %}
+  <p class="muted">Runtime class: <strong>{{ runtime or "none" }}</strong>. A cluster job names one of these. An unknown class is refused, and omitting the class is the only way to run without one.</p>
+  {% call m.data_table([("Class",), ("Handler",), ("Isolation",)]) %}
+      {% for item in runtimes %}
+      <tr><td><code>{{ item.name }}</code></td><td><code>{{ item.handler }}</code></td><td>{{ item.isolation }}</td></tr>
+      {% endfor %}
+  {% endcall %}
+  {% if can("attach_compute") %}
+  <form method="post" action="/console/compute/runtime" class="toolbar">
+    {{ m.csrf_field() }}
+    <label>Runtime
+      <select name="runtime">
+        {% for item in runtimes %}
+        <option value="{{ item.name }}"{{ ' selected' if runtime == item.name else '' }}>{{ item.name }}</option>
         {% endfor %}
       </select>
     </label>

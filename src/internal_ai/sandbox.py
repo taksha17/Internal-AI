@@ -14,6 +14,8 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from internal_ai.compute.runtimes import runtime_for
+
 try:
     import resource
 except ImportError:
@@ -150,11 +152,21 @@ class ContainerSandbox(Sandbox):
         image: str = "python:3.12-slim",
         network: str = "none",
         strict: bool = True,
+        runtime: str = "",
     ) -> None:
         super().__init__(base_dir, memory_mb, cpu_seconds, timeout)
         self.image = image
         self.network = network
         self.strict = strict
+        # An empty runtime keeps Docker's own handler. Naming one must be a
+        # class from the table; a subprocess cannot provide Kata or Firecracker.
+        if runtime:
+            chosen = runtime_for(runtime)
+            self.runtime = chosen.name
+            self.runtime_handler = chosen.handler
+        else:
+            self.runtime = ""
+            self.runtime_handler = ""
 
     def run(
         self,
@@ -168,6 +180,10 @@ class ContainerSandbox(Sandbox):
 
         workdir.mkdir(parents=True, exist_ok=True)
         if not shutil.which("docker"):
+            if self.runtime:
+                raise SandboxDenied(
+                    f"docker is not available, so runtime class {self.runtime} cannot run"
+                )
             if self.strict:
                 raise SandboxDenied(
                     "docker is not available and strict mode refuses "
@@ -198,6 +214,7 @@ class ContainerSandbox(Sandbox):
             "docker",
             "run",
             "--rm",
+            *(["--runtime", self.runtime_handler] if self.runtime_handler else []),
             "--network",
             self.network,
             f"--memory={self.memory_mb}m",
@@ -222,16 +239,22 @@ class ContainerSandbox(Sandbox):
                 timeout=timeout or self.timeout,
                 check=False,
             )
+            recorded = {"backend": "docker"}
+            if self.runtime:
+                recorded["runtime"] = self.runtime
             return SandboxResult(
                 exit_code=proc.returncode,
                 stdout=proc.stdout,
                 stderr=proc.stderr,
                 duration_s=time.monotonic() - started,
                 timed_out=timed_out,
-                metadata={"backend": "docker"},
+                metadata=recorded,
             )
         except subprocess.TimeoutExpired as exc:
             timed_out = True
+            recorded = {"backend": "docker"}
+            if self.runtime:
+                recorded["runtime"] = self.runtime
             return SandboxResult(
                 exit_code=124,
                 stdout=(exc.stdout or b"").decode()
@@ -240,7 +263,7 @@ class ContainerSandbox(Sandbox):
                 stderr="timeout",
                 duration_s=time.monotonic() - started,
                 timed_out=timed_out,
-                metadata={"backend": "docker"},
+                metadata=recorded,
             )
 
 

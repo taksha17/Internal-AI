@@ -110,6 +110,7 @@ Change the rule in its own file, never around it.
 | Traces | `internal_ai/serving/trace.py` | scrub before insert, inherit the asker's groups, 30-day retention |
 | Compute advice | `internal_ai/compute/advise.py` | the floor and the tokens per step are read from the trainer, never restated; queue wait stays unknown until a scheduler reports one |
 | Device lanes | `internal_ai/compute/lanes.py` | a label names its resource, image, precisions and collective; an unknown label is refused |
+| Runtime classes | `internal_ai/compute/runtimes.py` | gVisor, Kata and Firecracker are the classes a job may name; an unknown class is refused, and omitting the class is the only way to run without one |
 | Supervision sets | `internal_ai/data/supervision.py` | estimated token counts are not a licence to release |
 
 ## The alpha track, end to end

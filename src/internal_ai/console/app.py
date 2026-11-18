@@ -1917,6 +1917,18 @@ def mount_console(
             lambda chosen: f"lane {chosen} selected. Selecting does not start a run",
         )
 
+    @app.post("/console/compute/runtime", include_in_schema=False)
+    async def compute_runtime(request: Request) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        name = form.get("runtime", "")
+        return await act(
+            ctx,
+            "/console/compute",
+            lambda: compute_advice.select_runtime(ctx.platform, ctx.actor, name),
+            lambda chosen: f"runtime {chosen} selected. Selecting does not start a run",
+        )
+
     @app.get("/console/artifacts", include_in_schema=False)
     def artifacts_page(request: Request) -> Response:
         ctx = context(request)

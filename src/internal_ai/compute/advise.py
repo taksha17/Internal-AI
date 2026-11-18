@@ -11,6 +11,7 @@ import json
 from typing import Any
 
 from internal_ai.compute.lanes import LaneRefused, lane_for
+from internal_ai.compute.runtimes import RuntimeRefused, runtime_for
 from internal_ai.compute.scheduler import JobBackend, LocalBackend, SlurmBackend
 from internal_ai.context import Platform
 from internal_ai.sandbox import Sandbox
@@ -19,6 +20,7 @@ from internal_ai.training.trainer import TOKENS_PER_PARAMETER_FLOOR
 
 BACKEND_KEY = "compute_backend"
 LANE_KEY = "compute_lane"
+RUNTIME_KEY = "compute_runtime"
 SIZES = (("small", 10_000_000), ("1b", 1_000_000_000), ("7b", 7_000_000_000))
 SIZE_NAMES = tuple(name for name, _parameters in SIZES)
 LOCAL_HOUR_LIMIT = 1.0
@@ -71,6 +73,30 @@ def attach_lane(platform: Platform, label: str, actor: str = "infra_engineer") -
         },
     )
     return lane.label
+
+
+def attached_runtime(platform: Platform) -> str:
+    value = platform.store.kv_get(RUNTIME_KEY) or ""
+    if not value:
+        return ""
+    try:
+        return runtime_for(value).name
+    except RuntimeRefused:
+        return ""
+
+
+def attach_runtime(platform: Platform, name: str, actor: str = "infra_engineer") -> str:
+    """Record which runtime class a later job should name. It does not submit one."""
+    runtime = runtime_for(name)
+    platform.store.kv_set(RUNTIME_KEY, runtime.name)
+    platform.audit.record(
+        actor=actor,
+        actor_kind="human",
+        action="compute.runtime_selected",
+        subject=runtime.name,
+        details={"handler": runtime.handler, "isolation": runtime.isolation},
+    )
+    return runtime.name
 
 
 def make_backend(platform: Platform, sandbox: Sandbox) -> JobBackend:

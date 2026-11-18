@@ -258,7 +258,9 @@ $C compute advise --dataset-id ds_b5d060a1ad34
 tells you the truth about a 59k-token corpus: no model the platform names can be
 trained on it. Training will refuse, and it should. The same advice names the
 model-state memory for each size and the trainer's tokens per step. World size
-stays 1, and the queue wait stays unknown, until a scheduler reports them. A tokenizer trains once per
+stays 1, and the queue wait stays unknown, until a scheduler reports them. A
+cluster job names gVisor, Kata or Firecracker; any other runtime class is
+refused. A tokenizer trains once per
 dataset version and then freezes.
 
 ### 6. The same path, end to end, with enough data
