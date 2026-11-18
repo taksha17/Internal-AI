@@ -8,7 +8,7 @@ import pytest
 
 from internal_ai.data.splits import contamination_report
 from internal_ai.data.tokenizer import coverage_report, train_tokenizer
-from internal_ai.data.transforms import deduplicate, filter_quality, scrub_pii
+from internal_ai.data.transforms import deduplicate, duplicate_report, filter_quality, scrub_pii
 from internal_ai.workflows import build_corpus, derive_eval_items, split_corpus
 
 
@@ -217,6 +217,31 @@ def test_deduplicate_removes_exact_and_near_duplicates() -> None:
     assert len(kept) == 2
     assert stats["exact_duplicates_removed"] == 1
     assert stats["near_duplicates_removed"] == 1
+    assert stats["candidate_method"] == "minhash_lsh"
+    report = duplicate_report(records)
+    assert report["near_duplicate_pairs"] == stats["near_duplicates_removed"]
+
+
+def test_minhash_keeps_a_fixed_signature_and_an_unrelated_text() -> None:
+    from internal_ai.data.records import Record
+    from internal_ai.data.transforms import minhash_signature
+
+    text = "the ledgerline feed failed during the warehouse audit reconciliation run"
+    assert minhash_signature(text) == minhash_signature(text)
+    assert len(minhash_signature(text)) == 64
+    kept, stats = deduplicate(
+        [
+            Record(id="1", record_key="a", text=text, source_id="s"),
+            Record(
+                id="2",
+                record_key="b",
+                text="billing sent the wrong invoice to the customer yesterday",
+                source_id="s",
+            ),
+        ]
+    )
+    assert len(kept) == 2
+    assert stats["near_duplicates_removed"] == 0
 
 
 def test_scrubber_redacts_but_keeps_record() -> None:
