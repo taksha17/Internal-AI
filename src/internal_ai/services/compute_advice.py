@@ -14,12 +14,15 @@ from internal_ai.compute.advise import (
     advise_dataset,
     attach_backend,
     attach_lane,
+    attach_runtime,
     attached_backend,
     attached_lane,
+    attached_runtime,
     stored_advice,
     waiting_reasons,
 )
 from internal_ai.compute.lanes import described
+from internal_ai.compute.runtimes import described as described_runtimes
 from internal_ai.context import Platform
 from internal_ai.services.actor import Actor
 from internal_ai.services.permissions import Action, require
@@ -40,6 +43,11 @@ def select_lane(platform: Platform, actor: Actor, label: str) -> str:
     return attach_lane(platform, label, actor=actor.id)
 
 
+def select_runtime(platform: Platform, actor: Actor, name: str) -> str:
+    require(platform.audit, actor, Action.ATTACH_COMPUTE, name)
+    return attach_runtime(platform, name, actor=actor.id)
+
+
 def page(platform: Platform, dataset_id: str = "") -> dict[str, Any]:
     """Everything the template needs, with the waiting reasons already resolved."""
     datasets = [item for item in platform.store.list_datasets() if item.released]
@@ -58,6 +66,8 @@ def page(platform: Platform, dataset_id: str = "") -> dict[str, Any]:
         "backend": attached_backend(platform),
         "lane": attached_lane(platform),
         "lanes": described(),
+        "runtime": attached_runtime(platform),
+        "runtimes": described_runtimes(),
         "floor": _floor(),
     }
 
