@@ -279,7 +279,9 @@ you only want the data and training stages.
   every artifact back to the commit and dataset that produced it.
 - **Data plane.** Ingestion, exact and near-duplicate removal, PII and secret
   scrubbing, quality and language filters, immutable dataset versions, a
-  tokenizer trained from scratch, and leakage-safe splits.
+  tokenizer trained from scratch, and leakage-safe splits. Near copies are
+  proposed by a MinHash signature and confirmed by Jaccard, and the index does
+  not keep a shingle set per record.
 - **Training.** A from-scratch transformer that records its commit, config,
   dataset hash and seed; checkpoints and resumes; caps cost; streams metrics;
   and stops itself on divergence or a loss spike.

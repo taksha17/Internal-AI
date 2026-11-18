@@ -9,7 +9,8 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
-from collections import Counter
+from collections import Counter, defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -93,71 +94,114 @@ def jaccard(left: set[str], right: set[str]) -> float:
     return intersection / union if union else 0.0
 
 
+# One pass per document. The index keeps the signature, never the shingles, so
+# the memory follows how many records were kept and not how long each one is.
+_PRIME = (1 << 61) - 1
+_HASHES = 64
+_BANDS = 16
+_ROWS = _HASHES // _BANDS
+
+
+def _coefficients() -> tuple[tuple[int, int], ...]:
+    pairs = []
+    for index in range(_HASHES):
+        a = int.from_bytes(
+            hashlib.blake2b(f"minhash-a-{index}".encode(), digest_size=8).digest(), "big"
+        )
+        b = int.from_bytes(
+            hashlib.blake2b(f"minhash-b-{index}".encode(), digest_size=8).digest(), "big"
+        )
+        pairs.append((a | 1, b))
+    return tuple(pairs)
+
+
+_COEFFICIENTS = _coefficients()
+
+
+def minhash_signature(text: str, size: int = 5) -> tuple[int, ...]:
+    """A fixed-width signature. Shingles exist only while this one text is hashed."""
+    signature = [_PRIME] * _HASHES
+    compact = re.sub(r"\s+", " ", text.strip().lower())
+    if not compact:
+        return tuple(signature)
+    if len(compact) <= size:
+        windows: Iterable[str] = (compact,)
+    else:
+        windows = (compact[index : index + size] for index in range(len(compact) - size + 1))
+    seen: set[str] = set()
+    for window in windows:
+        if window in seen:
+            continue
+        seen.add(window)
+        hashed = hashlib.blake2b(window.encode("utf-8"), digest_size=8).digest()
+        digest = int.from_bytes(hashed, "big")
+        for index, (slope, intercept) in enumerate(_COEFFICIENTS):
+            value = (slope * digest + intercept) % _PRIME
+            if value < signature[index]:
+                signature[index] = value
+    return tuple(signature)
+
+
+def _band_keys(signature: tuple[int, ...]) -> list[tuple[int, tuple[int, ...]]]:
+    return [(band, signature[band * _ROWS : (band + 1) * _ROWS]) for band in range(_BANDS)]
+
+
 def deduplicate(
-    records: list[Record],
+    records: Iterable[Record],
     threshold: int = 12,
     jaccard_threshold: float = 0.8,
 ) -> tuple[list[Record], dict[str, Any]]:
     """Exact and near-duplicate removal.
 
-    Candidates come from banded SimHash lookup, then a Jaccard check over
-    character shingles confirms the match so the looser hash radius does not
-    produce false positives.
+    A MinHash signature proposes candidates through locality-sensitive bands.
+    Jaccard over character shingles confirms the match, and those shingles are
+    computed for the document in hand and the one candidate, then dropped. The
+    index holds signatures, so a long corpus does not keep a shingle set each.
 
-    Memory is bounded by the corpus, not by the corpus times its shingles: the
-    confirmation recomputes a candidate's shingles instead of keeping one set per
-    record. The first PMC ingest was killed by the OOM killer at 5 GiB with
-    154,415 records still queued, because holding a shingle set each cost more than
-    the text it was meant to protect.
+    ``threshold`` remains the radius recorded for a caller that still names one.
+    The decision is the Jaccard check.
     """
     seen_exact: set[str] = set()
-    fingerprints: list[tuple[int, int]] = []
-    buckets: dict[tuple[int, int], list[int]] = {}
+    signatures: list[tuple[int, ...]] = []
+    buckets: dict[tuple[int, tuple[int, ...]], list[int]] = defaultdict(list)
     kept: list[Record] = []
     exact_removed = 0
     near_removed = 0
-    bands = 8
-    band_bits = 64 // bands
-    for index, record in enumerate(records):
+    total = 0
+    for record in records:
+        total += 1
         digest = record.fingerprint()
         if digest in seen_exact:
             exact_removed += 1
             continue
         seen_exact.add(digest)
-        fingerprint = simhash(record.text)
+        signature = minhash_signature(record.text)
         document_shingles = shingles(record.text)
         duplicate = False
         candidates: set[int] = set()
-        for band in range(bands):
-            key = (band, (fingerprint >> (band * band_bits)) & ((1 << band_bits) - 1))
-            for candidate in buckets.get(key, []):
-                if hamming(fingerprint, fingerprints[candidate][0]) <= threshold:
-                    candidates.add(candidate)
+        for key in _band_keys(signature):
+            candidates.update(buckets.get(key, ()))
         for candidate in candidates:
-            # Recompute rather than retain: a band collision is rare, so this
-            # costs a few documents of work instead of a corpus of memory.
-            confirmed = shingles(records[fingerprints[candidate][1]].text)
-            if jaccard(document_shingles, confirmed) >= jaccard_threshold:
+            if jaccard(document_shingles, shingles(kept[candidate].text)) >= jaccard_threshold:
                 duplicate = True
                 break
         if duplicate:
             near_removed += 1
             continue
-        fingerprints.append((fingerprint, index))
-        for band in range(bands):
-            key = (band, (fingerprint >> (band * band_bits)) & ((1 << band_bits) - 1))
-            buckets.setdefault(key, []).append(len(fingerprints) - 1)
+        signatures.append(signature)
+        slot = len(signatures) - 1
+        for key in _band_keys(signature):
+            buckets[key].append(slot)
         kept.append(record)
     stats = {
-        "input": len(records),
+        "input": total,
         "output": len(kept),
         "exact_duplicates_removed": exact_removed,
         "near_duplicates_removed": near_removed,
-        "duplicate_rate": round((exact_removed + near_removed) / len(records), 6)
-        if records
-        else 0.0,
+        "duplicate_rate": round((exact_removed + near_removed) / total, 6) if total else 0.0,
         "hamming_radius": threshold,
         "jaccard_threshold": jaccard_threshold,
+        "candidate_method": "minhash_lsh",
     }
     return kept, stats
 
@@ -170,8 +214,9 @@ def duplicate_report(
 ) -> dict[str, Any]:
     """Count exact copies and the near-duplicate residual the release gate uses.
 
-    Exact groups always fail a release. Near copies are the same SimHash pass
+    Exact groups always fail a release. Near copies are the same MinHash pass
     ``deduplicate`` already runs, and they fail only above ``residual_max``.
+    ``near_duplicate_pairs`` is that pass's removal count.
     """
     seen: dict[str, str] = {}
     grouped: set[str] = set()
