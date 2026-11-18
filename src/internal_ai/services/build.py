@@ -648,6 +648,7 @@ def build_dataset(platform: Platform, actor: Actor, runner: JobRunner, source_id
 def dataset_view(platform: Platform, actor: Actor, dataset_id: str) -> dict[str, Any]:
     """Statistics for everyone; a few scrubbed snippets only for allowed readers."""
     from internal_ai.data.pipeline import sample_lineage
+    from internal_ai.data.shards import configured_encoding
 
     dataset = platform.store.get_dataset(dataset_id)
     if dataset is None:
@@ -682,6 +683,7 @@ def dataset_view(platform: Platform, actor: Actor, dataset_id: str) -> dict[str,
         "pii_audit": dataset.stats.get("pii_audit"),
         "trace": sample_lineage(dataset, rows),
         "release_gate": gate_for(platform, GateType.DATASET_RELEASE, dataset_id),
+        "shard_encoding": configured_encoding(),
     }
 
 

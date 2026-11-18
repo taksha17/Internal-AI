@@ -94,7 +94,7 @@ Change the rule in its own file, never around it.
 | Every agent action | `internal_ai/agent.py`, `internal_ai/tools.py`, `agentic.py` | capability check plus an audit event |
 | Task states | `internal_ai/store.py:ALLOWED_TRANSITIONS` | the map entry is the specification |
 | Spend | `internal_ai/budget.py` | every new spend path calls `record_spend` or `check`; bypassing it is a bug |
-| Datasets | `internal_ai/data/` | released versions are immutable; a change is a new version with a new hash and lineage entry |
+| Datasets | `internal_ai/data/` | released versions are immutable; a change is a new version with a new hash and lineage entry. JSONL and Parquet shards of one version share the canonical content hash in `data/shards.py` |
 | Promotion | `internal_ai/workflows.py:promote_model` | a passing eval report against a frozen set and an approved `model_promotion` gate |
 | Gates | `internal_ai/gates.py`, `GateType` in `domain.py` | a new type plus the roles that may decide it |
 | Base models | `internal_ai/training/alpha/pin.py` | a licence class and an allowlist entry, never an unchecked pin |

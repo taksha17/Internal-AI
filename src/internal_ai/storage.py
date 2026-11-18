@@ -10,6 +10,11 @@ second version, and reading a key whose content no longer matches its name is an
 error instead of a silent acceptance -- that check is the reason the name is a
 hash rather than a timestamp.
 
+A dataset shard may store those bytes as JSONL or as Parquet. The key is the
+digest of the stored bytes, so the two encodings do not share a key. The
+logical content hash, the one a version's lineage is about, is computed from
+the canonical rows in ``data/shards.py`` and is the same for both.
+
 This module decides nothing about *who* may read a bucket. Access policy stays
 in ``services/permissions.py`` and ``gates.py``; a caller that has not been
 checked must not reach this module at all.
