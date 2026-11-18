@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from internal_ai.context import Platform
+from internal_ai.data.connectors import pull
 from internal_ai.data.extract import DOCUMENT_SUFFIXES, document_text
 from internal_ai.data.inventory import (
     SECRET_PATTERNS,
@@ -25,7 +26,7 @@ from internal_ai.data.inventory import (
     leave_out,
     target_escapes,
 )
-from internal_ai.data.records import ROW_SUFFIXES, choose_columns
+from internal_ai.data.records import ROW_SUFFIXES, choose_columns, version_admits
 from internal_ai.data.suggest import label_columns
 from internal_ai.data.tree import is_text_file
 from internal_ai.domain import AuditOutcome, GateRequest, GateStatus, GateType
@@ -535,6 +536,33 @@ def list_sources(platform: Platform) -> list[dict[str, Any]]:
     return [_source_dict(platform, row) for row in rows]
 
 
+def preview_connector(
+    platform: Platform,
+    actor: Actor,
+    kind: str,
+    path: str,
+    acl: list[str] | None,
+    cursor: str = "",
+) -> dict[str, Any]:
+    """Read a connector and report how many records came back, never their text.
+
+    The ACL check happens inside the connector. A refusal here means the source
+    was not read into a dataset.
+    """
+    require(platform.audit, actor, Action.REGISTER_SOURCE, kind)
+    rows, digest = pull(kind, path, acl, cursor)
+    groups = sorted({group for row in rows for group in (row.acl or ())})
+    platform.audit.record(
+        actor=actor.id,
+        actor_kind=actor.kind,
+        action="connector.preview",
+        subject=kind,
+        outcome=AuditOutcome.SUCCESS,
+        details={"records": len(rows), "cursor": digest[:16], "groups": groups},
+    )
+    return {"kind": kind.strip().lower(), "records": len(rows), "cursor": digest, "groups": groups}
+
+
 def _source_dict(platform: Platform, row: Any) -> dict[str, Any]:
     item = dict(row)
     item["acl"] = json.loads(item["acl"])
@@ -658,7 +686,10 @@ def dataset_view(platform: Platform, actor: Actor, dataset_id: str) -> dict[str,
         tenant=platform.settings.tenant or DEFAULT_TENANT,
     )
     rows = platform.store.dataset_records(dataset_id)
-    visible = [row for row in rows if principal.can_read_row(row)]
+    if not version_admits(principal.groups, dataset.acl):
+        visible = []
+    else:
+        visible = [row for row in rows if principal.can_read_row(row)]
     splits: dict[str, int] = {}
     for row in rows:
         splits[row.get("split") or "unassigned"] = (

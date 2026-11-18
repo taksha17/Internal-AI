@@ -321,6 +321,7 @@ class DatasetVersion:
     path: str = ""
     parent_version: str | None = None
     tenant: str = ""
+    acl: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)

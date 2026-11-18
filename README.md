@@ -281,7 +281,9 @@ you only want the data and training stages.
   scrubbing, quality and language filters, immutable dataset versions, a
   tokenizer trained from scratch, and leakage-safe splits. A released version
   is one shard, JSONL or Parquet (`INTERNAL_AI_SHARD_ENCODING`), and both
-  encodings record the same canonical content hash. Near copies are
+  encodings record the same canonical content hash. It carries the groups its
+  records named, and retrieval will not admit a group that version does not.
+  A connector that cannot report an ACL is refused. Near copies are
   proposed by a MinHash signature and confirmed by Jaccard, and the index does
   not keep a shingle set per record.
 - **Training.** A from-scratch transformer that records its commit, config,
