@@ -73,7 +73,7 @@ def test_a_builder_cannot_run_the_evaluation_of_their_own_model(platform) -> Non
 
 
 def test_the_report_records_who_judged_it(platform) -> None:
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     outcome = EvalOutcome(
         passed=True, metrics={"recall_at_10": 0.8}, baseline_metrics={}, checks={}, notes=""
     )
@@ -88,7 +88,7 @@ def test_the_report_records_who_judged_it(platform) -> None:
 
 def test_a_frozen_set_is_scored_against_a_model_once(platform) -> None:
     """Point 1 of docs/promotion.md: a second look needs a new freeze gate."""
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     eval_set = harness.create_eval_set("held-out", [{"query": "q", "relevant_ids": ["d1"]}])
     harness.freeze_eval_set(eval_set.id, "ml_lead", gate_approved=True)
     outcome = EvalOutcome(

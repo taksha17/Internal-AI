@@ -94,7 +94,7 @@ def check_key(key: str) -> str:
 
 
 class BlobStore(Protocol):
-    """The four operations the platform needs, and nothing else."""
+    """The operations the platform needs, and nothing else."""
 
     name: str
 
@@ -111,6 +111,8 @@ class BlobStore(Protocol):
     def exists(self, key: str) -> bool: ...
 
     def verify(self, key: str) -> bool: ...
+
+    def retention_until(self, key: str) -> str | None: ...
 
 
 class LocalBlobStore:
@@ -138,14 +140,12 @@ class LocalBlobStore:
         prefix: str = "",
         retention_days: int | None = None,
     ) -> Blob:
-        # A local store has no retention clock; the parameter exists so callers
-        # are written against the storage interface rather than one backend.
-        del retention_days
         key = content_key(payload, prefix)
         target = self._path(key)
         digest = digest_of(payload)
         if target.exists():
             self._require_same_bytes(target, digest, key)
+            self._record_retention(key, retention_days)
             return Blob(key=key, size=len(payload), sha256=digest, backend=self.name)
         target.parent.mkdir(parents=True, exist_ok=True)
         handle, temporary = tempfile.mkstemp(dir=target.parent, prefix=".put-")
@@ -159,7 +159,31 @@ class LocalBlobStore:
         except BaseException:
             Path(temporary).unlink(missing_ok=True)
             raise
+        self._record_retention(key, retention_days)
         return Blob(key=key, size=len(payload), sha256=digest, backend=self.name)
+
+    def retention_until(self, key: str) -> str | None:
+        """The compliance retain-until date recorded for this key, if one was."""
+        path = self._lock_path(key)
+        if not path.is_file():
+            return None
+        return path.read_text(encoding="utf-8").strip() or None
+
+    def _lock_path(self, key: str) -> Path:
+        return self.root / ".locks" / check_key(key)
+
+    def _record_retention(self, key: str, retention_days: int | None) -> None:
+        if not retention_days:
+            return
+        path = self._lock_path(key)
+        if path.exists():
+            return
+        from datetime import UTC, datetime, timedelta
+
+        until = (datetime.now(UTC) + timedelta(days=int(retention_days))).isoformat()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(until + "\n", encoding="utf-8")
+        os.chmod(path, 0o444)
 
     def get(self, key: str, *, expect_sha256: str | None = None) -> bytes:
         path = self._path(key)
@@ -222,6 +246,7 @@ class S3BlobStore:
         self.prefix = prefix.strip("/")
         self.retention_days = retention_days
         self._client = client
+        self._locked: dict[str, str] = {}
 
     @property
     def client(self) -> Any:
@@ -267,8 +292,12 @@ class S3BlobStore:
             until = datetime.now(UTC) + timedelta(days=days)
             extra["ObjectLockMode"] = "COMPLIANCE"
             extra["ObjectLockRetainUntilDate"] = until
+            self._locked.setdefault(namespaced, until.isoformat())
         self.client.put_object(Bucket=self.bucket, Key=object_key, Body=payload, **extra)
         return Blob(key=namespaced, size=len(payload), sha256=digest, backend=self.name)
+
+    def retention_until(self, key: str) -> str | None:
+        return self._locked.get(key)
 
     def get(self, key: str, *, expect_sha256: str | None = None) -> bytes:
         object_key = self._object_key(key)

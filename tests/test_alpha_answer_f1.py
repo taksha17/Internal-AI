@@ -53,7 +53,7 @@ def dataset(platform, dataset_id: str) -> None:
 def frozen_set(platform, items: list[dict]) -> str:
     from internal_ai.evals.harness import EvalHarness
 
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     eval_set = harness.create_eval_set("alpha", items)
     harness.freeze_eval_set(eval_set.id, "ml_lead", gate_approved=True)
     return eval_set.id

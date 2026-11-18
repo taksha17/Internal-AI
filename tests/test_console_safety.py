@@ -170,7 +170,7 @@ def test_weight_files_outside_paths_frozen_sets_and_spend(
     with pytest.raises(PermissionDenied, match="outside the approved"):
         build.register_source(platform, lead, str(outside), "notes", "learn", ["engineering"])
 
-    eval_set = EvalHarness(platform.store, platform.audit).create_eval_set(
+    eval_set = EvalHarness(platform.store, platform.audit, platform.blobs).create_eval_set(
         "held-out", [{"query": "reset vpn", "relevant_ids": ["doc-1"]}]
     )
     platform.store.freeze_eval_set(eval_set.id, lead.id)
