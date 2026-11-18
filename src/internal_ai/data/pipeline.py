@@ -20,8 +20,15 @@ from internal_ai.data.transforms import (
 )
 from internal_ai.domain import AuditOutcome, DatasetVersion
 from internal_ai.ids import content_hash, new_id, now_iso
+from internal_ai.services.tenancy import DEFAULT_TENANT, normalise
 from internal_ai.storage import BlobStore
 from internal_ai.store import Store
+
+
+def _one_tenant(sources: list[Source]) -> str:
+    """The tenant a version belongs to, or ``""`` when it holds several."""
+    named = {normalise(source.tenant) for source in sources}
+    return named.pop() if len(named) == 1 else ""
 
 
 @dataclass(slots=True)
@@ -267,6 +274,8 @@ class DataPipeline:
             name=config.name,
             version=config.version,
             content_hash=dataset_hash,
+            # One tenant per version; a build that mixes two names none, and the
+            # record-level filter is what keeps them apart.
             record_count=len(records),
             token_count=token_count,
             created_at=now_iso(),
@@ -274,6 +283,7 @@ class DataPipeline:
             stats={"steps": steps, "token_count_kind": token_count_kind},
             released=False,
             parent_version=None,
+            tenant=_one_tenant(sources),
         )
         self.store.add_dataset(dataset)
         self.store.add_dataset_records(dataset.id, [record.to_row() for record in records])
@@ -426,6 +436,7 @@ class DataPipeline:
                 acl=row["acl"],
                 tokens=row["tokens"],
                 meta=row["meta"],
+                tenant=row.get("tenant") or DEFAULT_TENANT,
             )
             for row in self.store.dataset_records(dataset_id)
         ]
@@ -484,6 +495,7 @@ class DataPipeline:
                 acl=list(record.acl),
                 tokens=record.tokens,
                 meta=dict(record.meta),
+                tenant=record.tenant,
             )
             for record in kept
         ]
@@ -512,6 +524,7 @@ class DataPipeline:
             },
             released=False,
             parent_version=dataset.id,
+            tenant=dataset.tenant,
         )
         before = self.store.get_dataset(dataset_id)
         self.store.add_dataset(created)
@@ -545,6 +558,7 @@ class DataPipeline:
                 acl=list(record.acl),
                 tokens=record.tokens,
                 meta=dict(record.meta),
+                tenant=record.tenant,
             )
             for record in self._dataset_records(dataset_id)
         ]
@@ -576,6 +590,7 @@ class DataPipeline:
             stats={"steps": steps, "token_count_kind": "estimate"},
             released=False,
             parent_version=dataset.id,
+            tenant=dataset.tenant,
         )
         parent_rows = {
             row["record_key"]: row["payload"] for row in self.store.dataset_records(dataset_id)

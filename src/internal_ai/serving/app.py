@@ -9,6 +9,7 @@ import threading
 import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from internal_ai.data.shards import released_rows
 from internal_ai.data.tokenizer import Tokenizer
 from internal_ai.domain import ModelVersion
 from internal_ai.ids import new_id
+from internal_ai.services.tenancy import normalise, other_tenant, same_tenant
 from internal_ai.serving.extraction import (
     EXTRACTION_REFUSE,
     ExtractionMonitor,
@@ -40,7 +42,9 @@ from internal_ai.serving.service import (
     Principal,
     RateLimiter,
     RetrievalService,
+    TenantQuota,
     load_principals,
+    load_tenant_quotas,
     log_request,
     out_of_service,
     served_model,
@@ -102,8 +106,12 @@ def create_serving_app(
     root: Path | None = None,
     rate_limit_per_minute: int = 60,
     principals: dict[str, Principal] | None = None,
+    tenant_quotas: dict[str, int] | None = None,
 ) -> FastAPI:
     key_table = principals if principals is not None else load_principals()
+    # Read once at startup: a malformed quota list refuses here rather than
+    # leaving a tenant uncapped because nobody noticed the typo.
+    quotas = TenantQuota(tenant_quotas if tenant_quotas is not None else load_tenant_quotas())
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -131,6 +139,17 @@ def create_serving_app(
 
     def get_platform() -> Platform:
         return app.state.platform
+
+    def decided_policy() -> Any:
+        """The read policy the install decided, read from the store.
+
+        A serving key names a person and their groups; it does not decide what
+        those groups may read. Reading P7 here is what stops a grant widened in
+        the console from being narrower, or wider, in the API.
+        """
+        from internal_ai.policy import read_policy
+
+        return read_policy(get_platform().policy)
 
     def authenticate(
         x_internal_key: str | None = Header(default=None),
@@ -160,7 +179,37 @@ def create_serving_app(
                     "remaining": limiter.remaining(principal.user_id),
                 },
             )
+        if not quotas.allow(principal.tenant):
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "tenant request quota exceeded",
+                    "tenant": normalise(principal.tenant),
+                    "limit_per_minute": quotas.limit(principal.tenant),
+                    "remaining": quotas.remaining(principal.tenant),
+                },
+            )
+        if principal.read_policy is None:
+            return replace(principal, read_policy=decided_policy())
         return principal
+
+    def tenant_refusal(principal: Principal, dataset_id: str) -> None:
+        """A dataset of another tenant is refused, never answered as a miss.
+
+        Filtering every row already hides the documents, but an empty answer for
+        a corpus the caller cannot see reads like a search that matched nothing,
+        and someone would go on looking for the reason.
+        """
+        dataset = get_platform().store.get_dataset(dataset_id)
+        if dataset is None or same_tenant(principal.tenant, dataset.tenant):
+            return
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": other_tenant("dataset", dataset.tenant),
+                "tenant": normalise(dataset.tenant),
+            },
+        )
 
     def audience_refusal(model: ModelVersion, principal: Principal) -> None:
         """A model that learned from restricted documents answers only its audience.
@@ -406,6 +455,7 @@ def create_serving_app(
             dataset_id = model.dataset_ids[0] if model.dataset_ids else None
         if dataset_id is None:
             raise HTTPException(status_code=400, detail="no dataset bound to the model")
+        tenant_refusal(principal, dataset_id)
         try:
             hits = retriever_hits(
                 retrieval, model, dataset_id, request.query, principal, request.top_k
@@ -689,6 +739,7 @@ def create_serving_app(
         dataset_id = model.dataset_ids[0] if model.dataset_ids else ""
         if not dataset_id:
             raise HTTPException(status_code=400, detail="no dataset bound to the model")
+        tenant_refusal(principal, dataset_id)
         checked_at = time.monotonic()
         extraction_monitor: ExtractionMonitor = app.state.extraction_monitor
         extraction_finding = extraction_monitor.observe(principal.user_id, question)
@@ -713,7 +764,7 @@ def create_serving_app(
         with app.state.concurrency_semaphore:
             hits = retriever_hits(retrieval, model, dataset_id, question, principal, request.top_k)
             if not hits:
-                readable = any(principal.can_read(row["acl"], row["sensitivity"]) for row in rows)
+                readable = any(principal.can_read_row(row) for row in rows)
                 status = 403 if rows and not readable else 400
                 reason = (
                     "no document in this dataset may be read with this key"

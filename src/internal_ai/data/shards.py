@@ -17,6 +17,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from internal_ai.services.tenancy import DEFAULT_TENANT
 from internal_ai.storage import BlobStore, StorageDenied
 
 if TYPE_CHECKING:
@@ -31,6 +32,7 @@ CANONICAL_FIELDS = (
     "tokens",
     "split",
     "meta",
+    "tenant",
 )
 
 SHARD_PREFIX = "datasets"
@@ -63,6 +65,8 @@ def canonical_record(record: Mapping[str, Any]) -> dict[str, Any]:
     row = {field: record.get(field) for field in CANONICAL_FIELDS}
     row["acl"] = list(row["acl"] or [])
     row["meta"] = dict(row["meta"] or {})
+    # A shard written before tenancy carries no tenant; it is the install's own.
+    row["tenant"] = str(row["tenant"] or DEFAULT_TENANT)
     return row
 
 

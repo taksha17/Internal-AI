@@ -27,6 +27,8 @@ from internal_ai.domain import AuditOutcome, ModelVersion
 from internal_ai.evals.metrics import bm25_scores
 from internal_ai.services import attributes
 from internal_ai.services.attributes import DEFAULT_CLASS, ReadPolicy
+from internal_ai.services.tenancy import DEFAULT_TENANT, normalise, same_tenant
+from internal_ai.services.tenancy import check as check_tenant
 from internal_ai.storage import BlobStore
 from internal_ai.store import Store
 from internal_ai.training.alpha.citations import hit_from_key
@@ -40,12 +42,41 @@ SUPERUSER_GROUP = attributes.SUPERUSER_GROUP
 class Principal:
     user_id: str
     groups: frozenset[str]
+    tenant: str = DEFAULT_TENANT
     api_key: str = ""
-    read_policy: ReadPolicy = field(default_factory=ReadPolicy.strict)
+    # None means "nobody has told this key what the install decided". The serving
+    # process fills it from policy P7 on every request; a principal constructed
+    # with a rule of its own keeps it, which is what tests and the console do.
+    read_policy: ReadPolicy | None = None
 
-    def can_read(self, acl: list[str], sensitivity: str = DEFAULT_CLASS) -> bool:
-        """Whether this principal may read a record, by the one attribute rule."""
-        return self.read_policy.allows(self.groups, sensitivity, acl)
+    @property
+    def grants(self) -> ReadPolicy:
+        """The rule this principal reads by: the strict one unless it was given."""
+        return self.read_policy or ReadPolicy.strict()
+
+    def can_read(
+        self,
+        acl: list[str],
+        sensitivity: str = DEFAULT_CLASS,
+        tenant: str = DEFAULT_TENANT,
+    ) -> bool:
+        """Whether this principal may read a record, by the one attribute rule.
+
+        Tenancy is asked first: a record of another tenant is out of reach
+        whatever class it carries and whatever group the caller is in, because
+        the tenant is a boundary and not a grant.
+        """
+        if not same_tenant(self.tenant, tenant):
+            return False
+        return self.grants.allows(self.groups, sensitivity, acl)
+
+    def can_read_row(self, row: dict[str, Any]) -> bool:
+        """The same answer for a row read from the table or from a shard."""
+        return self.can_read(
+            row.get("acl") or [],
+            row.get("sensitivity") or DEFAULT_CLASS,
+            row.get("tenant") or DEFAULT_TENANT,
+        )
 
 
 class AuthError(Exception):
@@ -84,10 +115,81 @@ class RateLimiter:
             return max(self.limit - len(window), 0)
 
 
+class TenantQuota:
+    """Requests per minute one tenant may make, when its operator sets a number.
+
+    The per-user window answers "is this caller asking too often". This one
+    answers "is this customer's share of the deployment being spent", which is
+    the quota an agreement names. A tenant with no entry is not capped here.
+    """
+
+    def __init__(self, limits: dict[str, int] | None = None) -> None:
+        self.limits = {normalise(name): int(value) for name, value in (limits or {}).items()}
+        self._hits: dict[str, deque[float]] = defaultdict(deque)
+        self._lock = threading.Lock()
+
+    def limit(self, tenant: str) -> int | None:
+        return self.limits.get(normalise(tenant))
+
+    def _window(self, tenant: str, now: float | None) -> tuple[deque[float], float]:
+        moment = now if now is not None else time.monotonic()
+        window = self._hits[normalise(tenant)]
+        while window and moment - window[0] > 60.0:
+            window.popleft()
+        return window, moment
+
+    def allow(self, tenant: str, now: float | None = None) -> bool:
+        allowance = self.limit(tenant)
+        if allowance is None:
+            return True
+        with self._lock:
+            window, moment = self._window(tenant, now)
+            if len(window) >= allowance:
+                return False
+            window.append(moment)
+            return True
+
+    def remaining(self, tenant: str, now: float | None = None) -> int | None:
+        allowance = self.limit(tenant)
+        if allowance is None:
+            return None
+        with self._lock:
+            window, _ = self._window(tenant, now)
+            return max(allowance - len(window), 0)
+
+
+class TenantQuotaError(ValueError):
+    """A quota list that cannot be read."""
+
+
+def parse_tenant_quotas(raw: str) -> dict[str, int]:
+    """``acme:30,globex:10``. A malformed entry refuses rather than uncapping."""
+    limits: dict[str, int] = {}
+    for entry in (raw or "").split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        name, separator, value = entry.partition(":")
+        value = value.strip()
+        if not separator or not value.isdigit():
+            raise TenantQuotaError(f"{entry!r} is not written tenant:requests-per-minute")
+        tenant = check_tenant(name)
+        if int(value) <= 0:
+            raise TenantQuotaError(f"{tenant} names {value} requests a minute; the floor is 1")
+        limits[tenant] = int(value)
+    return limits
+
+
+def load_tenant_quotas() -> dict[str, int]:
+    return parse_tenant_quotas(os.environ.get("INTERNAL_AI_TENANT_QUOTAS", ""))
+
+
 def parse_api_keys(raw: str) -> dict[str, Principal]:
-    """Parse serving keys from `key:user:group1|group2` entries or JSON.
+    """Parse serving keys from `key:user:group1|group2:tenant` entries or JSON.
 
     Entries are separated by commas, so the groups inside one entry use ``|``.
+    The tenant is the fourth field and is ``default`` when a key file leaves it
+    out, which is the install's own tenant.
     """
     principals: dict[str, Principal] = {}
     raw = raw.strip()
@@ -99,6 +201,7 @@ def parse_api_keys(raw: str) -> dict[str, Principal]:
             principals[key] = Principal(
                 user_id=str(item.get("user_id", "unknown")),
                 groups=frozenset(item.get("groups", [])),
+                tenant=normalise(str(item.get("tenant", ""))),
                 api_key=key,
             )
         return principals
@@ -111,7 +214,10 @@ def parse_api_keys(raw: str) -> dict[str, Principal]:
             continue
         key, user_id = parts[0], parts[1]
         groups = parts[2].split("|") if len(parts) > 2 and parts[2] else []
-        principals[key] = Principal(user_id=user_id, groups=frozenset(groups), api_key=key)
+        tenant = normalise(parts[3]) if len(parts) > 3 and parts[3].strip() else DEFAULT_TENANT
+        principals[key] = Principal(
+            user_id=user_id, groups=frozenset(groups), tenant=tenant, api_key=key
+        )
     return principals
 
 
@@ -289,6 +395,16 @@ class RetrievalService:
             self._cache[dataset_id] = (key, vectors)
         return vectors
 
+    def visible_indexes(self, rows: list[dict[str, Any]], principal: Principal) -> list[int]:
+        """The rows this principal may read, by every filter at once.
+
+        Another tenant's rows never reach the cached matrix, a class nobody
+        granted is never ranked, and the record's own ACL is the last gate. Both
+        retrieval paths call this one function, so a filter cannot be added to
+        the dense path and forgotten in the keyword one.
+        """
+        return [index for index, row in enumerate(rows) if principal.can_read_row(row)]
+
     def search(
         self,
         embedder: Any,
@@ -300,31 +416,29 @@ class RetrievalService:
         rows = self.corpus(dataset_id)
         if not rows:
             return []
-        visible = [
-            index
-            for index, row in enumerate(rows)
-            if principal.can_read(row["acl"], row["sensitivity"])
-        ]
-        if not visible:
-            return []
-        vectors = self._corpus_vectors(embedder, dataset_id, rows)
-        query_vector = embedder.embed([query])[0]
-        scores = vectors[visible] @ query_vector
-        order = np.argsort(-scores)[:top_k]
+        visible = self.visible_indexes(rows, principal)
         hits: list[RetrievalHit] = []
-        for index in order:
-            row = rows[visible[int(index)]]
-            cited = hit_from_key(row["record_key"])
-            hits.append(
-                RetrievalHit(
-                    document_id=row["record_key"],
-                    score=round(float(scores[int(index)]), 6),
-                    snippet=" ".join(row["payload"].split()[:24]),
-                    source_id=row["source_id"],
-                    path=cited.path,
-                    line=cited.line,
+        # A search nobody may run is still a search: it is recorded with no hits
+        # and its tenant, so a reviewer can tell an empty corpus from a caller
+        # asking about another tenant's.
+        if visible:
+            vectors = self._corpus_vectors(embedder, dataset_id, rows)
+            query_vector = embedder.embed([query])[0]
+            scores = vectors[visible] @ query_vector
+            order = np.argsort(-scores)[:top_k]
+            for index in order:
+                row = rows[visible[int(index)]]
+                cited = hit_from_key(row["record_key"])
+                hits.append(
+                    RetrievalHit(
+                        document_id=row["record_key"],
+                        score=round(float(scores[int(index)]), 6),
+                        snippet=" ".join(row["payload"].split()[:24]),
+                        source_id=row["source_id"],
+                        path=cited.path,
+                        line=cited.line,
+                    )
                 )
-            )
         self.audit.record(
             actor=principal.user_id,
             actor_kind="human",
@@ -340,7 +454,9 @@ class RetrievalService:
                 "hits": len(hits),
                 "visible_documents": len(visible),
                 "total_documents": len(rows),
+                "tenant": normalise(principal.tenant),
             },
+            tenant=normalise(principal.tenant),
         )
         return hits
 
@@ -361,31 +477,26 @@ class RetrievalService:
         rows = self.corpus(dataset_id)
         if not rows:
             return []
-        visible = [
-            index
-            for index, row in enumerate(rows)
-            if principal.can_read(row["acl"], row["sensitivity"])
-        ]
-        if not visible:
-            return []
-        scores = bm25_scores(query, [rows[index]["payload"] for index in visible])
-        ranked = sorted(range(len(visible)), key=lambda i: -scores[i])[:top_k]
+        visible = self.visible_indexes(rows, principal)
         hits: list[RetrievalHit] = []
-        for position in ranked:
-            if scores[position] <= 0:
-                continue
-            row = rows[visible[position]]
-            cited = hit_from_key(row["record_key"])
-            hits.append(
-                RetrievalHit(
-                    document_id=row["record_key"],
-                    score=round(float(scores[position]), 6),
-                    snippet=" ".join(row["payload"].split()[:24]),
-                    source_id=row["source_id"],
-                    path=cited.path,
-                    line=cited.line,
+        if visible:
+            scores = bm25_scores(query, [rows[index]["payload"] for index in visible])
+            ranked = sorted(range(len(visible)), key=lambda i: -scores[i])[:top_k]
+            for position in ranked:
+                if scores[position] <= 0:
+                    continue
+                row = rows[visible[position]]
+                cited = hit_from_key(row["record_key"])
+                hits.append(
+                    RetrievalHit(
+                        document_id=row["record_key"],
+                        score=round(float(scores[position]), 6),
+                        snippet=" ".join(row["payload"].split()[:24]),
+                        source_id=row["source_id"],
+                        path=cited.path,
+                        line=cited.line,
+                    )
                 )
-            )
         self.audit.record(
             actor=principal.user_id,
             actor_kind="human",
@@ -402,7 +513,9 @@ class RetrievalService:
                 "hits": len(hits),
                 "visible_documents": len(visible),
                 "total_documents": len(rows),
+                "tenant": normalise(principal.tenant),
             },
+            tenant=normalise(principal.tenant),
         )
         return hits
 
@@ -444,5 +557,6 @@ def log_request(
             "latency_ms": round(latency_ms, 3),
             **public_details(extra, question),
         },
+        tenant=normalise(principal.tenant),
         cost_usd=cost_usd,
     )

@@ -365,6 +365,7 @@ Change the rule in its own file, never around it.
 | --- | --- |
 | Who may do what | [`roles.py`](src/internal_ai/roles.py), [`services/permissions.py`](src/internal_ai/services/permissions.py) |
 | Which records a person may read | [`services/attributes.py`](src/internal_ai/services/attributes.py), policy `P7` |
+| Which tenant a record or a request belongs to | [`services/tenancy.py`](src/internal_ai/services/tenancy.py), `BudgetScope.TENANT` in [`budget.py`](src/internal_ai/budget.py) |
 | Every agent action | [`agent.py`](src/internal_ai/agent.py), [`tools.py`](src/internal_ai/tools.py) |
 | Task states | [`store.py`](src/internal_ai/store.py) (`ALLOWED_TRANSITIONS`) |
 | Spend | [`budget.py`](src/internal_ai/budget.py) |
