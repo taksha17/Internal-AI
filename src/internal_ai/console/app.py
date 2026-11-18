@@ -1884,6 +1884,18 @@ def mount_console(
             f"backend attached: {backend}. Attaching does not start a run",
         )
 
+    @app.post("/console/compute/lane", include_in_schema=False)
+    async def compute_lane(request: Request) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        label = form.get("label", "")
+        return await act(
+            ctx,
+            "/console/compute",
+            lambda: compute_advice.select_lane(ctx.platform, ctx.actor, label),
+            lambda chosen: f"lane {chosen} selected. Selecting does not start a run",
+        )
+
     @app.get("/console/artifacts", include_in_schema=False)
     def artifacts_page(request: Request) -> Response:
         ctx = context(request)
