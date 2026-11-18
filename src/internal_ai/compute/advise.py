@@ -14,7 +14,7 @@ from internal_ai.compute.lanes import LaneRefused, lane_for
 from internal_ai.compute.scheduler import JobBackend, LocalBackend, SlurmBackend
 from internal_ai.context import Platform
 from internal_ai.sandbox import Sandbox
-from internal_ai.training.cost import estimate_gpu_run
+from internal_ai.training.cost import estimate_gpu_run, planning_vram_gib
 from internal_ai.training.trainer import TOKENS_PER_PARAMETER_FLOOR
 
 BACKEND_KEY = "compute_backend"
@@ -139,6 +139,7 @@ def advise_dataset(
     kind = str(dataset.stats.get("token_count_kind") or "estimate")
     measured = kind == "measured"
     backend = attached_backend(platform)
+    batch, sequence = _trainer_step()
     sizes = [_size_row(name, parameters, tokens, measured, backend) for name, parameters in SIZES]
     advice = {
         "dataset_id": dataset_id,
@@ -146,6 +147,9 @@ def advise_dataset(
         "token_count_kind": kind,
         "measured": measured,
         "backend": backend,
+        "world_size": 1,
+        "queue_wait": None,
+        "tokens_per_step": batch * sequence,
         "sizes": sizes,
     }
     platform.store.kv_set(f"compute_advice:{dataset_id}", json.dumps(advice, sort_keys=True))
@@ -171,6 +175,14 @@ def advise_dataset(
     return advice
 
 
+def _trainer_step() -> tuple[int, int]:
+    """Batch and sequence length from the trainer, so the step size is not restated."""
+    from internal_ai.training.trainer import TrainConfig
+
+    config = TrainConfig()
+    return config.batch_size, config.seq_len
+
+
 def _size_row(
     name: str, parameters: int, tokens: int, measured: bool, backend: str
 ) -> dict[str, Any]:
@@ -189,4 +201,5 @@ def _size_row(
         "meets_floor": meets_floor,
         "machine": machine,
         "runnable": runnable,
+        "planning_vram_gib": planning_vram_gib(parameters),
     }
