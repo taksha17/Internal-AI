@@ -96,7 +96,7 @@ def many_items(count: int) -> list[dict[str, Any]]:
 def alpha_eval_set(platform, items: list[dict[str, Any]] | None = None) -> str:
     from internal_ai.evals.harness import EvalHarness
 
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     eval_set = harness.create_eval_set("alpha", ITEMS if items is None else items)
     harness.freeze_eval_set(eval_set.id, "ml_lead", gate_approved=True)
     return eval_set.id

@@ -666,7 +666,7 @@ def main() -> int:
             "model_path": outcome.model_path,
         }
 
-        harness = EvalHarness(platform.store, platform.audit)
+        harness = EvalHarness(platform.store, platform.audit, platform.blobs)
         clock.start("eval.derive")
         items = derive_eval_items(platform, dataset_id, count=60, mode="paraphrase")
         for item in items:

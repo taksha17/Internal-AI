@@ -50,7 +50,7 @@ def released_dataset(platform, *, released: bool = True) -> str:
 
 
 def frozen_eval_set(platform, actor) -> str:
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     eval_set = harness.create_eval_set("rebase", [{"query": "ledger", "relevant_ids": ["d1"]}])
     harness.freeze_eval_set(eval_set.id, actor.id, gate_approved=True)
     return eval_set.id
@@ -131,7 +131,7 @@ def test_an_unreleased_dataset_is_refused(platform) -> None:
 def test_an_unfrozen_eval_set_is_refused(platform) -> None:
     mo = lead(platform)
     record_bar(platform, mo)
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     eval_set = harness.create_eval_set("loose", [{"query": "ledger", "relevant_ids": ["d1"]}])
 
     with pytest.raises(PermissionError, match="not frozen"):

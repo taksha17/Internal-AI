@@ -13,10 +13,13 @@ from typing import Any
 from internal_ai.compute.advise import (
     advise_dataset,
     attach_backend,
+    attach_lane,
     attached_backend,
+    attached_lane,
     stored_advice,
     waiting_reasons,
 )
+from internal_ai.compute.lanes import described
 from internal_ai.context import Platform
 from internal_ai.services.actor import Actor
 from internal_ai.services.permissions import Action, require
@@ -30,6 +33,11 @@ def advise(platform: Platform, actor: Actor, dataset_id: str) -> dict[str, Any]:
 def attach(platform: Platform, actor: Actor, backend: str) -> str:
     require(platform.audit, actor, Action.ATTACH_COMPUTE, backend)
     return attach_backend(platform, backend, actor=actor.id)
+
+
+def select_lane(platform: Platform, actor: Actor, label: str) -> str:
+    require(platform.audit, actor, Action.ATTACH_COMPUTE, label)
+    return attach_lane(platform, label, actor=actor.id)
 
 
 def page(platform: Platform, dataset_id: str = "") -> dict[str, Any]:
@@ -48,6 +56,8 @@ def page(platform: Platform, dataset_id: str = "") -> dict[str, Any]:
         "advice": advice,
         "rows": rows,
         "backend": attached_backend(platform),
+        "lane": attached_lane(platform),
+        "lanes": described(),
         "floor": _floor(),
     }
 

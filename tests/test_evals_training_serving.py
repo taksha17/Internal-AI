@@ -72,7 +72,7 @@ def test_bm25_prefers_lexical_overlap() -> None:
 
 
 def test_frozen_eval_set_cannot_be_written(platform) -> None:
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     eval_set = harness.create_eval_set("v1", [{"query": "q", "relevant_ids": ["d1"]}])
     with pytest.raises(PermissionError):
         harness.freeze_eval_set(eval_set.id, "ml_lead", gate_approved=False)
@@ -93,7 +93,7 @@ def test_evaluation_requires_frozen_set(platform) -> None:
     from internal_ai.evals.harness import EvalHarness
     from internal_ai.workflows import evaluate_embedding_model
 
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     eval_set = harness.create_eval_set("v1", [{"query": "q", "relevant_ids": ["d1"]}])
     with pytest.raises(PermissionError, match="frozen"):
         evaluate_embedding_model(platform, __file__, eval_set.id, None, "ds_1")
@@ -133,7 +133,7 @@ def test_a_passing_report_off_a_frozen_set_cannot_promote(platform) -> None:
             created_at="now",
         )
     )
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     open_set = harness.create_eval_set("open", [{"query": "q", "relevant_ids": ["d1"]}])
 
     def report(report_id: str, eval_set_id: str, created_at: str) -> None:
@@ -179,7 +179,7 @@ def test_a_failed_report_on_a_frozen_set_cannot_promote(platform) -> None:
             created_at="now",
         )
     )
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     eval_set = harness.create_eval_set("v1", [{"query": "q", "relevant_ids": ["d1"]}])
     harness.freeze_eval_set(eval_set.id, "ml_lead", gate_approved=True)
     platform.store.add_eval_report(

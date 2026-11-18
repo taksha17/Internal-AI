@@ -78,7 +78,7 @@ def test_a_frozen_set_is_copied_forward_not_edited(platform, enroll_person) -> N
     first = failed_trace(platform, lead.id, "why did the ledger fail?")
     cleared(platform, lead, clearer, first)
     one = triage_service.eval_case_from_trace(platform, lead, first)
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     harness.freeze_eval_set(one.id, "ml_lead", gate_approved=True)
     before = platform.store.get_eval_set(one.id)
 

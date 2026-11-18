@@ -94,9 +94,10 @@ Change the rule in its own file, never around it.
 | Every agent action | `internal_ai/agent.py`, `internal_ai/tools.py`, `agentic.py` | capability check plus an audit event |
 | Task states | `internal_ai/store.py:ALLOWED_TRANSITIONS` | the map entry is the specification |
 | Spend | `internal_ai/budget.py` | every new spend path calls `record_spend` or `check`; bypassing it is a bug |
-| Datasets | `internal_ai/data/` | released versions are immutable; a change is a new version with a new hash and lineage entry |
+| Datasets | `internal_ai/data/` | released versions are immutable; a change is a new version with a new hash and lineage entry. JSONL and Parquet shards of one version share the canonical content hash in `data/shards.py` |
 | Connectors | `internal_ai/data/connectors.py` | a record arrives with its ACL, or the source is refused; a remote that cannot report one is refused |
 | Promotion | `internal_ai/workflows.py:promote_model` | a passing eval report against a frozen set and an approved `model_promotion` gate |
+| Frozen eval sets | `evals/harness.py`, `storage.py` | a freeze writes a retention-locked object named by the content hash; scoring re-reads it and refuses a hash that moved |
 | Gates | `internal_ai/gates.py`, `GateType` in `domain.py` | a new type plus the roles that may decide it |
 | Base models | `internal_ai/training/alpha/pin.py` | a licence class and an allowlist entry, never an unchecked pin |
 | Provenance mode | `internal_ai/training/provenance.py`, policy item `P6` | the mode reads only a decided policy; `scratch_only` refuses every load |
@@ -107,6 +108,7 @@ Change the rule in its own file, never around it.
 | Extraction probes | `internal_ai/evals/extraction.py`, `internal_ai/workflows.py:extraction_refusal` | paraphrase groups are scored with the report; the advantage ceiling is held by the gate |
 | Traces | `internal_ai/serving/trace.py` | scrub before insert, inherit the asker's groups, 30-day retention |
 | Compute advice | `internal_ai/compute/advise.py` | the floor is read from the trainer, never restated |
+| Device lanes | `internal_ai/compute/lanes.py` | a label names its resource, image, precisions and collective; an unknown label is refused |
 | Supervision sets | `internal_ai/data/supervision.py` | estimated token counts are not a licence to release |
 
 ## The alpha track, end to end

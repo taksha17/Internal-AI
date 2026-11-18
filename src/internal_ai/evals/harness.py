@@ -7,6 +7,7 @@ agent once frozen (FR-14).
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -28,7 +29,13 @@ from internal_ai.evals.metrics import (
     recall_at_k,
 )
 from internal_ai.ids import content_hash, new_id, now_iso
+from internal_ai.storage import BlobStore, StorageDenied, digest_of
 from internal_ai.store import Store
+
+# Ten years. A frozen exam is the record of what a model was judged against,
+# and a shorter lock would let the exam be replaced before the judgement is.
+FROZEN_EVAL_RETENTION_DAYS = 3650
+EVAL_OBJECT_PREFIX = "eval-sets"
 
 
 class Embedder(Protocol):
@@ -72,9 +79,10 @@ def per_question_recall(
 
 
 class EvalHarness:
-    def __init__(self, store: Store, audit: AuditLog) -> None:
+    def __init__(self, store: Store, audit: AuditLog, blobs: BlobStore | None = None) -> None:
         self.store = store
         self.audit = audit
+        self.blobs = blobs
 
     # ------------------------------------------------------------ eval sets
 
@@ -122,15 +130,72 @@ class EvalHarness:
             raise KeyError(f"unknown eval set: {eval_set_id}")
         if eval_set.frozen:
             raise PermissionError(f"eval set {eval_set_id} is already frozen and immutable")
-        self.store.freeze_eval_set(eval_set_id, approver)
+        if self.blobs is None:
+            raise StorageDenied(
+                "freezing an eval set writes a retention-locked object and no object store "
+                "is configured"
+            )
+        payload = _eval_bytes(eval_set.items)
+        if digest_of(payload) != eval_set.content_hash:
+            raise StorageDenied(
+                f"eval set {eval_set_id} content hash does not match its items; "
+                "freeze the bytes that were approved"
+            )
+        blob = self.blobs.put(
+            payload,
+            prefix=f"{EVAL_OBJECT_PREFIX}/{eval_set_id}",
+            retention_days=FROZEN_EVAL_RETENTION_DAYS,
+        )
+        artifact = {
+            "key": blob.key,
+            "sha256": blob.sha256,
+            "retention_days": FROZEN_EVAL_RETENTION_DAYS,
+            "retain_until": self.blobs.retention_until(blob.key),
+        }
+        self.store.freeze_eval_set(eval_set_id, approver, artifact)
         self.audit.record(
             actor=approver,
             actor_kind=actor_kind,
             action="eval_set.frozen",
             subject=eval_set_id,
-            details={"name": eval_set.name, "version": eval_set.version},
+            details={"name": eval_set.name, "version": eval_set.version, **artifact},
         )
         return self.store.get_eval_set(eval_set_id)
+
+    def _for_scoring(self, eval_set: EvalSet) -> EvalSet:
+        """The items scoring may use: the sealed object when this freeze wrote one.
+
+        A set frozen before objects existed has no key and still scores from the
+        table. A set that has a key is refused when the bytes are gone or no
+        longer hash to the freeze, rather than quietly scoring the table.
+        """
+        key = str((eval_set.artifact or {}).get("key") or "")
+        if not key:
+            return eval_set
+        if self.blobs is None:
+            raise StorageDenied(
+                f"eval set {eval_set.id} was frozen as object {key} and no object store "
+                "is configured to read it back"
+            )
+        payload = self.blobs.get(key, expect_sha256=eval_set.content_hash)
+        items = json.loads(payload.decode("utf-8"))
+        if content_hash(items) != eval_set.content_hash:
+            raise StorageDenied(
+                "frozen eval set content hash does not match the object; "
+                "scoring would be grading a different exam"
+            )
+        return EvalSet(
+            id=eval_set.id,
+            name=eval_set.name,
+            version=eval_set.version,
+            frozen=eval_set.frozen,
+            created_at=eval_set.created_at,
+            approved_by=eval_set.approved_by,
+            content_hash=eval_set.content_hash,
+            path=eval_set.path,
+            items=items,
+            artifact=eval_set.artifact,
+        )
 
     def write_to_frozen_set(self, eval_set_id: str, actor: str) -> None:
         eval_set = self.store.get_eval_set(eval_set_id)
@@ -169,6 +234,7 @@ class EvalHarness:
         actor: str = "evaluation",
         brief: ProjectBrief | None = None,
     ) -> EvalOutcome:
+        eval_set = self._for_scoring(eval_set)
         queries = [str(item["query"]) for item in eval_set.items]
         doc_ids = [record.record_key for record in corpus_records]
         doc_texts = [record.text for record in corpus_records]
@@ -522,6 +588,11 @@ def permission_probe(corpus_records: list[Record], relevant_doc_ids: set[str]) -
         "readable_without_a_grant": readable[:5],
         "unreachable_with_every_grant": unreachable[:5],
     }
+
+
+def _eval_bytes(items: list[dict[str, Any]]) -> bytes:
+    """The bytes whose digest is ``content_hash(items)``."""
+    return json.dumps(items, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
 
 
 def json_safe(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
