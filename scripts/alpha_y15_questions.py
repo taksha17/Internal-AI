@@ -279,7 +279,7 @@ def main(argv: list[str] | None = None) -> int:
         if actor is None:
             print("refused: no account holds the domain_expert role", file=sys.stderr)
             return 1
-        harness = EvalHarness(platform.store, platform.audit)
+        harness = EvalHarness(platform.store, platform.audit, platform.blobs)
         eval_set = harness.create_eval_set(args.name, items, actor=actor.id)
         try:
             gate = build.request_freeze(platform, actor, eval_set.id)

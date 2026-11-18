@@ -49,7 +49,7 @@ def outcome_for(
     corpus: list[Record],
     training: list[Record],
 ) -> Any:
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     eval_set = harness.create_eval_set(
         "permissions",
         [{"query": "how do I reset my vpn", "relevant_ids": [corpus[0].record_key]}],

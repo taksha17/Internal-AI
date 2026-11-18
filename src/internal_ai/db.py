@@ -273,7 +273,8 @@ CREATE TABLE IF NOT EXISTS eval_sets (
     approved_by TEXT,
     content_hash TEXT NOT NULL DEFAULT '',
     path TEXT NOT NULL DEFAULT '',
-    items TEXT NOT NULL DEFAULT '[]'
+    items TEXT NOT NULL DEFAULT '[]',
+    artifact TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS eval_reports (
@@ -588,6 +589,9 @@ def init_db(conn: Any) -> None:
         conn.execute("ALTER TABLE eval_reports ADD COLUMN judged_by TEXT NOT NULL DEFAULT ''")
     if "per_case" not in report_columns:
         conn.execute("ALTER TABLE eval_reports ADD COLUMN per_case TEXT NOT NULL DEFAULT '{}'")
+    eval_columns = {row["name"] for row in conn.execute("PRAGMA table_info(eval_sets)").fetchall()}
+    if "artifact" not in eval_columns:
+        conn.execute("ALTER TABLE eval_sets ADD COLUMN artifact TEXT NOT NULL DEFAULT '{}'")
     unique_decision = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'uq_gate_decisions_approver'"
     ).fetchone()

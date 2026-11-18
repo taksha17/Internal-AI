@@ -67,7 +67,7 @@ def dataset(platform, dataset_id: str, released: bool) -> None:
 def alpha_eval_set(platform, items: list[dict]) -> str:
     from internal_ai.evals.harness import EvalHarness
 
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     eval_set = harness.create_eval_set("alpha", items)
     harness.freeze_eval_set(eval_set.id, "ml_lead", gate_approved=True)
     return eval_set.id
@@ -256,7 +256,7 @@ def test_the_alpha_evaluation_refuses_an_unfrozen_eval_set(
         json.dumps({"adapter_backend": "peft"}), encoding="utf-8"
     )
     model = register_alpha(platform, PRIMARY, adapter, "ds_alpha", person)
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     eval_set = harness.create_eval_set("alpha", [ALPHA_ITEM])
 
     with pytest.raises(PermissionError, match="frozen"):

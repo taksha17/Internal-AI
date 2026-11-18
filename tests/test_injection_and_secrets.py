@@ -145,7 +145,7 @@ def test_a_dataset_carrying_instructions_cannot_be_released(platform, tmp_path: 
 
 
 def test_an_evaluation_flags_instructions_in_a_document_it_scores(platform) -> None:
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     corpus = [Record(id="a", record_key="doc_a", text=PLANTED, source_id="s", acl=["engineering"])]
     eval_set = harness.create_eval_set("planted", [{"query": "keys", "relevant_ids": ["doc_a"]}])
 

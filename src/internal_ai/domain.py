@@ -365,6 +365,7 @@ class EvalSet:
     content_hash: str = ""
     path: str = ""
     items: list[dict[str, Any]] = field(default_factory=list)
+    artifact: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

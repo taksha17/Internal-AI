@@ -195,7 +195,7 @@ def train_supervisor(platform: Platform, dataset_id: str, tokenizer_path: Path) 
         run_id=new_id("run"),
     )
     probe = safety_probe(lambda _prompt: "")
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     report = harness.record_report(
         outcome.run_id,
         "evs_supervision",

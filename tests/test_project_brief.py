@@ -159,7 +159,7 @@ def record(key: str, text: str) -> Record:
 
 
 def run_eval(platform, target: brief.Metric | None):
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     corpus = [record("a", "how do I reset my vpn on the laptop")]
     eval_set = harness.create_eval_set("brief", [{"query": "reset vpn", "relevant_ids": ["a"]}])
     project = brief.ProjectBrief()

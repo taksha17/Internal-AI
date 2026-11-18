@@ -280,13 +280,16 @@ you only want the data and training stages.
 - **Data plane.** Ingestion, exact and near-duplicate removal, PII and secret
   scrubbing, quality and language filters, immutable dataset versions, a
   tokenizer trained from scratch, and leakage-safe splits. A released version
-  carries the groups its records named, and retrieval will not admit a group
-  that version does not.
+  is one shard, JSONL or Parquet (`INTERNAL_AI_SHARD_ENCODING`), and both
+  encodings record the same canonical content hash. It carries the groups its
+  records named, and retrieval will not admit a group that version does not.
 - **Training.** A from-scratch transformer that records its commit, config,
   dataset hash and seed; checkpoints and resumes; caps cost; streams metrics;
   and stops itself on divergence or a loss spike.
 - **Evaluation.** Frozen eval sets that only a person can approve, an
-  independent evaluation agent, promotion gates, and model cards.
+  independent evaluation agent, promotion gates, and model cards. A freeze
+  writes the exam once, under a retention lock, and scoring reads that object
+  back and refuses a hash that moved.
 - **Serving.** Authenticated inference and permission-aware retrieval over an
   OpenAI-compatible surface (`/v1/chat/completions`, `/v1/embed`, `/v1/answer`),
   per-user rate limits, and rollback.
@@ -489,7 +492,8 @@ one that claims less:
 - The sandbox is subprocess-level. Container isolation with a network policy is
   still open.
 - The scheduler runs jobs locally. Slurm and Kubernetes are integration points,
-  not finished backends.
+  not finished backends. A GPU job names a device label, and the label picks the
+  resource, the image and the collective. An unknown label is refused.
 
 ## Contributing
 
