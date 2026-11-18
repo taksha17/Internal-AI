@@ -130,7 +130,7 @@ def test_the_threshold_is_the_line_that_decides() -> None:
 
 
 def test_an_evaluation_fails_on_a_memorising_encoder(platform) -> None:
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     corpus = [record("doc_a", LONG_A)]
     eval_set = harness.create_eval_set(
         "memorised", [{"query": "reset the vpn", "relevant_ids": ["doc_a"]}]
@@ -147,7 +147,7 @@ def test_an_evaluation_fails_on_a_memorising_encoder(platform) -> None:
 
 
 def test_an_evaluation_records_the_probe_even_when_it_passes(platform) -> None:
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     corpus = [record("doc_a", LONG_A)]
     eval_set = harness.create_eval_set(
         "clean", [{"query": "reset the vpn", "relevant_ids": ["doc_a"]}]
@@ -162,7 +162,7 @@ def test_an_evaluation_records_the_probe_even_when_it_passes(platform) -> None:
 
 
 def test_an_evaluation_says_when_nothing_was_long_enough_to_probe(platform) -> None:
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     corpus = [record("doc_a", SHORT)]
     eval_set = harness.create_eval_set(
         "tickets", [{"query": "reset the vpn", "relevant_ids": ["doc_a"]}]
@@ -246,7 +246,7 @@ def test_an_item_pointing_at_an_absent_record_is_skipped() -> None:
 
 
 def test_an_evaluation_fails_on_a_rewrite_scored_as_the_record(platform) -> None:
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     same = [1.0] + [0.0] * (DIMS - 1)
     model = Lookup({LONG_A: same, "how do I reset the vpn": same})
     corpus = [record("doc_a", LONG_A)]
@@ -270,7 +270,7 @@ def test_an_evaluation_fails_on_a_rewrite_scored_as_the_record(platform) -> None
 
 
 def test_an_evaluation_says_when_no_item_carried_a_paraphrase(platform) -> None:
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     model = Lookup({})
     corpus = [record("doc_a", LONG_A)]
     eval_set = harness.create_eval_set("plain", [_item(None)])
@@ -284,7 +284,7 @@ def test_an_evaluation_says_when_no_item_carried_a_paraphrase(platform) -> None:
 
 
 def test_the_rewrite_is_part_of_the_frozen_exam(platform) -> None:
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
 
     first = harness.create_eval_set("a", [_item("how do I reset the vpn")])
     second = harness.create_eval_set("b", [_item("vpn tunnel troubleshooting")])

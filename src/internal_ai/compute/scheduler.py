@@ -22,6 +22,7 @@ from typing import Any, Protocol
 
 from internal_ai.audit import AuditLog
 from internal_ai.budget import BudgetManager
+from internal_ai.compute.lanes import Lane, lane_for
 from internal_ai.domain import AuditOutcome
 from internal_ai.ids import new_id, now_iso
 from internal_ai.sandbox import Sandbox
@@ -32,6 +33,15 @@ from internal_ai.training.cost import CostEstimate, estimate_cpu_run, estimate_g
 DEFAULT_RUNTIME_CLASS = "gvisor"
 # The distroless "nonroot" uid; nothing in a training pod needs to write its root.
 SANDBOX_UID = 65532
+
+
+def _placed(job: Job) -> Lane:
+    """The lane a GPU job lands on. An empty label is the NVIDIA lane.
+
+    Naming a label this table does not list raises, so a typo does not become
+    an NVIDIA request.
+    """
+    return lane_for(job.spec.device_label or "nvidia.com/gpu")
 
 
 class JobState(StrEnum):
@@ -54,6 +64,7 @@ class JobSpec:
     quota: str = "default"
     cost_cap_usd: float = 5.0
     device: str = "cpu"
+    device_label: str = ""
     environment: dict[str, str] = field(default_factory=dict)
     workdir: str = ""
 
@@ -68,6 +79,7 @@ class JobSpec:
             "quota": self.quota,
             "cost_cap_usd": self.cost_cap_usd,
             "device": self.device,
+            "device_label": self.device_label,
             "workdir": self.workdir,
         }
 
@@ -141,7 +153,10 @@ class SlurmBackend:
     def render_sbatch(self, job: Job) -> str:
         script = Path(job.spec.workdir or ".") / f"{job.id}.sbatch"
         account = f"#SBATCH --account={self.account}\n" if self.account else ""
-        gres = "#SBATCH --gres=gpu:1\n" if job.spec.device == "gpu" else ""
+        gres = ""
+        if job.spec.device == "gpu":
+            placed = _placed(job)
+            gres = f"#SBATCH --gres={placed.gres}\n"
         return (
             "#!/bin/bash\n"
             f"#SBATCH --job-name={job.spec.name}\n"
@@ -356,6 +371,8 @@ class KubernetesBackend:
         The trainer reads its inputs and writes checkpoints; every permission it
         does not need is one an exploited dependency cannot use.
         """
+        placed = _placed(job) if job.spec.device == "gpu" else None
+        image = placed.image if placed is not None and job.spec.device_label else self.image
         lines = [
             "apiVersion: batch/v1",
             "kind: Job",
@@ -381,7 +398,7 @@ class KubernetesBackend:
                 "          type: RuntimeDefault",
                 "      containers:",
                 "        - name: runner",
-                f"          image: {self.image}",
+                f"          image: {image}",
                 f"          command: {json.dumps(job.spec.command)}",
             ]
         )
@@ -400,14 +417,14 @@ class KubernetesBackend:
                 "                - ALL",
             ]
         )
-        if job.spec.device == "gpu":
+        if placed is not None:
             lines.extend(
                 [
                     "          resources:",
                     "            requests:",
-                    '              nvidia.com/gpu: "1"',
+                    f'              {placed.resource}: "1"',
                     "            limits:",
-                    '              nvidia.com/gpu: "1"',
+                    f'              {placed.resource}: "1"',
                 ]
             )
         # A read-only root leaves a trainer nowhere to spill, so it gets one

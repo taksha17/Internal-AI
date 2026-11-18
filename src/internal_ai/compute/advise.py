@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from internal_ai.compute.lanes import LaneRefused, lane_for
 from internal_ai.compute.scheduler import JobBackend, LocalBackend, SlurmBackend
 from internal_ai.context import Platform
 from internal_ai.sandbox import Sandbox
@@ -17,6 +18,7 @@ from internal_ai.training.cost import estimate_gpu_run, planning_vram_gib
 from internal_ai.training.trainer import TOKENS_PER_PARAMETER_FLOOR
 
 BACKEND_KEY = "compute_backend"
+LANE_KEY = "compute_lane"
 SIZES = (("small", 10_000_000), ("1b", 1_000_000_000), ("7b", 7_000_000_000))
 SIZE_NAMES = tuple(name for name, _parameters in SIZES)
 LOCAL_HOUR_LIMIT = 1.0
@@ -40,6 +42,35 @@ def attach_backend(platform: Platform, name: str, actor: str = "infra_engineer")
         details={"backend": name},
     )
     return name
+
+
+def attached_lane(platform: Platform) -> str:
+    value = platform.store.kv_get(LANE_KEY) or ""
+    if not value:
+        return ""
+    try:
+        return lane_for(value).label
+    except LaneRefused:
+        return ""
+
+
+def attach_lane(platform: Platform, label: str, actor: str = "infra_engineer") -> str:
+    """Record which device label a later GPU job should name. It does not submit one."""
+    lane = lane_for(label)
+    platform.store.kv_set(LANE_KEY, lane.label)
+    platform.audit.record(
+        actor=actor,
+        actor_kind="human",
+        action="compute.lane_selected",
+        subject=lane.label,
+        details={
+            "resource": lane.resource,
+            "image": lane.image,
+            "precisions": list(lane.precisions),
+            "collective": lane.collective,
+        },
+    )
+    return lane.label
 
 
 def make_backend(platform: Platform, sandbox: Sandbox) -> JobBackend:

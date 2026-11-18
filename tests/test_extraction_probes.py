@@ -231,7 +231,7 @@ def test_an_extraction_item_without_a_group_is_refused(platform) -> None:
 
 
 def test_a_frozen_extraction_set_is_write_protected(platform) -> None:
-    harness = EvalHarness(platform.store, platform.audit)
+    harness = EvalHarness(platform.store, platform.audit, platform.blobs)
     created = harness.create_eval_set("extraction", _items(1))
     harness.freeze_eval_set(created.id, "ml_lead", gate_approved=True)
     with pytest.raises(PermissionError, match="frozen"):

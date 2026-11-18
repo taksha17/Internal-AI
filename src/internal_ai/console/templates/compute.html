@@ -83,5 +83,27 @@
   {% else %}
   <p class="small">Attaching a backend {{ why("attach_compute") }}.</p>
   {% endif %}
+  <p class="muted">Device lane: <strong>{{ lane or "none" }}</strong>. A GPU job names one of these labels. An unknown label is refused.</p>
+  <table>
+    <thead><tr><th>Label</th><th>Image</th><th>Precision</th><th>Collective</th></tr></thead>
+    <tbody>
+      {% for item in lanes %}
+      <tr><td><code>{{ item.label }}</code></td><td><code>{{ item.image }}</code></td><td>{{ item.precisions }}</td><td>{{ item.collective }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if can("attach_compute") %}
+  <form method="post" action="/console/compute/lane" class="toolbar">
+    {{ m.csrf_field() }}
+    <label>Lane
+      <select name="label">
+        {% for item in lanes %}
+        <option value="{{ item.label }}"{{ ' selected' if lane == item.label else '' }}>{{ item.vendor }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Select</button>
+  </form>
+  {% endif %}
 </section>
 {% endblock %}

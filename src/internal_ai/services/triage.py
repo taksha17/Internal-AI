@@ -110,7 +110,7 @@ def eval_case_from_trace(
         },
     ]
     version = max((item.version for item in existing), default=0) + 1
-    eval_set = EvalHarness(platform.store, platform.audit).create_eval_set(
+    eval_set = EvalHarness(platform.store, platform.audit, platform.blobs).create_eval_set(
         name, items, version=version, actor=actor.id
     )
     platform.audit.record(
