@@ -70,6 +70,8 @@ def test_the_page_lists_the_sizes_with_hours_and_machine(tmp_path: Path) -> None
         assert "200,000,000 tokens" in page.text
         assert "Attached backend" in page.text
         assert "The floor is 20 tokens per parameter" in page.text
+        assert "Queue wait is unknown" in page.text
+        assert "World size 1" in page.text
 
 
 def test_the_page_shows_why_a_size_is_waiting_on_a_small_corpus(tmp_path: Path) -> None:

@@ -40,12 +40,13 @@
 <p class="callout">The token count is an estimate, so every size below is waiting: the hours stay provisional until the tokenizer measures this corpus.</p>
 {% endif %}
 
-{% call m.data_table([("Size",), ("Parameters", true), ("GPU-hours", true), ("Machine",), ("Tokens per parameter", true), ("Floor",), ("Runnable",)]) %}
+{% call m.data_table([("Size",), ("Parameters", true), ("GPU-hours", true), ("VRAM GiB", true), ("Machine",), ("Tokens per parameter", true), ("Floor",), ("Runnable",)]) %}
   {% for row in rows %}
   <tr class="{{ 'warn' if not row.runnable else '' }}">
     <td>{{ row.size }}</td>
     <td class="num">{{ "{:,}".format(row.parameters) }}</td>
     <td class="num">{{ row.planning_gpu_hours }}</td>
+    <td class="num">{{ row.planning_vram_gib }}</td>
     <td>{{ row.machine }}</td>
     <td class="num">{{ row.tokens_per_parameter }}</td>
     <td>{{ "meets" if row.meets_floor else "below" }}</td>
@@ -54,7 +55,7 @@
   {% endfor %}
 {% endcall %}
 
-<p class="small muted">The floor is {{ floor }} tokens per parameter, read from the trainer rather than restated here. A waiting size is not a warning: a run at that size would spend the machine's hours on a shape the corpus cannot support, and <code>require_runnable_size</code> refuses it with the same sentence this table shows.</p>
+<p class="small muted">World size {{ advice.world_size }}. No scheduler has reported a larger one, so the memory above is the whole model state on one device. Queue wait is unknown. Tokens per step {{ advice.tokens_per_step }}, the trainer's batch times its sequence length. The floor is {{ floor }} tokens per parameter, read from the trainer rather than restated here. A waiting size is not a warning: a run at that size would spend the machine's hours on a shape the corpus cannot support, and <code>require_runnable_size</code> refuses it with the same sentence this table shows.</p>
 
 <form method="post" action="/console/compute/advise">
   {{ m.csrf_field() }}

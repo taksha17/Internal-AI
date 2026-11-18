@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from internal_ai.compute.advise import advise_dataset, attach_backend, make_backend
 from internal_ai.domain import DatasetVersion
 from internal_ai.ids import now_iso
@@ -23,6 +25,13 @@ def _dataset(platform, dataset_id: str, tokens: int, kind: str) -> None:
     )
 
 
+def test_a_world_size_below_one_is_refused() -> None:
+    from internal_ai.training.cost import planning_vram_gib
+
+    with pytest.raises(ValueError, match="world size"):
+        planning_vram_gib(10_000_000, world_size=0)
+
+
 def test_a_measured_small_run_is_local(platform) -> None:
     _dataset(platform, "ds_small", 200_000_000, "measured")
     advice = advise_dataset(platform, "ds_small")
@@ -31,6 +40,14 @@ def test_a_measured_small_run_is_local(platform) -> None:
     assert small["machine"] == "local"
     assert small["runnable"] is True
     assert advice["backend"] == "local"
+    assert advice["world_size"] == 1
+    assert advice["queue_wait"] is None
+    from internal_ai.training.trainer import TrainConfig
+
+    step = TrainConfig()
+    assert advice["tokens_per_step"] == step.batch_size * step.seq_len
+    assert small["planning_vram_gib"] > 0
+    assert advice["sizes"][2]["planning_vram_gib"] > small["planning_vram_gib"]
 
 
 def test_an_estimate_and_a_short_corpus_wait(platform) -> None:

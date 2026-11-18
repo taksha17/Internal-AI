@@ -105,7 +105,7 @@ Change the rule in its own file, never around it.
 | Extraction guardrail | `internal_ai/serving/extraction.py`, policy `serving.extraction_policy` | warn or refuse on near-duplicate bursts; counts only, nothing persisted |
 | Extraction probes | `internal_ai/evals/extraction.py`, `internal_ai/workflows.py:extraction_refusal` | paraphrase groups are scored with the report; the advantage ceiling is held by the gate |
 | Traces | `internal_ai/serving/trace.py` | scrub before insert, inherit the asker's groups, 30-day retention |
-| Compute advice | `internal_ai/compute/advise.py` | the floor is read from the trainer, never restated |
+| Compute advice | `internal_ai/compute/advise.py` | the floor and the tokens per step are read from the trainer, never restated; queue wait stays unknown until a scheduler reports one |
 | Supervision sets | `internal_ai/data/supervision.py` | estimated token counts are not a licence to release |
 
 ## The alpha track, end to end

@@ -13,6 +13,9 @@ H100_SUSTAINED_TFLOPS = 400.0
 DEFAULT_GPU_HOUR_USD = 2.0
 DEFAULT_CPU_HOUR_USD = 0.35
 DEFAULT_OVERHEAD_FACTOR = 3.0
+# fp16 weights, an fp32 master copy, Adam's two moments, and fp16 gradients.
+# Activations are not in this figure.
+MODEL_STATE_BYTES = 16
 
 
 @dataclass(slots=True)
@@ -45,6 +48,19 @@ class CostEstimate:
 
 def training_flops(parameters: int, tokens: int) -> float:
     return 6.0 * parameters * tokens
+
+
+def planning_vram_gib(parameters: int, world_size: int = 1) -> float:
+    """Model-state memory for this width, split across ``world_size`` devices.
+
+    A world size below 1 is refused. Dividing by the world size assumes the
+    state is sharded. It does not include activations, and it is not a
+    measurement from a card.
+    """
+    if world_size < 1:
+        raise ValueError("world size is at least 1")
+    gib = (parameters * MODEL_STATE_BYTES) / world_size / (1024**3)
+    return round(gib, 4)
 
 
 def gpu_hours(flops: float, sustained_tflops: float = H100_SUSTAINED_TFLOPS) -> float:
