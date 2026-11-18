@@ -41,6 +41,7 @@ from internal_ai.engine import PlanError
 from internal_ai.evals import advice
 from internal_ai.gates import GATE_CATALOG, GateError
 from internal_ai.people import PeopleRegistry
+from internal_ai.policy import read_policy
 from internal_ai.roles import all_roles
 from internal_ai.services import (
     artifacts_view,
@@ -2848,7 +2849,12 @@ def mount_console(
                     "gate": gate_view(ctx.platform, ctx.actor, gate) if gate else None,
                 }
             )
-        return render(ctx, "policy.html", decisions=decisions)
+        return render(
+            ctx,
+            "policy.html",
+            decisions=decisions,
+            grants=read_policy(ctx.platform.policy).describe(),
+        )
 
     @app.post("/console/admin/policy/{policy_id}", include_in_schema=False)
     async def policy_post(request: Request, policy_id: str) -> Response:

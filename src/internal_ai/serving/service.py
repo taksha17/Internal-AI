@@ -25,11 +25,15 @@ from internal_ai.audit import AuditLog
 from internal_ai.data.shards import released_rows
 from internal_ai.domain import AuditOutcome, ModelVersion
 from internal_ai.evals.metrics import bm25_scores
+from internal_ai.services import attributes
+from internal_ai.services.attributes import DEFAULT_CLASS, ReadPolicy
 from internal_ai.storage import BlobStore
 from internal_ai.store import Store
 from internal_ai.training.alpha.citations import hit_from_key
 
-SUPERUSER_GROUP = "platform-admins"
+# Named by the attribute rule, so a key file and the console cannot disagree about
+# which group is the one that skips a record's ACL.
+SUPERUSER_GROUP = attributes.SUPERUSER_GROUP
 
 
 @dataclass(slots=True)
@@ -37,15 +41,11 @@ class Principal:
     user_id: str
     groups: frozenset[str]
     api_key: str = ""
+    read_policy: ReadPolicy = field(default_factory=ReadPolicy.strict)
 
-    def can_read(self, acl: list[str], sensitivity: str = "internal") -> bool:
-        if sensitivity not in ("", "internal"):
-            return False
-        if SUPERUSER_GROUP in self.groups:
-            return True
-        if not acl:
-            return True
-        return bool(self.groups & set(acl))
+    def can_read(self, acl: list[str], sensitivity: str = DEFAULT_CLASS) -> bool:
+        """Whether this principal may read a record, by the one attribute rule."""
+        return self.read_policy.allows(self.groups, sensitivity, acl)
 
 
 class AuthError(Exception):

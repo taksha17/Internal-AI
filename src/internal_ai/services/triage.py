@@ -15,9 +15,11 @@ from internal_ai.context import Platform
 from internal_ai.data.supervision import ingest_supervision
 from internal_ai.domain import DatasetVersion
 from internal_ai.evals.harness import EvalHarness
+from internal_ai.policy import read_policy
 from internal_ai.preferences import file_preference
 from internal_ai.services.actor import Actor
 from internal_ai.services.permissions import Action, require
+from internal_ai.serving.service import Principal
 from internal_ai.serving.trace import (
     Trace,
     clear_trace_quarantine,
@@ -29,15 +31,24 @@ from internal_ai.serving.trace import (
 from internal_ai.training.alpha.citations import AskHit, score_answer
 
 
+def _principal(platform: Platform, actor: Actor) -> Principal:
+    """The reader, carrying the grants the decided P7 names.
+
+    Every trace read goes through this, so an install that has widened a class
+    does not have one page reading wider than another.
+    """
+    return actor.principal(read_policy=read_policy(platform.policy))
+
+
 def triage_view(platform: Platform, actor: Actor, limit: int = 25) -> dict[str, list[Trace]]:
     """Failed traces this person may read, bucketed by why they failed."""
     require(platform.audit, actor, Action.VIEW_TRACES, "console/traces")
-    return triage(platform.store, actor.principal(), limit=limit)
+    return triage(platform.store, _principal(platform, actor), limit=limit)
 
 
 def quarantine_trace(platform: Platform, actor: Actor, trace_id: str) -> None:
     require(platform.audit, actor, Action.VIEW_TRACES, trace_id)
-    trace = get_trace(platform.store, actor.principal(), trace_id)
+    trace = get_trace(platform.store, _principal(platform, actor), trace_id)
     if not trace.failure:
         raise ValueError("only a failed answer needs quarantine")
     propose_trace_quarantine(platform.store, platform.audit, actor.id, trace_id)
@@ -45,7 +56,7 @@ def quarantine_trace(platform: Platform, actor: Actor, trace_id: str) -> None:
 
 def clear_quarantined_trace(platform: Platform, actor: Actor, trace_id: str) -> None:
     require(platform.audit, actor, Action.VIEW_TRACES, trace_id)
-    get_trace(platform.store, actor.principal(), trace_id)
+    get_trace(platform.store, _principal(platform, actor), trace_id)
     clear_trace_quarantine(platform.store, platform.audit, actor.id, trace_id)
 
 
@@ -72,7 +83,7 @@ def eval_case_from_trace(
     already scores answers against, and its lineage back to the trace id.
     """
     require(platform.audit, actor, Action.CREATE_EVAL_SET, trace_id)
-    trace = get_trace(platform.store, actor.principal(), trace_id)
+    trace = get_trace(platform.store, _principal(platform, actor), trace_id)
     if not trace.failure:
         raise ValueError("only a failed answer becomes an eval case; this one passed")
     hits = [
@@ -121,7 +132,7 @@ def eval_case_from_trace(
 def sft_draft(platform: Platform, actor: Actor, trace_id: str) -> Trace:
     """The trace a person is about to correct, if they may read it at all."""
     require(platform.audit, actor, Action.VIEW_TRACES, trace_id)
-    return get_trace(platform.store, actor.principal(), trace_id)
+    return get_trace(platform.store, _principal(platform, actor), trace_id)
 
 
 def _supervision_rows(platform: Platform, previous: DatasetVersion | None) -> list[dict[str, str]]:
@@ -182,7 +193,7 @@ def preference_from_trace(
     back to put the lineage on the dataset.
     """
     require(platform.audit, actor, Action.VIEW_TRACES, trace_id)
-    trace = get_trace(platform.store, actor.principal(), trace_id)
+    trace = get_trace(platform.store, _principal(platform, actor), trace_id)
     corrected = _corrected_answer(trace, answer)
     _require_cleared_quarantine(platform, trace_id)
     row = file_preference(
@@ -221,7 +232,7 @@ def sft_example_from_trace(
     gate that every dataset needs.
     """
     require(platform.audit, actor, Action.BUILD_DATASET, trace_id)
-    trace = get_trace(platform.store, actor.principal(), trace_id)
+    trace = get_trace(platform.store, _principal(platform, actor), trace_id)
     corrected = _corrected_answer(trace, answer)
     _require_cleared_quarantine(platform, trace_id)
     existing = list(platform.store.list_datasets(name=name))

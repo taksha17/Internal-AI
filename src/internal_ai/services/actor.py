@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from internal_ai.services.attributes import ReadPolicy
 from internal_ai.serving.service import Principal
 from internal_ai.store import Store
 
@@ -27,8 +28,17 @@ class Actor:
     def holds(self, *roles: str) -> bool:
         return bool(self.roles & set(roles))
 
-    def principal(self) -> Principal:
-        return Principal(user_id=self.id, groups=self.groups)
+    def principal(self, read_policy: ReadPolicy | None = None) -> Principal:
+        """The API-facing principal, carrying the install's grants when given them.
+
+        The default is the strict rule rather than an open one: a caller that
+        forgot to pass the decided policy reads less, never more.
+        """
+        return Principal(
+            user_id=self.id,
+            groups=self.groups,
+            read_policy=read_policy or ReadPolicy.strict(),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {

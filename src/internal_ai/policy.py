@@ -1,4 +1,4 @@
-"""Policy decisions P1-P5.
+"""Policy decisions P1-P7.
 
 The PRD marks these as required before Week 1 ends because each one materially
 changes scope. Defaults are the PRD's stated defaults; the platform runs on
@@ -7,12 +7,14 @@ defaults until a human changes them, and every change is gated and audited.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from internal_ai.domain import GateType, PolicyDecision
 from internal_ai.gates import GateService
 from internal_ai.ids import now_iso
+from internal_ai.services.attributes import AttributePolicyError, ReadPolicy
 from internal_ai.store import Store
 
 
@@ -76,9 +78,27 @@ POLICY_ITEMS: tuple[PolicyItem, ...] = (
             "name, revision and licence appear on every model card."
         ),
     ),
+    PolicyItem(
+        id="P7",
+        question=(
+            "Which data sensitivity classes may a person read, and which groups may read "
+            "each? Write class=group|group, or class=anyone."
+        ),
+        default_value="internal=anyone",
+        rationale=(
+            "Attributes are checked with the capability, so this value decides what the "
+            "console and the served answers may show. A class left out is unreadable by "
+            "everyone, and a value nobody can read grants nothing at all."
+        ),
+    ),
 )
 
 POLICY_BY_ID = {item.id: item for item in POLICY_ITEMS}
+
+P7_POLICY_ID = "P7"
+
+POLICY_VALIDATORS: dict[str, Callable[[str], object]] = {P7_POLICY_ID: ReadPolicy.parse}
+"""Items whose value is a rule rather than a word, checked before a gate opens."""
 
 
 class PolicyRegistry:
@@ -135,6 +155,11 @@ class PolicyRegistry:
         invented from nothing.
         """
         decision = self.get(policy_id)
+        validate = POLICY_VALIDATORS.get(policy_id)
+        if validate is not None:
+            # A value nobody can read must not reach a gate: approving it would look
+            # like a decision and enforce nothing.
+            validate(value)
         gate = self.gates.request(
             GateType.POLICY_DECISION,
             title=f"Policy decision {policy_id}: {decision.question}",
@@ -192,3 +217,16 @@ class PolicyRegistry:
                 for item in decisions
             },
         }
+
+
+def read_policy(registry: PolicyRegistry) -> ReadPolicy:
+    """The grants the decided P7 carries, for a check that reads a record.
+
+    A value that cannot be parsed grants nothing, internal material included:
+    the platform keeps answering refusals while a person corrects the decision,
+    which is the only safe direction for a rule nobody can read.
+    """
+    try:
+        return ReadPolicy.parse(registry.effective(P7_POLICY_ID))
+    except AttributePolicyError:
+        return ReadPolicy.denied()
