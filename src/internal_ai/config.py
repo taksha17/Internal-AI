@@ -12,6 +12,7 @@ ENV_HOME = "INTERNAL_AI_HOME"
 ENV_OFFLINE = "INTERNAL_AI_OFFLINE"
 ENV_GUARDRAIL_POLICY = "INTERNAL_AI_GUARDRAIL_POLICY"
 ENV_EXTRACTION_POLICY = "INTERNAL_AI_EXTRACTION_POLICY"
+ENV_TENANT = "INTERNAL_AI_TENANT"
 DEFAULT_HOME = "var"
 DEFAULT_GUARDRAIL_POLICY = "warn"
 DEFAULT_EXTRACTION_POLICY = "warn"
@@ -69,6 +70,15 @@ class Settings:
     def redis_url(self) -> str:
         """The shared cache, when an install has one; empty means process-local."""
         return os.environ.get("INTERNAL_AI_REDIS_URL", "").strip()
+
+    @property
+    def tenant(self) -> str:
+        """The tenant this install's own work is billed to.
+
+        Empty means no tenant cap: a deployment that serves one customer has
+        nothing to separate, and the budget keeps the scopes it always had.
+        """
+        return os.environ.get(ENV_TENANT, "").strip().lower()
 
     @property
     def database_url(self) -> str:

@@ -16,7 +16,8 @@
 <form method="post" action="/console/admin/budget" class="stack card" id="set-limit">
   {{ m.csrf_field() }}
   <h2>Set a limit</h2>
-  <label>Scope <select name="scope">{% for scope in ["global", "project", "agent", "job", "weekly"] %}<option value="{{ scope }}">{{ scope }}</option>{% endfor %}</select></label>
+  <label>Scope <select name="scope">{% for scope in ["global", "project", "tenant", "agent", "job", "weekly"] %}<option value="{{ scope }}">{{ scope }}</option>{% endfor %}</select></label>
+  <p class="small">A tenant cap is keyed by the tenant name and is checked with every hold, so two tenants never spend the same room.</p>
   <label>Key <input type="text" name="key" value="global" required></label>
   <label>Limit (USD) <input type="number" name="limit_usd" min="0" step="0.01" required></label>
   <label>Approved budget_increase gate id (only to raise a limit) <input type="text" name="gate_id"></label>

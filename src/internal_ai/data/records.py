@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from internal_ai.data.extract import DOCUMENT_SUFFIXES, document_text
+from internal_ai.services.tenancy import DEFAULT_TENANT
 
 # Row-oriented files: one record per row, so a row can carry its own answer.
 ROW_SUFFIXES = frozenset({".csv", ".tsv", ".jsonl", ".ndjson"})
@@ -70,6 +71,7 @@ class Record:
     acl: list[str] = field(default_factory=list)
     tokens: int = 0
     meta: dict[str, Any] = field(default_factory=dict)
+    tenant: str = DEFAULT_TENANT
 
     def fingerprint(self) -> str:
         digest = hashlib.sha256(self.text.strip().encode("utf-8"))
@@ -85,6 +87,7 @@ class Record:
             "acl": list(self.acl),
             "tokens": self.tokens,
             "meta": dict(self.meta),
+            "tenant": self.tenant or DEFAULT_TENANT,
         }
 
 
@@ -103,6 +106,7 @@ class Source:
     owner: str = ""
     text_field: str | None = None
     label_field: str | None = None
+    tenant: str = DEFAULT_TENANT
 
     def content_hash(self) -> str:
         digest = hashlib.sha256()
@@ -322,4 +326,8 @@ def ingest_source(source: Source) -> list[Record]:
                     meta={"format": "txt"},
                 )
             )
+    # A row does not choose its tenant any more than it chooses its class: the
+    # source it was read from decides, and every record read from it carries it.
+    for record in records:
+        record.tenant = source.tenant or DEFAULT_TENANT
     return records

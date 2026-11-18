@@ -17,6 +17,8 @@ from internal_ai.data.tokenizer import Tokenizer, coverage_report, train_tokeniz
 from internal_ai.domain import AuditOutcome, DatasetVersion, ModelVersion
 from internal_ai.evals.extraction import EXTRACTION_ADVANTAGE_CEILING
 from internal_ai.ids import content_hash, new_id, now_iso
+from internal_ai.services.tenancy import DEFAULT_TENANT
+from internal_ai.services.tenancy import check as check_tenant
 from internal_ai.training.classifier import ClassifierConfig, ClassifierOutcome
 from internal_ai.training.embedder import TorchEmbedder
 from internal_ai.training.trainer import TrainConfig, TrainingOutcome
@@ -1341,12 +1343,15 @@ def build_tree_corpus(
     acl: list[str] | None = None,
     actor: str = "data_engineer",
     sensitivity: str = "internal",
+    tenant: str = DEFAULT_TENANT,
 ) -> CorpusBuild:
     """Version a file tree as a dataset with path metadata and lineage."""
 
+    tenant = check_tenant(tenant)
     records = index.records(acl=acl or ["engineering", "support"], sensitivity=sensitivity)
     for record in records:
         record.sensitivity = sensitivity
+        record.tenant = tenant
     dataset = DatasetVersion(
         id=new_id("ds"),
         name=name,
@@ -1356,6 +1361,7 @@ def build_tree_corpus(
         ),
         record_count=len(records),
         token_count=sum(record.tokens for record in records),
+        tenant=tenant,
         created_at=now_iso(),
         lineage={
             "sources": [

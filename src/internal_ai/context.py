@@ -43,6 +43,7 @@ class Platform:
         llm_kind: str = "auto",
         engine_config: EngineConfig | None = None,
         project: str = "default",
+        tenant: str = "",
     ) -> Platform:
         settings = Settings.from_env(root)
         settings.ensure_dirs()
@@ -55,7 +56,9 @@ class Platform:
             anchor_dir=settings.home / "audit_anchors",
         )
         gates = GateService(store)
-        budget = BudgetManager(store, project=project)
+        # The install's own tenant, unless the caller names one; empty leaves the
+        # tenant cap off, which is what a single-customer deployment wants.
+        budget = BudgetManager(store, project=project, tenant=tenant or settings.tenant)
         tools = ToolRegistry(audit, settings.workspace_dir, settings.artifacts_dir, store=store)
         tools.set_web_gate_check(lambda gate_id: approved_web_allowlist(store, gate_id))
         adapter = llm or build_adapter(llm_kind)

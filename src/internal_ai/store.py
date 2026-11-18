@@ -76,6 +76,11 @@ def _loads(value: str | None, default: Any) -> Any:
         return default
 
 
+def _tenant(row: Any) -> str:
+    """A row's tenant, for a table that may predate the column."""
+    return str(row["tenant"]) if "tenant" in set(row.keys()) else ""
+
+
 class Store:
     """Single entry point for all persistent state.
 
@@ -892,8 +897,9 @@ class Store:
         self.conn.execute(
             """
             INSERT INTO datasets (id, name, version, content_hash, record_count, token_count,
-                                  created_at, lineage, stats, released, path, parent_version)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                                  created_at, lineage, stats, released, path, parent_version,
+                                  tenant)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 dataset.id,
@@ -908,6 +914,7 @@ class Store:
                 int(dataset.released),
                 dataset.path,
                 dataset.parent_version,
+                dataset.tenant,
             ),
         )
         return dataset
@@ -971,7 +978,7 @@ class Store:
                 """
                 INSERT OR REPLACE INTO dataset_records
                     (id, dataset_id, record_key, payload, source_id, sensitivity, acl, tokens,
-                    split, meta) VALUES (?,?,?,?,?,?,?,?,?,?)
+                    split, meta, tenant) VALUES (?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     record.get("id") or new_id("rec"),
@@ -984,6 +991,7 @@ class Store:
                     int(record.get("tokens", 0)),
                     record.get("split", ""),
                     _json(record.get("meta", {})),
+                    record.get("tenant", ""),
                 ),
             )
             count += 1
@@ -1032,6 +1040,7 @@ class Store:
                 "tokens": row["tokens"],
                 "split": row["split"],
                 "meta": _loads(row["meta"], {}),
+                "tenant": _tenant(row),
             }
             for row in rows
         ]
@@ -1051,6 +1060,7 @@ class Store:
             released=bool(row["released"]),
             path=row["path"],
             parent_version=row["parent_version"],
+            tenant=_tenant(row),
         )
 
     # ---------------------------------------------------------------- models

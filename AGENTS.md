@@ -89,6 +89,7 @@ Change the rule in its own file, never around it.
 | Rule | Home | A change needs |
 | --- | --- | --- |
 | Who may do what | `internal_ai/roles.py` (agents), `services/permissions.py` (people), `services/attributes.py` (which records) | the role that needs it and nothing else, and a class grant that names the group rather than a widened default |
+| Whose records they are | `services/tenancy.py`, `serving/service.py` (`visible_indexes`), `budget.py` (`BudgetScope.TENANT`) | the tenant of the source, never of the row; no role or group crosses it, and a cap is taken inside the hold's transaction |
 | What a directory may provision | `services/scim.py` (`PROVISIONABLE_ROLES`, the group mapping) | a token and a mapped group, never an unmapped one; the same session and token revocation `set_disabled` performs |
 | Every agent action | `internal_ai/agent.py`, `internal_ai/tools.py`, `agentic.py` | capability check plus an audit event |
 | Task states | `internal_ai/store.py:ALLOWED_TRANSITIONS` | the map entry is the specification |

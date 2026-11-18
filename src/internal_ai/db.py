@@ -226,7 +226,8 @@ CREATE TABLE IF NOT EXISTS datasets (
     stats TEXT NOT NULL DEFAULT '{}',
     released INTEGER NOT NULL DEFAULT 0,
     path TEXT NOT NULL DEFAULT '',
-    parent_version TEXT
+    parent_version TEXT,
+    tenant TEXT NOT NULL DEFAULT 'default'
 );
 
 CREATE TABLE IF NOT EXISTS dataset_records (
@@ -240,6 +241,7 @@ CREATE TABLE IF NOT EXISTS dataset_records (
     tokens INTEGER NOT NULL DEFAULT 0,
     split TEXT NOT NULL DEFAULT '',
     meta TEXT NOT NULL DEFAULT '{}',
+    tenant TEXT NOT NULL DEFAULT 'default',
     PRIMARY KEY (dataset_id, id)
 );
 CREATE INDEX IF NOT EXISTS idx_dataset_records_dataset ON dataset_records(dataset_id);
@@ -478,7 +480,8 @@ CREATE TABLE IF NOT EXISTS data_sources (
     license_name TEXT NOT NULL DEFAULT '',
     license_url TEXT NOT NULL DEFAULT '',
     license_note TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    tenant TEXT NOT NULL DEFAULT 'default'
 );
 """
 
@@ -545,6 +548,12 @@ def init_db(conn: Any) -> None:
                 ON dataset_records(dataset_id, record_key);
             """
         )
+    # Tenancy was added after the tables existed, and a row written before it
+    # belongs to the install's own tenant, which is what "default" names.
+    for table in ("dataset_records", "datasets", "data_sources"):
+        present = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if "tenant" not in present:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN tenant TEXT NOT NULL DEFAULT 'default'")
     token_columns = {
         row["name"] for row in conn.execute("PRAGMA table_info(api_tokens)").fetchall()
     }

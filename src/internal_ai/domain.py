@@ -84,6 +84,9 @@ class AuditOutcome(StrEnum):
 class BudgetScope(StrEnum):
     GLOBAL = "global"
     PROJECT = "project"
+    # A tenant's own cap. Money is spent on one customer's behalf or another's,
+    # and a cap that only the install as a whole respects cannot answer which.
+    TENANT = "tenant"
     AGENT = "agent"
     JOB = "job"
     WEEKLY = "weekly"
@@ -317,6 +320,7 @@ class DatasetVersion:
     released: bool = False
     path: str = ""
     parent_version: str | None = None
+    tenant: str = ""
 
 
 @dataclass(slots=True)

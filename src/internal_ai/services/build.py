@@ -35,6 +35,8 @@ from internal_ai.services import governance
 from internal_ai.services.actor import Actor
 from internal_ai.services.jobs import JobRunner
 from internal_ai.services.permissions import Action, PermissionDenied, deny, require
+from internal_ai.services.tenancy import DEFAULT_TENANT, normalise
+from internal_ai.services.tenancy import check as check_tenant
 
 WEIGHT_SUFFIXES = frozenset(
     {".pt", ".pth", ".bin", ".safetensors", ".gguf", ".onnx", ".ckpt", ".h5", ".pb", ".tflite"}
@@ -451,9 +453,11 @@ def register_source(
     license_name: str = "",
     license_url: str = "",
     license_note: str = "",
+    tenant: str = DEFAULT_TENANT,
 ) -> dict[str, Any]:
     """Record a candidate source and open its new_data_source_access gate."""
     require(platform.audit, actor, Action.REGISTER_SOURCE, raw_path)
+    tenant = check_tenant(tenant)
     inspection = inspect_source(platform, raw_path)
     if not inspection.acceptable:
         raise deny(
@@ -494,7 +498,7 @@ def register_source(
     platform.store.conn.execute(
         "INSERT INTO data_sources (id, name, path, kind, acl, sensitivity, scan, purpose,"
         " requested_by, gate_id, legal_status, license_name, license_url, license_note,"
-        " created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        " created_at, tenant) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             source_id,
             clean_name,
@@ -511,6 +515,7 @@ def register_source(
             license_url.strip(),
             license_note.strip(),
             now_iso(),
+            tenant,
         ),
     )
     return get_source(platform, source_id) or {}
@@ -587,6 +592,7 @@ def build_dataset(platform: Platform, actor: Actor, runner: JobRunner, source_id
                 version=version,
                 acl=source["acl"],
                 sensitivity=source["sensitivity"],
+                tenant=normalise(source.get("tenant") or DEFAULT_TENANT),
             )
         else:
             from internal_ai.data.pipeline import DataPipeline, PipelineConfig
@@ -607,6 +613,7 @@ def build_dataset(platform: Platform, actor: Actor, runner: JobRunner, source_id
                         owner=source["requested_by"],
                         text_field=inspection.text_field or None,
                         label_field=inspection.label_field or None,
+                        tenant=normalise(source.get("tenant") or DEFAULT_TENANT),
                     )
                 ],
                 PipelineConfig(name=source["name"], version=version),
@@ -645,9 +652,12 @@ def dataset_view(platform: Platform, actor: Actor, dataset_id: str) -> dict[str,
     dataset = platform.store.get_dataset(dataset_id)
     if dataset is None:
         raise KeyError(f"unknown dataset: {dataset_id}")
-    principal = actor.principal(read_policy=read_policy(platform.policy))
+    principal = actor.principal(
+        read_policy=read_policy(platform.policy),
+        tenant=platform.settings.tenant or DEFAULT_TENANT,
+    )
     rows = platform.store.dataset_records(dataset_id)
-    visible = [row for row in rows if principal.can_read(row["acl"], row["sensitivity"])]
+    visible = [row for row in rows if principal.can_read_row(row)]
     splits: dict[str, int] = {}
     for row in rows:
         splits[row.get("split") or "unassigned"] = (
@@ -662,6 +672,7 @@ def dataset_view(platform: Platform, actor: Actor, dataset_id: str) -> dict[str,
     ]
     return {
         "dataset": dataset,
+        "tenant": dataset.tenant or DEFAULT_TENANT,
         "records": len(rows),
         "visible_records": len(visible),
         "splits": splits,

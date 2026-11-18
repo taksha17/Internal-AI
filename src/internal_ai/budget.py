@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from internal_ai.db import transaction
 from internal_ai.domain import BudgetLimit, BudgetScope, SpendRecord
 from internal_ai.ids import new_id, now_iso
+from internal_ai.services.tenancy import normalise
 from internal_ai.store import Store
 
 KILL_SWITCH_KEY = "kill_switch"
@@ -79,9 +80,13 @@ class BudgetManager:
     the hold into spend and ``release`` gives it back when the call never ran.
     """
 
-    def __init__(self, store: Store, project: str = "default") -> None:
+    def __init__(self, store: Store, project: str = "default", tenant: str = "") -> None:
         self.store = store
         self.project = project
+        # Empty means this install carries no tenant cap. A named one is a cap
+        # like any other and is taken in the same transaction as the hold it
+        # decides, so two tenants cannot spend the same room between them.
+        self.tenant = normalise(tenant) if tenant else ""
 
     def set_limit(
         self,
@@ -349,6 +354,10 @@ class BudgetManager:
         scopes = [
             (BudgetScope.GLOBAL, "global"),
             (BudgetScope.PROJECT, self.project),
+        ]
+        if self.tenant:
+            scopes.append((BudgetScope.TENANT, self.tenant))
+        scopes += [
             (BudgetScope.AGENT, agent),
             (BudgetScope.WEEKLY, week_start().isoformat()),
         ]
