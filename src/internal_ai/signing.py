@@ -139,8 +139,6 @@ def load_signer(path: Path) -> AuditSigner:
     # stripping it turns the key into a different key -- the anchors then verify
     # against nothing and the failure looks like tampering.
     key = path.read_bytes()
-    if key.endswith(b"\n"):
-        key = key[:-1]
     return AuditSigner(key, _key_id(key))
 
 

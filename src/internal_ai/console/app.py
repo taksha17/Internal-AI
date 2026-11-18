@@ -1597,6 +1597,27 @@ def mount_console(
             ),
         )
 
+    @app.post("/console/sources/connector", include_in_schema=False)
+    async def source_connector(request: Request) -> Response:
+        ctx = context(request)
+        form = await posted(ctx)
+        groups = _groups(form.get("acl", ""))
+        return await act(
+            ctx,
+            "/console/sources",
+            lambda: build.preview_connector(
+                ctx.platform,
+                ctx.actor,
+                form.get("kind", ""),
+                form.get("path", ""),
+                groups,
+            ),
+            lambda result: (
+                f"connector {result['kind']} reported {result['records']} record(s)"
+                + (f" for {', '.join(result['groups'])}" if result["groups"] else "")
+            ),
+        )
+
     @app.post("/console/sources", include_in_schema=False)
     async def source_register(request: Request) -> Response:
         ctx = context(request)
