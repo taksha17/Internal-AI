@@ -9,7 +9,7 @@
 <div class="grid">
   <section class="card">
     <h2>What is in it</h2>
-    <p>Tenant <code class="small">{{ view.tenant }}</code>. {{ view.records }} records, {{ dataset.token_count }} tokens {% if dataset.stats.get("token_count_kind") == "measured" %}measured{% else %}estimated{% endif %}{% if dataset.stats.get("parameter_count") %}, {{ dataset.stats.tokens_per_parameter }} tokens per parameter{% endif %}. You can read {{ view.visible_records }} of them.</p>
+    <p>Tenant <code class="small">{{ view.tenant }}</code>. Groups {% if dataset.acl %}{% for group in dataset.acl %}<code class="small">{{ group }}</code> {% endfor %}{% else %}<code class="small">anyone granted the class</code>{% endif %}. {{ view.records }} records, {{ dataset.token_count }} tokens {% if dataset.stats.get("token_count_kind") == "measured" %}measured{% else %}estimated{% endif %}{% if dataset.stats.get("parameter_count") %}, {{ dataset.stats.tokens_per_parameter }} tokens per parameter{% endif %}. You can read {{ view.visible_records }} of them.</p>
     {% set shard = dataset.stats.get("shard") %}
     {% if shard %}
     <p>Released shard <code class="small">{{ shard.get("encoding", "jsonl") }}</code>, content hash <code class="small">{{ (shard.get("content_sha256") or shard.sha256)[:16] }}</code>{% if shard.get("schema") %}, schema {{ shard.schema.version }}{% endif %}.</p>

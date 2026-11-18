@@ -281,8 +281,9 @@ you only want the data and training stages.
   scrubbing, quality and language filters, immutable dataset versions, a
   tokenizer trained from scratch, and leakage-safe splits. A released version
   is one shard, JSONL or Parquet (`INTERNAL_AI_SHARD_ENCODING`), and both
-  encodings record the same canonical content hash. A connector that
-  cannot report an ACL is refused.
+  encodings record the same canonical content hash. It carries the groups its
+  records named, and retrieval will not admit a group that version does not.
+  A connector that cannot report an ACL is refused.
 - **Training.** A from-scratch transformer that records its commit, config,
   dataset hash and seed; checkpoints and resumes; caps cost; streams metrics;
   and stops itself on divergence or a loss spike.

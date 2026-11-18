@@ -6,11 +6,13 @@ import csv
 import hashlib
 import io
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from internal_ai.data.extract import DOCUMENT_SUFFIXES, document_text
+from internal_ai.services.attributes import SUPERUSER_GROUP
 from internal_ai.services.tenancy import DEFAULT_TENANT
 
 # Row-oriented files: one record per row, so a row can carry its own answer.
@@ -212,6 +214,35 @@ def _effective_sensitivity(source_class: str, row_class: str) -> str:
     if SENSITIVITY_ORDER.index(row_class) > SENSITIVITY_ORDER.index(source_class):
         return row_class
     return source_class
+
+
+def version_acl(records: Iterable[Record | dict[str, Any]]) -> list[str]:
+    """The groups a version admits: the union of the records it was built from.
+
+    Written once, with the version. A row edited later can name a new group,
+    and retrieval still refuses that group because it was not on the version.
+    No groups means the records named none, which is the same open-within-class
+    rule a single record already uses.
+    """
+    groups: set[str] = set()
+    for record in records:
+        raw = record.acl if isinstance(record, Record) else (record.get("acl") or [])
+        groups.update(str(item).strip() for item in raw if str(item).strip())
+    return sorted(groups)
+
+
+def version_admits(groups: Iterable[str], version_acl: Iterable[str]) -> bool:
+    """Whether these groups may open a version that named ``version_acl``.
+
+    The class and the tenant stay on the record. This is only the ceiling: a
+    group the version did not name is refused, and the superuser group is the
+    one that skips an ACL everywhere else, so it skips this one too.
+    """
+    named = {str(item).strip() for item in version_acl if str(item).strip()}
+    held = {str(item) for item in groups}
+    if not named or SUPERUSER_GROUP in held:
+        return True
+    return bool(held & named)
 
 
 def _bounded_acl(row: dict[str, Any], source: Source) -> list[str]:

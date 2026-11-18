@@ -12,6 +12,7 @@ from typing import Any
 from internal_ai.compute.advise import BACKEND_KEY
 from internal_ai.context import Platform
 from internal_ai.data.pipeline import _git_commit
+from internal_ai.data.records import version_acl
 from internal_ai.domain import AuditOutcome, DatasetVersion
 from internal_ai.ids import content_hash, new_id, now_iso
 from internal_ai.services.actor import Actor
@@ -160,6 +161,7 @@ def export_preferences(platform: Platform, actor: Actor) -> DatasetVersion:
         },
         stats={"kind": "preference", "training_data": False, "token_count_kind": "measured"},
         released=False,
+        acl=version_acl(records),
     )
     platform.store.add_dataset(dataset)
     platform.store.add_dataset_records(dataset_id, records)
